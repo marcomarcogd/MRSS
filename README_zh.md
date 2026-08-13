@@ -281,7 +281,6 @@ docker run -d -p 1234:1234 ghcr.io/wcy-dt/mrrss:latest-arm64
 ---
 
 <div align="center">
-  <img src="imgs/sponsor.png" alt="Sponsor MrRSS"/>
   <p>Made with ❤️ by the MrRSS Team</p>
   <p>⭐ 如果您觉得这个项目有用，请在 GitHub 上给我们点星！</p>
 </div>
