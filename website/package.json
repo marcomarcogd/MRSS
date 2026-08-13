@@ -1,6 +1,6 @@
 {
   "name": "mrrss-website",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "MrRSS - AI-Powered RSS Reader Landing Page",
   "type": "module",
   "scripts": {
