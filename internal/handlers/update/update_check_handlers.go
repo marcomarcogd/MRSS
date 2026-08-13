@@ -18,6 +18,12 @@ import (
 	"MrRSS/internal/version"
 )
 
+const (
+	releaseRepository              = "marcomarcogd/MrRSSM"
+	githubReleasesAPI              = "https://api.github.com/repos/" + releaseRepository + "/releases"
+	githubReleaseDownloadURLPrefix = "https://github.com/" + releaseRepository + "/releases/download/"
+)
+
 // isNetworkError checks if the error is related to network connectivity issues
 // (e.g., timeout, connection refused, DNS failure) which often indicates firewall/blocking
 func isNetworkError(err error) bool {
@@ -87,8 +93,6 @@ func HandleCheckUpdates(h *core.Handler, w http.ResponseWriter, r *http.Request)
 
 	currentVersion := version.Version
 	// Use /releases endpoint to get all releases, then filter for stable versions
-	const githubAPI = "https://api.github.com/repos/WCY-dt/MrRSS/releases"
-
 	// Create HTTP client with global proxy support
 	var proxyURL string
 	proxyEnabled, _ := h.DB.GetSetting("proxy_enabled")
@@ -112,7 +116,7 @@ func HandleCheckUpdates(h *core.Handler, w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	resp, err := client.Get(githubAPI)
+	resp, err := client.Get(githubReleasesAPI)
 	if err != nil {
 		log.Printf("Error checking for updates: %v", err)
 		errorType := "error_checking_updates"
