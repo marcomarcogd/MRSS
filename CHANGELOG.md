@@ -5,6 +5,16 @@ All notable changes to MrRSS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-08-13
+
+### Added
+
+- Added configurable interface font family and font size settings for feed lists, article lists, toolbars, settings, and dialogs while keeping article content typography independent.
+
+### Fixed
+
+- Fixed article cards reloading stale layout settings and preventing users from switching away from card layout. (#987)
+
 ## [1.3.25] - 2026-07-19
 
 ### Added
