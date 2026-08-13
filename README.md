@@ -281,7 +281,6 @@ This project is licensed under the GPL-3.0 License - see the [LICENSE](LICENSE) 
 ---
 
 <div align="center">
-  <img src="imgs/sponsor.png" alt="Sponsor MrRSS"/>
   <p>Made with ❤️ by the MrRSS Team</p>
   <p>⭐ Star us on GitHub if you find this project useful!</p>
 </div>
