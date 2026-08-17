@@ -111,7 +111,7 @@ export function generateInitialSettings(): SettingsData {
     tencent_secret_id: settingsDefaults.tencent_secret_id,
     tencent_secret_key: settingsDefaults.tencent_secret_key,
     theme: settingsDefaults.theme,
-    translation_enabled: settingsDefaults.translation_enabled,
+    translation_mode: settingsDefaults.translation_mode,
     translation_only_mode: settingsDefaults.translation_only_mode,
     translation_provider: settingsDefaults.translation_provider,
     ui_font_family: settingsDefaults.ui_font_family,
@@ -250,7 +250,7 @@ export function parseSettingsData(data: Record<string, string>): SettingsData {
     tencent_secret_id: data.tencent_secret_id || settingsDefaults.tencent_secret_id,
     tencent_secret_key: data.tencent_secret_key || settingsDefaults.tencent_secret_key,
     theme: data.theme || settingsDefaults.theme,
-    translation_enabled: data.translation_enabled === 'true',
+    translation_mode: data.translation_mode || settingsDefaults.translation_mode,
     translation_only_mode: data.translation_only_mode === 'true',
     translation_provider: data.translation_provider || settingsDefaults.translation_provider,
     ui_font_family: data.ui_font_family || settingsDefaults.ui_font_family,
@@ -451,9 +451,7 @@ export function buildAutoSavePayload(settingsRef: Ref<SettingsData>): Record<str
     tencent_secret_id: settingsRef.value.tencent_secret_id ?? settingsDefaults.tencent_secret_id,
     tencent_secret_key: settingsRef.value.tencent_secret_key ?? settingsDefaults.tencent_secret_key,
     theme: settingsRef.value.theme ?? settingsDefaults.theme,
-    translation_enabled: (
-      settingsRef.value.translation_enabled ?? settingsDefaults.translation_enabled
-    ).toString(),
+    translation_mode: settingsRef.value.translation_mode ?? settingsDefaults.translation_mode,
     translation_only_mode: (
       settingsRef.value.translation_only_mode ?? settingsDefaults.translation_only_mode
     ).toString(),

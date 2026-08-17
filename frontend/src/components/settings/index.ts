@@ -14,6 +14,7 @@ export { default as InputControl } from './base/SettingControl/InputControl.vue'
 export { default as NumberControl } from './base/SettingControl/NumberControl.vue';
 export { default as TextAreaControl } from './base/SettingControl/TextAreaControl.vue';
 export { default as ButtonControl } from './base/SettingControl/ButtonControl.vue';
+export { default as RadioGroupControl } from './base/SettingControl/RadioGroupControl.vue';
 
 // Composite Components
 export { default as SettingWithToggle } from './composite/SettingWithToggle.vue';

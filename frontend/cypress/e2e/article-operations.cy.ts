@@ -60,13 +60,13 @@ describe('Article Operations', () => {
     cy.wait('@getArticles', { timeout: 10000 });
 
     // Look for filter buttons
-    cy.contains(/unread|未读/i).click({ force: true });
+    cy.get('button[title="Unread"], button[title="未读"]').click({ force: true });
 
     // Wait a bit for the filter to apply
     cy.wait(500);
 
     // Verify filter button is clickable
-    cy.contains(/unread|未读/i).should('exist');
+    cy.get('button[title="Unread"], button[title="未读"]').should('exist');
   });
 
   it('should filter articles by favorites', () => {
@@ -74,13 +74,13 @@ describe('Article Operations', () => {
     cy.wait('@getArticles', { timeout: 10000 });
 
     // Click favorites filter
-    cy.contains(/favorite|收藏/i).click({ force: true });
+    cy.get('button[title="Favorites"], button[title="收藏"]').click({ force: true });
 
     // Wait a bit for the filter to apply
     cy.wait(500);
 
     // Verify filter button is clickable
-    cy.contains(/favorite|收藏/i).should('exist');
+    cy.get('button[title="Favorites"], button[title="收藏"]').should('exist');
   });
 
   it('should mark all articles as read', () => {
@@ -89,7 +89,10 @@ describe('Article Operations', () => {
 
     // Try to find mark all as read button (it might be in a context menu or toolbar)
     cy.get('body').then(($body) => {
-      if ($body.find('button').filter((i, el) => /mark.*all|全部标记/i.test(el.textContent || '')).length > 0) {
+      if (
+        $body.find('button').filter((i, el) => /mark.*all|全部标记/i.test(el.textContent || ''))
+          .length > 0
+      ) {
         cy.get('button')
           .contains(/mark.*all|全部标记/i)
           .click({ force: true });
@@ -127,7 +130,10 @@ describe('Article Operations', () => {
 
     // Find search input
     cy.get('body').then(($body) => {
-      if ($body.find('input[type="search"], input[placeholder*="search"], input[placeholder*="搜索"]').length > 0) {
+      if (
+        $body.find('input[type="search"], input[placeholder*="search"], input[placeholder*="搜索"]')
+          .length > 0
+      ) {
         cy.get('input[type="search"], input[placeholder*="search"], input[placeholder*="搜索"]')
           .last()
           .type('test{enter}');
@@ -161,6 +167,181 @@ describe('Article Operations', () => {
       } else {
         cy.log('No articles found to test open in browser');
       }
+    });
+  });
+
+  it('should translate only on demand in manual mode and respect off mode', () => {
+    const settingsState: Record<string, string> = {
+      language: 'en-US',
+      theme: 'light',
+      layout_mode: 'normal',
+      default_view_mode: 'rendered',
+      translation_mode: 'manual',
+      translation_only_mode: 'false',
+      translation_provider: 'google',
+      target_language: 'zh',
+      summary_enabled: 'false',
+      full_text_fetch_enabled: 'false',
+      auto_show_all_content: 'false',
+      update_check_enabled: 'false',
+      update_interval: '30',
+    };
+    const feed = {
+      id: 1,
+      title: 'Translation Feed',
+      url: 'https://example.com/feed.xml',
+      category: '',
+    };
+    const article = {
+      id: 1,
+      feed_id: 1,
+      feed_title: feed.title,
+      title: 'Hello title',
+      url: 'https://example.com/article',
+      published_at: '2026-08-17T00:00:00Z',
+      translated_title: '',
+      is_read: false,
+      is_favorite: false,
+      is_hidden: false,
+      is_read_later: false,
+    };
+    let titleTranslationCalls = 0;
+    let textTranslationCalls = 0;
+
+    cy.intercept('/api/**', { statusCode: 200, body: {} });
+    cy.intercept('GET', '/api/settings', (req) => {
+      req.reply({ statusCode: 200, body: settingsState });
+    });
+    cy.intercept('GET', '/api/feeds', { statusCode: 200, body: [feed] }).as('translationFeeds');
+    cy.intercept('GET', '/api/tags', { statusCode: 200, body: [] });
+    cy.intercept('GET', '/api/saved-filters', { statusCode: 200, body: [] });
+    cy.intercept(
+      { method: 'GET', pathname: '/api/articles' },
+      { statusCode: 200, body: [article] }
+    ).as('translationArticles');
+    cy.intercept('GET', '/api/articles/unread-counts', { statusCode: 200, body: {} });
+    cy.intercept('GET', '/api/articles/filter-counts', { statusCode: 200, body: {} });
+    cy.intercept('GET', '/api/progress', { statusCode: 200, body: { is_running: false } });
+    cy.intercept('GET', '/api/articles/content*', {
+      statusCode: 200,
+      body: { content: '<p>Hello article body</p>', cached: true },
+    }).as('translationContent');
+    cy.intercept('POST', '/api/articles/translate', (req) => {
+      titleTranslationCalls += 1;
+      req.reply({
+        delay: 150,
+        statusCode: 200,
+        body: { translated_title: '你好标题' },
+      });
+    }).as('translateTitle');
+    cy.intercept('POST', '/api/articles/translate-text', (req) => {
+      textTranslationCalls += 1;
+      if (textTranslationCalls === 1) {
+        req.reply({ statusCode: 503, body: { error: 'temporary translation failure' } });
+        return;
+      }
+      req.reply({
+        statusCode: 200,
+        body: { translated_text: '你好，文章正文', html: '', skipped: false },
+      });
+    }).as('translateText');
+
+    cy.reload();
+    cy.wait('@translationFeeds');
+    cy.wait('@translationArticles');
+    cy.wait(250);
+    cy.then(() => {
+      // Ignore any requests still completing from the page that Cypress
+      // replaced during reload, then measure this manual-mode session only.
+      titleTranslationCalls = 0;
+      textTranslationCalls = 0;
+    });
+    cy.wait(250);
+    cy.then(() => {
+      expect(titleTranslationCalls).to.equal(0);
+      expect(textTranslationCalls).to.equal(0);
+    });
+    cy.get('.article-card').first().click();
+    cy.wait('@translationContent');
+    cy.wait(250);
+    cy.then(() => {
+      expect(titleTranslationCalls).to.equal(0);
+      expect(textTranslationCalls).to.equal(0);
+    });
+
+    cy.contains('button', /^Translate$/)
+      .should('be.visible')
+      .click();
+    cy.contains('button', /^Translating…$/)
+      .should('be.disabled')
+      .trigger('click', { force: true });
+    cy.wait('@translateTitle');
+    cy.wait('@translateText');
+    cy.contains('button', /^Translate$/).should('be.enabled');
+    cy.contains('Translation failed. Please try again.').should('be.visible');
+    cy.then(() => {
+      expect(titleTranslationCalls).to.equal(1);
+      expect(textTranslationCalls).to.equal(1);
+    });
+
+    cy.contains('button', /^Translate$/).click();
+    cy.wait('@translateTitle');
+    cy.wait('@translateText');
+    cy.contains('button', /^Original$/).should('be.visible');
+    cy.contains('button', /^Translation$/).should('be.visible');
+    cy.contains('Hello article body').should('be.visible');
+    cy.contains('你好，文章正文').should('be.visible');
+
+    cy.contains('button', /^Original$/).click();
+    cy.contains('你好，文章正文').should('not.be.visible');
+    cy.contains('button', /^Translation$/).click();
+    cy.contains('你好，文章正文').should('be.visible');
+
+    // Reopening a manual-mode article starts from the original and does not
+    // issue a new translation request before the user clicks Translate again.
+    cy.reload();
+    cy.wait('@translationFeeds');
+    cy.wait('@translationArticles');
+    cy.get('.article-card').first().click();
+    cy.wait('@translationContent');
+    cy.wait(250);
+    cy.contains('button', /^Translate$/).should('be.visible');
+    cy.contains('Hello article body').should('be.visible');
+    cy.then(() => {
+      expect(titleTranslationCalls).to.equal(2);
+      expect(textTranslationCalls).to.equal(2);
+    });
+
+    cy.then(() => {
+      settingsState.translation_mode = 'off';
+    });
+    cy.reload();
+    cy.wait('@translationFeeds');
+    cy.wait('@translationArticles');
+    cy.get('.article-card').first().click();
+    cy.wait('@translationContent');
+    cy.contains('button', /^Translate$/).should('not.exist');
+    cy.then(() => {
+      expect(titleTranslationCalls).to.equal(2);
+      expect(textTranslationCalls).to.equal(2);
+    });
+
+    cy.then(() => {
+      settingsState.translation_mode = 'auto';
+    });
+    cy.reload();
+    cy.wait('@translationFeeds');
+    cy.wait('@translationArticles');
+    cy.get('.article-card').first().click();
+    cy.wait('@translationContent');
+    cy.wait('@translateTitle');
+    cy.wait('@translateText');
+    cy.then(() => {
+      // Automatic mode translates the visible list title and the opened
+      // article title. The backend article cache prevents duplicate provider
+      // usage even though both UI surfaces use the same API.
+      expect(titleTranslationCalls).to.equal(4);
+      expect(textTranslationCalls).to.equal(3);
     });
   });
 });

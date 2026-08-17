@@ -118,6 +118,11 @@ const zh: TranslationMessages = {
     },
     translation: {
       aiLimitReached: 'AI 使用量已达上限，正在使用免费替代方案。',
+      original: '原文',
+      translated: '译文',
+      translate: '翻译',
+      translating: '翻译中…',
+      failed: '翻译失败，请重试',
     },
     videoPlayer: {
       openInYouTube: '在 YouTube 中打开',
@@ -138,6 +143,7 @@ const zh: TranslationMessages = {
   common: {
     cancel: '取消',
     confirm: '确认',
+    retry: '重试',
     save: '保存',
     action: {
       add: '添加',
@@ -195,6 +201,7 @@ const zh: TranslationMessages = {
       fetchingArticleContent: '重新加载文章内容失败',
       fetchingFullArticle: '获取完整文章内容失败',
       invalidURLScheme: '无效的 URL 格式',
+      loadingSettings: '无法加载设置，请重试。',
       networkErrorCheckingUpdates:
         '无法连接到 GitHub 服务器。如果您在中国大陆，请尝试使用代理或VPN。',
       reorderingFeed: '重新排序订阅源失败',
@@ -714,6 +721,12 @@ const zh: TranslationMessages = {
       translatingContent: '正在翻译内容...',
       translation: '翻译',
       translationCredentialsRequired: '翻译服务需要 API 密钥或凭据',
+      translationModeManual: '手动翻译',
+      translationModeManualDesc: '仅在文章页面点击“翻译”后进行翻译',
+      translationModeAuto: '自动翻译',
+      translationModeAutoDesc: '打开符合条件的文章后自动翻译',
+      translationModeOff: '关闭翻译',
+      translationModeOffDesc: '完全关闭文章翻译功能',
       translationOnlyMode: '仅翻译模式',
       translationOnlyModeDesc: '仅显示翻译后的文本，隐藏原文',
       translationProvider: '翻译服务',

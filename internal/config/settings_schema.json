@@ -74,12 +74,12 @@
       "encrypted": false,
       "frontend_key": "hoverMarkAsRead"
     },
-    "translation_enabled": {
-      "type": "bool",
-      "default": false,
+    "translation_mode": {
+      "type": "string",
+      "default": "manual",
       "category": "translation",
       "encrypted": false,
-      "frontend_key": "translationEnabled"
+      "frontend_key": "translationMode"
     },
     "translation_only_mode": {
       "type": "bool",

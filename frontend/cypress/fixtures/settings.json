@@ -9,7 +9,7 @@
   "close_to_tray": true,
   "show_hidden_articles": false,
   "hover_mark_as_read": false,
-  "translation_enabled": false,
+  "translation_mode": "manual",
   "target_language": "zh",
   "translation_provider": "google",
   "deepl_api_key": "",

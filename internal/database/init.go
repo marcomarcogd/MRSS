@@ -2,7 +2,9 @@ package database
 
 import (
 	"MRSS/internal/config"
+	"database/sql"
 	"log"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -38,6 +40,12 @@ func (db *DB) Init() error {
 			value TEXT
 		)`)
 
+		// Migrate the legacy translation toggle before inserting defaults so an
+		// existing user's explicit choice is not hidden by the new manual default.
+		if err = migrateTranslationMode(db); err != nil {
+			return
+		}
+
 		// Insert default settings if they don't exist (using centralized defaults from config)
 		settingsKeys := config.SettingsKeys()
 		for _, key := range settingsKeys {
@@ -62,6 +70,48 @@ func (db *DB) Init() error {
 			// Don't return error — the app can still work without incremental vacuum
 		}
 	})
+	return err
+}
+
+// migrateTranslationMode converts the legacy translation_enabled toggle into
+// the three-state translation_mode setting. The legacy row is intentionally
+// retained for downgrade compatibility.
+func migrateTranslationMode(db *DB) error {
+	var mode string
+	err := db.DB.QueryRow("SELECT value FROM settings WHERE key = 'translation_mode'").Scan(&mode)
+	if err == nil {
+		normalized := strings.ToLower(strings.TrimSpace(mode))
+		if normalized != "manual" && normalized != "auto" && normalized != "off" {
+			log.Printf("Warning: invalid translation_mode %q; falling back to manual", mode)
+			normalized = "manual"
+		}
+		_, err = db.DB.Exec(
+			"INSERT OR REPLACE INTO settings (key, value) VALUES ('translation_mode', ?)",
+			normalized,
+		)
+		return err
+	}
+	if err != sql.ErrNoRows {
+		return err
+	}
+
+	mode = "manual"
+	var legacy string
+	legacyErr := db.DB.QueryRow("SELECT value FROM settings WHERE key = 'translation_enabled'").Scan(&legacy)
+	if legacyErr == nil {
+		if strings.EqualFold(strings.TrimSpace(legacy), "true") {
+			mode = "auto"
+		} else {
+			mode = "off"
+		}
+	} else if legacyErr != sql.ErrNoRows {
+		return legacyErr
+	}
+
+	_, err = db.DB.Exec(
+		"INSERT INTO settings (key, value) VALUES ('translation_mode', ?)",
+		mode,
+	)
 	return err
 }
 

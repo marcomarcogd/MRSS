@@ -121,7 +121,7 @@ export interface Settings {
   auto_cleanup_enabled: string;
   max_cache_size_mb: string;
   max_article_age_days: string;
-  translation_enabled: string;
+  translation_mode: 'manual' | 'auto' | 'off';
   target_language: string;
   translation_provider: string;
   deepl_api_key: string;

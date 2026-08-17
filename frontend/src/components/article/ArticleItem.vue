@@ -254,7 +254,10 @@ onUnmounted(() => {
         <!-- Normal mode or no translation: single line title -->
         <h4
           v-if="
-            !article.translated_title || article.translated_title === article.title || compactMode
+            settings.translation_mode === 'off' ||
+            !article.translated_title ||
+            article.translated_title === article.title ||
+            compactMode
           "
           class="flex-1 m-0 text-base sm:text-base font-semibold leading-snug text-text-primary article-title"
           :class="{
@@ -265,7 +268,11 @@ onUnmounted(() => {
           }"
         >
           <span
-            v-if="article.translated_title && article.translated_title !== article.title"
+            v-if="
+              settings.translation_mode !== 'off' &&
+              article.translated_title &&
+              article.translated_title !== article.title
+            "
             :class="{ 'read-translated-title': article.is_read && compactMode }"
           >
             {{ article.translated_title }}
@@ -273,7 +280,10 @@ onUnmounted(() => {
           <span v-else>{{ article.title }}</span>
           <span
             v-if="
-              compactMode && article.translated_title && article.translated_title !== article.title
+              compactMode &&
+              settings.translation_mode !== 'off' &&
+              article.translated_title &&
+              article.translated_title !== article.title
             "
             class="original-title-inline"
           >

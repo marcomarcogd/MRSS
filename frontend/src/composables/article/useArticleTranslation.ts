@@ -3,15 +3,21 @@ import { useI18n } from 'vue-i18n';
 import type { Article } from '@/types/models';
 
 interface TranslationSettings {
-  enabled: boolean;
+  mode: TranslationMode;
   targetLang: string;
   translationOnlyMode: boolean;
+}
+
+export type TranslationMode = 'manual' | 'auto' | 'off';
+
+function normalizeTranslationMode(value: unknown): TranslationMode {
+  return value === 'auto' || value === 'off' ? value : 'manual';
 }
 
 export function useArticleTranslation() {
   const { t } = useI18n();
   const translationSettings = ref<TranslationSettings>({
-    enabled: false,
+    mode: 'manual',
     targetLang: 'en',
     translationOnlyMode: false,
   });
@@ -24,7 +30,7 @@ export function useArticleTranslation() {
       const res = await fetch('/api/settings');
       const data = await res.json();
       translationSettings.value = {
-        enabled: data.translation_enabled === 'true',
+        mode: normalizeTranslationMode(data.translation_mode),
         targetLang: data.target_language || 'en',
         translationOnlyMode: data.translation_only_mode === 'true',
       };
@@ -41,8 +47,8 @@ export function useArticleTranslation() {
 
     observer = new IntersectionObserver(
       (entries) => {
-        // Check if translation is still enabled before processing
-        if (!translationSettings.value.enabled) {
+        // Article-list translation belongs exclusively to automatic mode.
+        if (translationSettings.value.mode !== 'auto') {
           return;
         }
 
@@ -72,7 +78,7 @@ export function useArticleTranslation() {
     );
 
     // Automatically observe all current article elements
-    if (listRef && translationSettings.value.enabled) {
+    if (listRef && translationSettings.value.mode === 'auto') {
       // Use setTimeout to ensure DOM is updated
       setTimeout(() => {
         const cards = listRef.querySelectorAll('[data-article-id]');
@@ -83,8 +89,7 @@ export function useArticleTranslation() {
 
   // Translate an article
   async function translateArticle(article: Article): Promise<void> {
-    // Don't translate if translation is disabled
-    if (!translationSettings.value.enabled) return;
+    if (translationSettings.value.mode !== 'auto') return;
     if (translatingArticles.value.has(article.id)) return;
 
     translatingArticles.value.add(article.id);
@@ -125,30 +130,22 @@ export function useArticleTranslation() {
 
   // Observe an article element
   function observeArticle(el: Element | null): void {
-    if (el && observer && translationSettings.value.enabled) {
+    if (el && observer && translationSettings.value.mode === 'auto') {
       observer.observe(el);
     }
   }
 
   // Update translation settings from event
-  function handleTranslationSettingsChange(enabled: boolean, targetLang: string): void {
+  function handleTranslationSettingsChange(mode: TranslationMode, targetLang: string): void {
     translationSettings.value = {
-      enabled,
+      mode,
       targetLang,
       translationOnlyMode: translationSettings.value.translationOnlyMode,
     };
 
-    // Disconnect observer if translation is disabled
-    if (!enabled && observer) {
+    if (mode !== 'auto' && observer) {
       observer.disconnect();
       observer = null;
-    }
-    // Re-observe if translation is enabled
-    else if (enabled && observer) {
-      setTimeout(() => {
-        const cards = document.querySelectorAll('[data-article-id]');
-        cards.forEach((card) => observer?.observe(card));
-      }, 100);
     }
   }
 

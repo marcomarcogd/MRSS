@@ -21,6 +21,7 @@ import ArticleCardItem from './ArticleCardItem.vue';
 import ArticleDetailModal from './ArticleDetailModal.vue';
 import AISearchBar from './AISearchBar.vue';
 import { useArticleTranslation } from '@/composables/article/useArticleTranslation';
+import type { TranslationMode } from '@/composables/article/useArticleTranslation';
 import { useArticleFilter } from '@/composables/article/useArticleFilter';
 import { useArticleActions } from '@/composables/article/useArticleActions';
 import { useShowPreviewImages } from '@/composables/ui/useShowPreviewImages';
@@ -222,7 +223,7 @@ onMounted(async () => {
     console.log('ArticleList settings loaded on mount:', settings.value.layout_mode);
 
     // Set up intersection observer for auto-translation
-    if (translationSettings.value.enabled && listRef.value) {
+    if (translationSettings.value.mode === 'auto' && listRef.value) {
       setupIntersectionObserver(listRef.value, store.articles);
     }
   } catch (e) {
@@ -273,7 +274,7 @@ watch(
   () => store.articles,
   async () => {
     // Re-setup observer to observe newly added articles
-    if (translationSettings.value.enabled && listRef.value) {
+    if (translationSettings.value.mode === 'auto' && listRef.value) {
       await nextTick();
       setupIntersectionObserver(listRef.value, store.articles);
     }
@@ -301,7 +302,7 @@ watch(
   () => filteredArticlesFromServer.value.length,
   async () => {
     // Re-setup observer to observe newly added filtered articles
-    if (translationSettings.value.enabled && listRef.value) {
+    if (translationSettings.value.mode === 'auto' && listRef.value) {
       await nextTick();
       setupIntersectionObserver(listRef.value, filteredArticlesFromServer.value);
     }
@@ -336,7 +337,6 @@ onBeforeUnmount(() => {
 
 interface CustomEventDetail {
   mode?: string;
-  enabled?: boolean;
   targetLang?: string;
 }
 
@@ -350,12 +350,13 @@ function onDefaultViewModeChanged(e: Event): void {
 
 function onTranslationSettingsChanged(e: Event): void {
   const customEvent = e as CustomEvent<CustomEventDetail>;
-  const { enabled, targetLang } = customEvent.detail;
-  if (enabled !== undefined && targetLang) {
-    handleTranslationSettingsChange(enabled, targetLang);
+  const translationMode = customEvent.detail.mode as TranslationMode | undefined;
+  const { targetLang } = customEvent.detail;
+  if (translationMode && targetLang) {
+    handleTranslationSettingsChange(translationMode, targetLang);
 
     // Re-setup observer if needed
-    if (enabled && listRef.value) {
+    if (translationMode === 'auto' && listRef.value) {
       setupIntersectionObserver(listRef.value, store.articles);
     }
   }

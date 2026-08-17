@@ -1,12 +1,40 @@
 package translation
 
 import (
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
 
 	"MRSS/internal/config"
 )
+
+type countingTranslator struct {
+	calls int
+}
+
+func (t *countingTranslator) Translate(text, targetLang string) (string, error) {
+	t.calls++
+	return fmt.Sprintf("[%s] %s", targetLang, text), nil
+}
+
+type memoryTranslationCache struct {
+	items map[string]string
+}
+
+func (c *memoryTranslationCache) key(hash, targetLang, provider string) string {
+	return hash + "\x00" + targetLang + "\x00" + provider
+}
+
+func (c *memoryTranslationCache) GetCachedTranslation(hash, targetLang, provider string) (string, bool, error) {
+	value, ok := c.items[c.key(hash, targetLang, provider)]
+	return value, ok, nil
+}
+
+func (c *memoryTranslationCache) SetCachedTranslation(hash, _ string, targetLang, translated, provider string) error {
+	c.items[c.key(hash, targetLang, provider)] = translated
+	return nil
+}
 
 func TestMockTranslator(t *testing.T) {
 	translator := NewMockTranslator()
@@ -30,6 +58,35 @@ func TestMockTranslator(t *testing.T) {
 	}
 	if translated2 != expected {
 		t.Errorf("Expected '%s', got '%s'", expected, translated2)
+	}
+}
+
+func TestCachedTranslatorReusesResultsByLanguageAndProvider(t *testing.T) {
+	cache := &memoryTranslationCache{items: make(map[string]string)}
+	base := &countingTranslator{}
+	google := NewCachedTranslator(base, cache, "google")
+
+	first, err := google.Translate("Hello", "zh")
+	if err != nil {
+		t.Fatalf("first Translate failed: %v", err)
+	}
+	second, err := google.Translate("Hello", "zh")
+	if err != nil {
+		t.Fatalf("cached Translate failed: %v", err)
+	}
+	if first != second || base.calls != 1 {
+		t.Fatalf("cache was not reused: first=%q second=%q calls=%d", first, second, base.calls)
+	}
+
+	if _, err := google.Translate("Hello", "ja"); err != nil {
+		t.Fatalf("different-language Translate failed: %v", err)
+	}
+	deepl := NewCachedTranslator(base, cache, "deepl")
+	if _, err := deepl.Translate("Hello", "zh"); err != nil {
+		t.Fatalf("different-provider Translate failed: %v", err)
+	}
+	if base.calls != 3 {
+		t.Fatalf("language/provider cache keys were not isolated; calls=%d, want 3", base.calls)
 	}
 }
 

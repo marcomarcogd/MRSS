@@ -17,7 +17,6 @@ import {
 } from '@phosphor-icons/vue';
 import {
   SettingGroup,
-  SettingWithToggle,
   NestedSettingsContainer,
   SubSettingItem,
   TextAreaControl,
@@ -25,6 +24,7 @@ import {
   NumberControl,
   ToggleControl,
   KeyValueList,
+  RadioGroupControl,
 } from '@/components/settings';
 import BaseSelect from '@/components/common/BaseSelect.vue';
 import AIProfileSelector from '@/components/modals/settings/ai/AIProfileSelector.vue';
@@ -132,15 +132,30 @@ async function clearTranslationCache() {
 
 <template>
   <SettingGroup :icon="PhGlobe" :title="t('setting.content.translation')">
-    <SettingWithToggle
-      :icon="PhTranslate"
-      :title="t('setting.content.enableTranslation')"
-      :description="t('setting.content.enableTranslationDesc')"
-      :model-value="settings.translation_enabled"
-      @update:model-value="updateSetting('translation_enabled', $event)"
+    <RadioGroupControl
+      name="translation-mode"
+      :model-value="settings.translation_mode"
+      :options="[
+        {
+          value: 'manual',
+          label: t('setting.content.translationModeManual'),
+          description: t('setting.content.translationModeManualDesc'),
+        },
+        {
+          value: 'auto',
+          label: t('setting.content.translationModeAuto'),
+          description: t('setting.content.translationModeAutoDesc'),
+        },
+        {
+          value: 'off',
+          label: t('setting.content.translationModeOff'),
+          description: t('setting.content.translationModeOffDesc'),
+        },
+      ]"
+      @update:model-value="updateSetting('translation_mode', $event)"
     />
 
-    <NestedSettingsContainer v-if="settings.translation_enabled">
+    <NestedSettingsContainer v-if="settings.translation_mode !== 'off'">
       <SubSettingItem
         :icon="PhTranslate"
         :title="t('setting.content.translationOnlyMode')"

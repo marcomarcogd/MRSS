@@ -37,6 +37,8 @@ const { settings, fetchSettings } = useSettings();
 // View state
 const showContent = ref(true);
 const showTranslations = ref(true);
+const articleContentRef = ref<{ startManualTranslation: () => Promise<void> } | null>(null);
+const translationState = ref<'idle' | 'loading' | 'ready'>('idle');
 const showFindInPage = ref(false);
 
 // Image viewer state
@@ -237,6 +239,16 @@ function toggleTranslations() {
   showTranslations.value = !showTranslations.value;
 }
 
+function startManualTranslation() {
+  return articleContentRef.value?.startManualTranslation();
+}
+
+function handleTranslationState(state: 'idle' | 'loading' | 'ready') {
+  translationState.value = state;
+  if (state === 'idle') showTranslations.value = false;
+  if (state === 'ready') showTranslations.value = true;
+}
+
 function openOriginal() {
   if (props.article?.url) {
     openInBrowser(props.article.url);
@@ -306,6 +318,7 @@ function handleOverlayClick(e: MouseEvent) {
           :article="article"
           :show-content="showContent"
           :show-translations="showTranslations"
+          :translation-state="translationState"
           :is-modal="true"
           @close="emit('close')"
           @toggle-content-view="toggleContentView"
@@ -314,6 +327,9 @@ function handleOverlayClick(e: MouseEvent) {
           @toggle-read-later="emit('toggleReadLater')"
           @open-original="openOriginal"
           @toggle-translations="toggleTranslations"
+          @translate="startManualTranslation"
+          @show-original="showTranslations = false"
+          @show-translation="showTranslations = true"
           @reload-content="handleReloadContent"
           @export-to-obsidian="exportToObsidian"
           @export-to-notion="exportToNotion"
@@ -335,6 +351,7 @@ function handleOverlayClick(e: MouseEvent) {
           <!-- RSS content view -->
           <ArticleContent
             v-else
+            ref="articleContentRef"
             :article="article"
             :article-content="articleContent"
             :is-loading-content="isLoadingContent"
@@ -343,6 +360,7 @@ function handleOverlayClick(e: MouseEvent) {
             :show-content="showContent"
             class="modal-prose-content"
             @retry-load-content="handleRetryLoadContent"
+            @translation-state="handleTranslationState"
           />
         </div>
 

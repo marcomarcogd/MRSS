@@ -48,7 +48,78 @@ func TestDatabaseInitialization(t *testing.T) {
 		t.Errorf("Expected at least 8 indexes, got %d", indexCount)
 	}
 
+	translationMode, err := db.GetSetting("translation_mode")
+	if err != nil {
+		t.Fatalf("Failed to read translation mode: %v", err)
+	}
+	if translationMode != "manual" {
+		t.Fatalf("Expected new database translation mode manual, got %q", translationMode)
+	}
+
 	// Schema version table removed in development - skip version check
+}
+
+func TestTranslationModeMigration(t *testing.T) {
+	tests := []struct {
+		name       string
+		legacy     *string
+		existing   *string
+		wantMode   string
+		wantLegacy *string
+	}{
+		{name: "legacy enabled", legacy: stringPointer("true"), wantMode: "auto", wantLegacy: stringPointer("true")},
+		{name: "legacy disabled", legacy: stringPointer("false"), wantMode: "off", wantLegacy: stringPointer("false")},
+		{name: "no legacy setting", wantMode: "manual"},
+		{name: "existing valid mode", existing: stringPointer("AUTO"), legacy: stringPointer("false"), wantMode: "auto", wantLegacy: stringPointer("false")},
+		{name: "existing invalid mode", existing: stringPointer("unexpected"), wantMode: "manual"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db, err := NewDB(":memory:")
+			if err != nil {
+				t.Fatalf("NewDB error: %v", err)
+			}
+			defer db.Close()
+
+			if _, err := db.Exec(`CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)`); err != nil {
+				t.Fatalf("create settings table: %v", err)
+			}
+			if tt.legacy != nil {
+				if _, err := db.Exec(`INSERT INTO settings (key, value) VALUES ('translation_enabled', ?)`, *tt.legacy); err != nil {
+					t.Fatalf("insert legacy setting: %v", err)
+				}
+			}
+			if tt.existing != nil {
+				if _, err := db.Exec(`INSERT INTO settings (key, value) VALUES ('translation_mode', ?)`, *tt.existing); err != nil {
+					t.Fatalf("insert mode: %v", err)
+				}
+			}
+
+			if err := migrateTranslationMode(db); err != nil {
+				t.Fatalf("migrateTranslationMode: %v", err)
+			}
+			var got string
+			if err := db.QueryRow(`SELECT value FROM settings WHERE key = 'translation_mode'`).Scan(&got); err != nil {
+				t.Fatalf("read mode: %v", err)
+			}
+			if got != tt.wantMode {
+				t.Fatalf("mode = %q, want %q", got, tt.wantMode)
+			}
+			if tt.wantLegacy != nil {
+				if err := db.QueryRow(`SELECT value FROM settings WHERE key = 'translation_enabled'`).Scan(&got); err != nil {
+					t.Fatalf("read legacy setting: %v", err)
+				}
+				if got != *tt.wantLegacy {
+					t.Fatalf("legacy = %q, want %q", got, *tt.wantLegacy)
+				}
+			}
+		})
+	}
+}
+
+func stringPointer(value string) *string {
+	return &value
 }
 
 func TestDatabasePerformanceWithIndexes(t *testing.T) {

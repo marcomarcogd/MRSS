@@ -116,7 +116,7 @@ type Defaults struct {
 	TencentSecretId               string `json:"tencent_secret_id"`
 	TencentSecretKey              string `json:"tencent_secret_key"`
 	Theme                         string `json:"theme"`
-	TranslationEnabled            bool   `json:"translation_enabled"`
+	TranslationMode               string `json:"translation_mode"`
 	TranslationOnlyMode           bool   `json:"translation_only_mode"`
 	TranslationProvider           string `json:"translation_provider"`
 	UiFontFamily                  string `json:"ui_font_family"`
@@ -345,8 +345,8 @@ func GetString(key string) string {
 		return defaults.TencentSecretKey
 	case "theme":
 		return defaults.Theme
-	case "translation_enabled":
-		return strconv.FormatBool(defaults.TranslationEnabled)
+	case "translation_mode":
+		return defaults.TranslationMode
 	case "translation_only_mode":
 		return strconv.FormatBool(defaults.TranslationOnlyMode)
 	case "translation_provider":

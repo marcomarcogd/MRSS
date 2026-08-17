@@ -13,11 +13,13 @@ interface Props {
   translationEnabled: boolean;
   translationSkipped?: boolean;
   isTranslatingContent?: boolean;
+  translationMode?: 'manual' | 'auto' | 'off';
 }
 
 const props = withDefaults(defineProps<Props>(), {
   translationSkipped: false,
   isTranslatingContent: false,
+  translationMode: 'off',
 });
 
 const emit = defineEmits<{
@@ -46,6 +48,9 @@ const showBilingualTitle = computed(() => {
 const translationStatusText = computed(() => {
   if (props.translationSkipped) {
     return t('setting.content.translationSkippedAlreadyTarget');
+  }
+  if (props.translationMode === 'manual') {
+    return t('article.translation.translated');
   }
   return t('common.toast.autoTranslateEnabled');
 });

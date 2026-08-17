@@ -19,7 +19,7 @@ export function useSettingsValidation(settings: Ref<SettingsData>) {
    * Check if translation settings are valid
    */
   const isTranslationValid = computed(() => {
-    if (!settings.value.translation_enabled) {
+    if (settings.value.translation_mode === 'off') {
       return true; // Not enabled, so no validation needed
     }
 

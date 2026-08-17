@@ -78,9 +78,9 @@ func TestHandleSettings_POST(t *testing.T) {
 	h := setupHandlerWithDB(t)
 
 	payload := map[string]string{
-		"update_interval":     "15",
-		"translation_enabled": "true",
-		"deepl_api_key":       "deadbeef",
+		"update_interval":  "15",
+		"translation_mode": "auto",
+		"deepl_api_key":    "deadbeef",
 	}
 	body, _ := json.Marshal(payload)
 
@@ -105,6 +105,10 @@ func TestHandleSettings_POST(t *testing.T) {
 	if v2 != "true" {
 		t.Fatalf("expected translation_enabled true, got %s", v2)
 	}
+	mode, _ := h.DB.GetSetting("translation_mode")
+	if mode != "auto" {
+		t.Fatalf("expected translation_mode auto, got %s", mode)
+	}
 
 	// Encrypted key should be retrievable via GetEncryptedSetting
 	dec, err := h.DB.GetEncryptedSetting("deepl_api_key")
@@ -113,6 +117,38 @@ func TestHandleSettings_POST(t *testing.T) {
 	}
 	if dec != "deadbeef" {
 		t.Fatalf("expected deepl_api_key decrypted to be deadbeef, got %s", dec)
+	}
+}
+
+func TestHandleSettings_POSTTranslationModeCompatibility(t *testing.T) {
+	tests := []struct {
+		mode       string
+		wantMode   string
+		wantLegacy string
+	}{
+		{mode: "manual", wantMode: "manual", wantLegacy: "false"},
+		{mode: "auto", wantMode: "auto", wantLegacy: "true"},
+		{mode: "off", wantMode: "off", wantLegacy: "false"},
+		{mode: "invalid", wantMode: "manual", wantLegacy: "false"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.mode, func(t *testing.T) {
+			h := setupHandlerWithDB(t)
+			body, _ := json.Marshal(map[string]string{"translation_mode": tt.mode})
+			req := httptest.NewRequest(http.MethodPost, "/api/settings", bytes.NewReader(body))
+			w := httptest.NewRecorder()
+
+			HandleSettings(h, w, req)
+			if w.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+			}
+			mode, _ := h.DB.GetSetting("translation_mode")
+			legacy, _ := h.DB.GetSetting("translation_enabled")
+			if mode != tt.wantMode || legacy != tt.wantLegacy {
+				t.Fatalf("mode/legacy = %q/%q, want %q/%q", mode, legacy, tt.wantMode, tt.wantLegacy)
+			}
+		})
 	}
 }
 

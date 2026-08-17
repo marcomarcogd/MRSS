@@ -121,6 +121,11 @@ const en: TranslationMessages = {
     },
     translation: {
       aiLimitReached: 'AI usage limit reached. Using free alternatives.',
+      original: 'Original',
+      translated: 'Translation',
+      translate: 'Translate',
+      translating: 'Translating…',
+      failed: 'Translation failed. Please try again.',
     },
     videoPlayer: {
       openInYouTube: 'Open in YouTube',
@@ -143,6 +148,7 @@ const en: TranslationMessages = {
   common: {
     cancel: 'Cancel',
     confirm: 'Confirm',
+    retry: 'Retry',
     save: 'Save',
     action: {
       add: 'Add',
@@ -200,6 +206,7 @@ const en: TranslationMessages = {
       fetchingArticleContent: 'Failed to reload article content',
       fetchingFullArticle: 'Failed to fetch full article content',
       invalidURLScheme: 'Invalid URL scheme',
+      loadingSettings: 'Unable to load settings. Please try again.',
       networkErrorCheckingUpdates:
         'Unable to connect to GitHub servers. If you are in mainland China, please try using a proxy or VPN.',
       reorderingFeed: 'Failed to reorder feed',
@@ -728,6 +735,12 @@ const en: TranslationMessages = {
       translatingContent: 'Translating content...',
       translation: 'Translation',
       translationCredentialsRequired: 'Translation service requires API key or credentials',
+      translationModeManual: 'Manual translation',
+      translationModeManualDesc: 'Translate only after clicking Translate in the article view',
+      translationModeAuto: 'Automatic translation',
+      translationModeAutoDesc: 'Automatically translate eligible articles when opened',
+      translationModeOff: 'Translation off',
+      translationModeOffDesc: 'Disable article translation completely',
       translationOnlyMode: 'Translation Only Mode',
       translationOnlyModeDesc: 'Show only translated text, hide original content',
       translationProvider: 'Translation Provider',

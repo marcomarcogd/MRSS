@@ -15,6 +15,7 @@ import {
   PhLinkSimple,
   PhTranslate,
   PhArrowClockwise,
+  PhSpinnerGap,
 } from '@phosphor-icons/vue';
 import type { Article } from '@/types/models';
 import { copyArticleLink } from '@/utils/clipboard';
@@ -35,11 +36,13 @@ interface Props {
   showContent: boolean;
   showTranslations?: boolean;
   isModal?: boolean;
+  translationState?: 'idle' | 'loading' | 'ready';
 }
 
 withDefaults(defineProps<Props>(), {
   showTranslations: true,
   isModal: false,
+  translationState: 'idle',
 });
 
 defineEmits<{
@@ -50,6 +53,9 @@ defineEmits<{
   toggleReadLater: [];
   openOriginal: [];
   toggleTranslations: [];
+  translate: [];
+  showOriginal: [];
+  showTranslation: [];
   reloadContent: [];
   exportToObsidian: [];
   exportToNotion: [];
@@ -96,7 +102,37 @@ async function copyLink(article: Article) {
         <PhArticle v-else :size="18" class="sm:w-5 sm:h-5" />
       </button>
       <button
-        v-if="showContent && settings.translation_enabled && !settings.translation_only_mode"
+        v-if="showContent && settings.translation_mode === 'manual' && translationState !== 'ready'"
+        class="manual-translate-btn"
+        :disabled="translationState === 'loading'"
+        :title="t('article.translation.translate')"
+        @click="$emit('translate')"
+      >
+        <PhSpinnerGap v-if="translationState === 'loading'" :size="16" class="animate-spin" />
+        <PhTranslate v-else :size="16" />
+        <span>{{
+          translationState === 'loading'
+            ? t('article.translation.translating')
+            : t('article.translation.translate')
+        }}</span>
+      </button>
+      <div
+        v-else-if="
+          showContent && settings.translation_mode === 'manual' && translationState === 'ready'
+        "
+        class="translation-view-toggle"
+      >
+        <button :class="{ active: !showTranslations }" @click="$emit('showOriginal')">
+          {{ t('article.translation.original') }}
+        </button>
+        <button :class="{ active: showTranslations }" @click="$emit('showTranslation')">
+          {{ t('article.translation.translated') }}
+        </button>
+      </div>
+      <button
+        v-else-if="
+          showContent && settings.translation_mode === 'auto' && !settings.translation_only_mode
+        "
         class="action-btn"
         :title="
           showTranslations
@@ -220,5 +256,21 @@ async function copyLink(article: Article) {
 @reference "../../style.css";
 .action-btn {
   @apply text-lg sm:text-xl cursor-pointer text-text-secondary p-1 sm:p-1.5 rounded-md transition-colors hover:bg-bg-tertiary hover:text-text-primary;
+}
+
+.manual-translate-btn {
+  @apply inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-secondary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-60;
+}
+
+.translation-view-toggle {
+  @apply inline-flex items-center rounded-md border border-border bg-bg-tertiary p-0.5;
+}
+
+.translation-view-toggle button {
+  @apply rounded px-2 py-1 text-xs text-text-secondary transition-colors hover:text-text-primary;
+}
+
+.translation-view-toggle button.active {
+  @apply bg-bg-primary text-text-primary shadow-sm;
 }
 </style>
