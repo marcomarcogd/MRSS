@@ -12,7 +12,7 @@ set -e
 
 APP_NAME="MRSS"
 # Get version from frontend/package.json if available, otherwise use default
-VERSION=$(grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' frontend/package.json 2>/dev/null | head -1 | sed 's/.*"\([^"]*\)".*/\1/' || echo "1.3.24")
+VERSION=$(grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' frontend/package.json 2>/dev/null | head -1 | sed 's/.*"\([^"]*\)".*/\1/' || echo "1.5.0")
 APP_PUBLISHER="marcomarcogd"
 APP_URL="https://github.com/marcomarcogd/MRSS"
 APP_DESCRIPTION="A Modern, Cross-Platform Desktop RSS Reader"

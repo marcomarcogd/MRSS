@@ -15,7 +15,8 @@ import { ref, onMounted } from 'vue';
 import { useAppStore } from '@/stores/app';
 import { useI18n } from 'vue-i18n';
 import { useArticleFilter } from '@/composables/article/useArticleFilter';
-import LogoSvg from '../../../public/assets/logo.svg';
+
+const LOGO_URL = '/assets/logo.svg';
 
 const store = useAppStore();
 const { t } = useI18n();
@@ -198,7 +199,7 @@ defineExpose({
     >
       <!-- Logo -->
       <div class="mb-6">
-        <img :src="LogoSvg" alt="MRSS" class="w-6 h-6" />
+        <img :src="LOGO_URL" alt="MRSS" class="w-6 h-6" />
       </div>
 
       <!-- Divider -->
@@ -346,37 +347,18 @@ defineExpose({
 .nav-items-container {
   /* Smooth height transition when items are added/removed */
   transition: height 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  /* Reserve the scrollbar space on both sides so centered icons stay centered. */
-  scrollbar-gutter: stable both-edges;
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
-}
-
-.nav-items-container:hover,
-.nav-items-container:focus-within {
-  scrollbar-color: var(--border-color) transparent;
+  /*
+   * Keep scrolling available without reserving a native scrollbar gutter.
+   * WKWebView and Chromium calculate `scrollbar-gutter: stable both-edges`
+   * differently, which can shift the navigation icons away from the fixed
+   * activity-bar centre line on macOS.
+   */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 .nav-items-container::-webkit-scrollbar {
-  width: 4px;
-}
-
-.nav-items-container::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.nav-items-container::-webkit-scrollbar-thumb {
-  background: transparent;
-  border-radius: 2px;
-}
-
-.nav-items-container:hover::-webkit-scrollbar-thumb,
-.nav-items-container:focus-within::-webkit-scrollbar-thumb {
-  background: var(--border-color);
-}
-
-.nav-items-container::-webkit-scrollbar-thumb:hover {
-  background: var(--text-secondary);
+  display: none;
 }
 
 /* Nav item enter/leave transitions */

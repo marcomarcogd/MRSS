@@ -113,7 +113,8 @@ def main() -> int:
         swagger = json.load(handle)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(generate(swagger), encoding="utf-8", newline="\n")
+    with output_path.open("w", encoding="utf-8", newline="\n") as handle:
+        handle.write(generate(swagger))
     return 0
 
 

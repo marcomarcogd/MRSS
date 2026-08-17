@@ -8,6 +8,25 @@ import { setSettingsFromRawData } from './composables/core/useSettings';
 
 const app = createApp(App);
 const pinia = createPinia();
+const ARTICLE_SCROLL_POSITIONS_KEY = 'mrssArticleScrollPositions';
+const LEGACY_ARTICLE_SCROLL_POSITIONS_KEY = 'mrrssArticleScrollPositions';
+
+function migrateLegacyLocalStorage() {
+  try {
+    if (
+      !localStorage.getItem(ARTICLE_SCROLL_POSITIONS_KEY) &&
+      localStorage.getItem(LEGACY_ARTICLE_SCROLL_POSITIONS_KEY)
+    ) {
+      localStorage.setItem(
+        ARTICLE_SCROLL_POSITIONS_KEY,
+        localStorage.getItem(LEGACY_ARTICLE_SCROLL_POSITIONS_KEY) as string
+      );
+      localStorage.removeItem(LEGACY_ARTICLE_SCROLL_POSITIONS_KEY);
+    }
+  } catch (error) {
+    console.warn('Failed to migrate legacy local storage:', error);
+  }
+}
 
 // Add global error handler for Vue errors
 app.config.errorHandler = (err, instance, info) => {
@@ -26,6 +45,8 @@ app.use(PhosphorIcons);
 
 // Initialize language setting before mounting
 async function initializeApp() {
+  migrateLegacyLocalStorage();
+
   try {
     const res = await fetch('/api/settings');
     if (!res.ok) {

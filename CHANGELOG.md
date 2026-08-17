@@ -5,6 +5,80 @@ All notable changes to MRSS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-08-17
+
+### 中文
+
+#### 新增
+
+- 同步上游 v1.3.26：支持翻译文章摘要，并补齐当前订阅、分类及未分类范围的“全部已读”行为。
+- 新增本机中文字体检测，界面字体与文章正文字体可分别选择已安装的思源、Noto、更纱和霞鹜文楷系列字体，不下载或内置字体文件。
+- 新增 MRSS 品牌图标，并统一桌面端、服务端、网站、Docker、Skill、安装包与便携包的产品名称和发行资产名称。
+
+#### 改进
+
+- 将复刻版正式更名为 MRSS，源码、问题反馈、应用内更新和发布下载统一指向 `marcomarcogd/MRSS`。
+- 更新 Wails、前端依赖与 Tailwind CSS 4，并合并文章图标、快捷键显示、右键菜单及活动栏居中等上游改进。
+- 界面字体与字号移动到“常规 → 应用”的语言设置下方；文章正文继续使用独立字体、字号和行高。
+- 非便携模式首次启动会在数据库打开前安全迁移旧 `MrRSS` 数据目录；迁移失败时继续使用旧目录，新旧数据库同时存在时优先新目录且不改动旧目录。
+- 新设置使用 `MRSS_*` 环境变量和 `MRSS-v1:` 加密标记，同时继续兼容旧 `MRRSS_*` 变量及 `MrRSS-v1:` 加密数据。
+- 安装包、便携包、DMG、AppImage、Linux 系统包、Docker 镜像和 Skill 包均附带 GPL-3.0 许可证与对应源码入口。
+
+#### 修复
+
+- 修复 Atom 条目缺少可用链接时文章标题与正文串文的问题，空 URL 不再参与匹配，并使用标题和发布时间兜底。
+- 修复无 `pubDate` 文章的首次抓取时间、卡片布局切换、当前范围全部已读及未分类订阅处理问题。
+- 修复 macOS WebKit 中原生滚动槽导致活动栏菜单图标偏离中心线的问题，所有图标与底部操作保持对齐。
+- 修复快速切换设置标签时待保存内容被取消的问题，并在更新下载过程中显示实时进度。
+- 修复旧版文章阅读位置本地存储键未在启动时迁移的问题。
+- 移除旧版向外部服务发送启动事件、设备标识和系统版本的统计代码，并在数据目录迁移时清理旧设备标识文件。
+
+#### 升级说明
+
+- v1.4.2 及更早版本使用旧仓库白名单，无法通过应用内更新自动安装 v1.5.0。请从 `marcomarcogd/MRSS` 的 Releases 页面手动下载并安装一次；升级到 v1.5.0 后，应用内更新会继续使用 MRSS 仓库。
+- 便携模式仍使用程序旁的 `data/`，服务器模式仍使用当前目录的 `./data`，不会迁移或删除这些目录。
+
+#### 开源与归属
+
+- MRSS 是基于 `DevXDojo/MrRSS` 修改的非官方复刻版，修改日期为 2026-08-17，与上游维护者不存在官方隶属或背书关系。
+- 本发行版遵循 GNU GPL-3.0，保留原始许可证、既有版权声明和 Git 历史；对应源码位于 `https://github.com/marcomarcogd/MRSS`，软件不提供任何担保。
+
+### English
+
+#### Added
+
+- Synced upstream v1.3.26, including article-summary translation and correctly scoped mark-all-as-read behavior for feeds, categories, and uncategorized feeds.
+- Added local detection for installed Chinese Noto, Source Han, Sarasa, and LXGW WenKai fonts. Interface and article typography remain independent, and no font files are downloaded or bundled.
+- Added a distinct MRSS icon and unified product and asset names across desktop, server, website, Docker, skills, installers, and portable packages.
+
+#### Changed
+
+- Renamed the fork to MRSS. Source code, issue reporting, in-app updates, and release downloads now point to `marcomarcogd/MRSS`.
+- Updated Wails, frontend dependencies, and Tailwind CSS 4, and integrated upstream improvements for article icons, shortcut labels, context menus, and activity-bar alignment.
+- Moved interface font and size controls below Language in General → Application while keeping article font, size, and line height independent.
+- On first non-portable launch, the legacy `MrRSS` data directory is migrated safely before the database opens. MRSS falls back to the legacy directory if an atomic rename fails and leaves it untouched when both databases exist.
+- New settings use `MRSS_*` environment variables and the `MRSS-v1:` encryption marker while remaining compatible with legacy `MRRSS_*` variables and `MrRSS-v1:` encrypted values.
+- Installers, portable packages, DMGs, AppImages, Linux system packages, Docker images, and skill packages now include the GPL-3.0 license and a corresponding source-code reference.
+
+#### Fixed
+
+- Fixed article title/content mismatches for Atom entries without usable links. Empty URLs no longer match, with title and publication time used as fallbacks.
+- Fixed first-seen timestamps for articles without `pubDate`, card-layout switching, scoped mark-all-as-read behavior, and uncategorized-feed handling.
+- Fixed native scrollbar gutters shifting activity-bar icons off the centre line in macOS WebKit, keeping every icon aligned with the bottom actions.
+- Fixed pending settings changes being discarded when tabs are switched quickly, and added visible progress while an update is downloading.
+- Fixed the legacy article reading-position local-storage key not being migrated during startup.
+- Removed the legacy external startup analytics code that sent launch events, device identifiers, and system versions, and added cleanup for the old identifier file during data migration.
+
+#### Upgrade notes
+
+- Releases v1.4.2 and earlier trust the old repository and cannot install v1.5.0 through in-app updates. Download and install v1.5.0 once from the `marcomarcogd/MRSS` Releases page; later in-app updates will use the MRSS repository.
+- Portable mode continues to use the adjacent `data/` directory, and server mode continues to use `./data`; these directories are not migrated or deleted.
+
+#### Open-source attribution
+
+- MRSS is an unofficial modified fork based on `DevXDojo/MrRSS`, modified on 2026-08-17, and is not endorsed by or affiliated with the upstream maintainers.
+- This release is distributed under GNU GPL-3.0 with the original license, existing copyright notices, and Git history preserved. Corresponding source is available at `https://github.com/marcomarcogd/MRSS`; the software is provided without warranty.
+
 ## [1.4.2] - 2026-08-13
 
 ### Fixed

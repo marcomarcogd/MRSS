@@ -32,7 +32,7 @@ import (
 )
 
 // @title           MRSS API
-// @version         1.4.2
+// @version         1.5.0
 // @description     MRSS is a modern, cross-platform desktop RSS reader with auto-translation, smart feed discovery, and AI-powered summarization.
 
 // @contact.name   API Support
