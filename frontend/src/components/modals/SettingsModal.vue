@@ -258,7 +258,6 @@ function handleDiscoverAll() {
               @batch-set-image-mode="handleBatchSetImageMode"
               @batch-unset-image-mode="handleBatchUnsetImageMode"
               @discover-all="handleDiscoverAll"
-              @select-feed="emit('close')"
               @update:settings="settings = $event"
             />
 

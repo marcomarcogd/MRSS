@@ -235,7 +235,7 @@ describe('Feed Management settings list', () => {
     last_error: id % 3 === 0 ? 'connection timeout' : '',
   });
 
-  it('keeps API order and renders 120 compact rows without long-text overflow', () => {
+  it('keeps API order and renders every feed column for 120 rows without page overflow', () => {
     const longChineseTitle = `这是一个用于验证订阅源列表不会被超长中文标题撑开的标题${'非常长'.repeat(20)}`;
     const longEnglishTitle = `An exceptionally long English feed title ${'with more words '.repeat(20)}`;
     const feeds = [
@@ -245,13 +245,19 @@ describe('Feed Management settings list', () => {
         `https://example.com/${'very-long-path/'.repeat(20)}feed.xml`
       ),
       makeFeed(100, longEnglishTitle),
-      makeFeed(500, 'No icon feed', 'rsshub://invalid-icon-source'),
+      {
+        ...makeFeed(500, 'No icon feed', 'rsshub://invalid-icon-source'),
+        category: '',
+        latest_article_time: undefined,
+        articles_per_month: undefined,
+      },
       ...Array.from({ length: 117 }, (_, index) =>
         makeFeed(index + 1, `Feed ${String(index + 1).padStart(3, '0')}`)
       ),
     ];
 
     cy.intercept('GET', '/api/feeds', { statusCode: 200, body: feeds }).as('layoutFeeds');
+    cy.viewport(960, 720);
     cy.visit('/');
     cy.wait('@layoutFeeds');
     openFeedSettings();
@@ -268,6 +274,23 @@ describe('Feed Management settings list', () => {
       .should('have.attr', 'title')
       .and('include', 'very-long-path');
     cy.get('[data-feed-id="500"] [data-testid="feed-icon-fallback"]').should('exist');
+    cy.get('[data-testid="feed-column-name"]').should('be.visible');
+    cy.get('[data-testid="feed-column-category"]').should('be.visible');
+    cy.get('[data-testid="feed-column-latest"]').should('exist');
+    cy.get('[data-testid="feed-column-frequency"]').should('exist');
+    cy.get('[data-testid="feed-column-status"]').should('exist');
+    cy.get('[data-testid="feed-column-actions"]').should('exist');
+
+    cy.get('[data-feed-id="900"] [data-testid="feed-category"]')
+      .should('have.attr', 'title', 'News')
+      .and('contain.text', 'News');
+    cy.get('[data-feed-id="900"] [data-testid="feed-latest"]')
+      .should('have.attr', 'title', '2026-08-17T07:00:00Z')
+      .and('not.be.empty');
+    cy.get('[data-feed-id="900"] [data-testid="feed-frequency"]').should('have.text', '900');
+    cy.get('[data-feed-id="500"] [data-testid="feed-category"]').should('have.text', '-');
+    cy.get('[data-feed-id="500"] [data-testid="feed-latest"]').should('have.text', '-');
+    cy.get('[data-feed-id="500"] [data-testid="feed-frequency"]').should('have.text', '0');
 
     cy.get('[data-testid="feed-row"]')
       .first()
@@ -277,7 +300,12 @@ describe('Feed Management settings list', () => {
         expect(height).to.be.at.most(72);
       });
     cy.get('[data-testid="feed-list"]').then(($list) => {
-      expect($list[0].scrollWidth).to.be.at.most($list[0].clientWidth + 1);
+      expect($list[0].scrollWidth).to.be.greaterThan($list[0].clientWidth);
+    });
+    cy.document().then((document) => {
+      expect(document.documentElement.scrollWidth).to.be.at.most(
+        document.documentElement.clientWidth + 1
+      );
     });
   });
 
@@ -343,5 +371,83 @@ describe('Feed Management settings list', () => {
     cy.get('[data-feed-id="3"] [title]')
       .filter('[title*="timeout"], [title*="超时"]')
       .should('exist');
+  });
+
+  it('opens edit from an editable row without closing Settings or reacting to locked rows', () => {
+    const lockedFeed = { ...makeFeed(2, 'FreshRSS feed'), is_freshrss_source: true };
+    cy.intercept('GET', '/api/feeds', {
+      statusCode: 200,
+      body: [makeFeed(1, 'Editable feed'), lockedFeed],
+    }).as('editableFeeds');
+    cy.visit('/');
+    cy.wait('@editableFeeds');
+    openFeedSettings();
+
+    cy.get('[data-settings-modal="true"] [data-feed-id="1"] input[type="checkbox"]').click();
+    cy.contains('h3', /Edit Feed|编辑订阅/).should('not.exist');
+
+    cy.get('[data-settings-modal="true"] [data-feed-id="1"]').click();
+    cy.get('[data-settings-modal="true"]').should('exist');
+    cy.contains('h3', /Edit Feed|编辑订阅/)
+      .should('be.visible')
+      .parent()
+      .parent()
+      .find('button')
+      .click();
+
+    cy.get('[data-settings-modal="true"]').should('be.visible');
+    cy.contains('h3', /Edit Feed|编辑订阅/).should('not.exist');
+    cy.get('[data-settings-modal="true"] [data-feed-id="2"]').click();
+    cy.contains('h3', /Edit Feed|编辑订阅/).should('not.exist');
+    cy.get('[data-settings-modal="true"]').should('be.visible');
+  });
+
+  it('keeps Manage Tags open for empty and legacy null tag responses', () => {
+    cy.intercept('GET', '/api/feeds', {
+      statusCode: 200,
+      body: [makeFeed(1, 'Tagged feed')],
+    }).as('tagFeeds');
+    cy.intercept('GET', '/api/tags', { statusCode: 200, body: null }).as('nullTags');
+    cy.visit('/');
+    cy.wait('@tagFeeds');
+    openFeedSettings();
+
+    cy.contains('button', /Manage Tags|管理标签/).click();
+    cy.get('[data-testid="tag-management-empty"]').should('be.visible');
+    cy.get('[data-settings-modal="true"]').should('exist');
+    cy.contains('h3', /Manage Tags|管理标签/).parent().parent().find('button').click();
+    cy.get('[data-settings-modal="true"]').should('be.visible');
+  });
+
+  it('keeps the tag dialog open and retries after a tag request failure', () => {
+    let failTagRequests = false;
+    cy.intercept('GET', '/api/feeds', {
+      statusCode: 200,
+      body: [makeFeed(1, 'Tagged feed')],
+    }).as('retryTagFeeds');
+    cy.intercept('GET', '/api/tags', (request) => {
+      request.reply(
+        failTagRequests
+          ? { statusCode: 503, body: { error: 'service unavailable' } }
+          : { statusCode: 200, body: [] }
+      );
+    });
+    cy.visit('/');
+    cy.wait('@retryTagFeeds');
+    openFeedSettings();
+    cy.then(() => {
+      failTagRequests = true;
+    });
+
+    cy.contains('button', /Manage Tags|管理标签/).click();
+    cy.get('[data-testid="tag-management-error"]').should('be.visible');
+    cy.get('[data-settings-modal="true"]').should('exist');
+    cy.then(() => {
+      failTagRequests = false;
+    });
+    cy.get('[data-testid="tag-management-error"] button')
+      .contains(/Retry|重试/)
+      .click();
+    cy.get('[data-testid="tag-management-empty"]').should('be.visible');
   });
 });

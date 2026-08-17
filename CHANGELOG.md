@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### 改进
 
-- 重整“设置 → 订阅源”为紧凑的双层信息列表，保留用户原有顺序，并补充图标回退、长名称与长地址省略、完整内容提示、加载骨架、错误重试和可选排序。
+- 重整“设置 → 订阅源”为紧凑的完整列式列表，保留名称/地址、分类、最新文章、更新频率、状态与操作，并继续支持图标回退、长文本提示、加载骨架、错误重试、原有顺序和可选排序。
 - Windows 应用图标改为包含 16–256px 多级资源的透明 ICO；系统托盘使用独立的 16–32px 浅色/深色多级图标，并由同一 MRSS SVG 确定性生成。
 - 设置弹窗在加载完成后建立保存基线，只提交实际变化的字段；单纯打开、切换标签或关闭设置不再重复保存整份配置。
 - Windows 预发布检查实际构建 AMD64/ARM64 可执行文件和 NSIS 安装包，并上传测试产物；安装包构建失败会直接阻止检查通过。
@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 修复 Windows 打开或关闭设置时由重复执行 `reg.exe` 引起的命令行窗口闪烁：启动项只在值变化时处理，并改用原生注册表 API，保存失败时会回滚系统状态。
 - 修复 Windows 更新安装程序经 `cmd.exe` 中转以及 Python、PowerShell、Node.js 等后台订阅脚本创建可见 Console 的问题，同时继续记录标准输出、错误输出和失败日志。
 - 修复订阅源设置列表中长标题、长 URL、缺失图标及大量订阅造成的布局错乱，不改变 Feed API、数据库结构或订阅排序数据。
+- 修复点击订阅源整行时设置弹窗被错误关闭的问题；现在整行点击会打开编辑弹窗，FreshRSS 锁定订阅不响应编辑。
+- 修复没有任何标签时“管理标签”弹窗因 `/api/tags` 返回 `null` 而闪退的问题，并增加加载、空状态、错误提示和重试。
 - 修复手动或关闭翻译模式下打开文章仍可能自动请求翻译的问题，并限制正文翻译查询到当前文章容器，避免主视图与弹窗相互串用。
 
 #### Windows 签名说明
@@ -42,7 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Changed
 
-- Reworked Settings → Feeds into a compact two-level list that preserves the user's existing order and adds icon fallbacks, ellipsis and full-value tooltips, loading skeletons, retryable errors, and optional sorting.
+- Reworked Settings → Feeds into a compact full-column list that keeps name/source, category, latest article, update frequency, status, and actions while preserving icon fallbacks, full-value tooltips, loading skeletons, retryable errors, stored order, and optional sorting.
 - Rebuilt the transparent Windows app ICO with 16–256px frames and added dedicated 16–32px light/dark tray ICOs, all generated deterministically from the canonical MRSS SVG.
 - Settings now establish a baseline after loading and submit only fields that actually changed. Opening, switching tabs, or closing the dialog no longer resaves the entire configuration.
 - Windows pre-release checks now build real AMD64/ARM64 executables and NSIS installers and upload test artifacts; installer failures now fail the check.
@@ -52,6 +54,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed command-window flashes when opening or closing Settings on Windows. Startup registration now runs only when its value changes, uses the native registry API instead of repeated `reg.exe` calls, and rolls back the system state if persistence fails.
 - Removed the `cmd.exe` intermediary when launching Windows update installers and prevented Python, PowerShell, Node.js, and other background feed scripts from creating visible consoles while preserving stdout, stderr, and error logging.
 - Fixed feed-setting layout breakage caused by long titles, long URLs, missing icons, and large subscription lists without changing the Feed API, database schema, or persisted feed order.
+- Fixed feed-row clicks incorrectly closing Settings. Clicking an editable row now opens the edit dialog, while locked FreshRSS feeds remain non-editable.
+- Fixed Manage Tags disappearing when an empty tag database returned `null`, with explicit loading, empty, error, and retry states.
 - Prevented article-open translation requests in manual and off modes, and scoped body translation to the current article container so the main reader and popup cannot reuse each other's DOM.
 
 #### Windows signing notice

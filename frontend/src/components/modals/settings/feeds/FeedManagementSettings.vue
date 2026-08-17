@@ -22,16 +22,15 @@ import type { Feed } from '@/types/models';
 import type { SelectOption } from '@/types/select';
 import { useAppStore } from '@/stores/app';
 import { useFeedManagement } from '@/composables/feed/useFeedManagement';
-import { useSidebar } from '@/composables/core/useSidebar';
+import { formatRelativeTime } from '@/utils/date';
 import BaseSelect from '@/components/common/BaseSelect.vue';
 import { ButtonControl, SettingGroup } from '@/components/settings';
 import BatchActionsDropdown from './BatchActionsDropdown.vue';
 import BatchTagSelectorModal from './BatchTagSelectorModal.vue';
 
 const store = useAppStore();
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const { addTagsToFeeds } = useFeedManagement();
-const { expandCategoryForFeed } = useSidebar();
 
 const emit = defineEmits<{
   'add-feed': [];
@@ -42,7 +41,6 @@ const emit = defineEmits<{
   'batch-add-tags': [ids: number[]];
   'batch-set-image-mode': [ids: number[]];
   'batch-unset-image-mode': [ids: number[]];
-  'select-feed': [feedId: number];
   'manage-tags': [];
 }>();
 
@@ -215,17 +213,9 @@ function toggleSelectAll(event: Event) {
   selectedFeeds.value = target.checked ? selectableSortedFeeds.value.map((feed) => feed.id) : [];
 }
 
-async function handleFeedClick(feed: Feed, event: Event) {
-  const target = event.target as HTMLElement;
-  if (target.closest('button, input, a')) return;
-
-  await store.setFilter('all');
-  while (store.isLoading) {
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-  store.setFeed(feed.id);
-  expandCategoryForFeed(feed.id);
-  emit('select-feed', feed.id);
+function handleFeedClick(feed: Feed) {
+  if (feed.is_freshrss_source) return;
+  emit('edit-feed', feed);
 }
 
 function handleShowBatchTagSelector(event: Event) {
@@ -407,21 +397,27 @@ onUnmounted(() =>
         </button>
       </div>
 
-      <div class="max-h-[32rem] overflow-y-auto scroll-smooth" data-testid="feed-list">
+      <div class="max-h-[32rem] overflow-auto scroll-smooth" data-testid="feed-list">
         <template v-if="isInitialLoading">
-          <div
-            v-for="index in 6"
-            :key="index"
-            class="flex min-h-16 items-center gap-3 border-b border-border/70 px-3 py-2 last:border-0"
-            data-testid="feed-list-loading"
-          >
-            <div class="h-4 w-4 animate-pulse rounded bg-bg-tertiary" />
-            <div class="h-8 w-8 animate-pulse rounded-lg bg-bg-tertiary" />
-            <div class="min-w-0 flex-1 space-y-2">
-              <div class="h-3.5 w-2/5 animate-pulse rounded bg-bg-tertiary" />
-              <div class="h-3 w-3/5 animate-pulse rounded bg-bg-tertiary" />
+          <div class="min-w-[740px]">
+            <div
+              v-for="index in 6"
+              :key="index"
+              class="grid min-h-16 grid-cols-[16px_32px_minmax(220px,1fr)_100px_96px_64px_48px_72px] items-center gap-2 border-b border-border/70 px-3 py-2 last:border-0"
+              data-testid="feed-list-loading"
+            >
+              <div class="h-4 w-4 animate-pulse rounded bg-bg-tertiary" />
+              <div class="h-8 w-8 animate-pulse rounded-lg bg-bg-tertiary" />
+              <div class="min-w-0 space-y-2">
+                <div class="h-3.5 w-2/5 animate-pulse rounded bg-bg-tertiary" />
+                <div class="h-3 w-3/5 animate-pulse rounded bg-bg-tertiary" />
+              </div>
+              <div
+                v-for="column in 5"
+                :key="column"
+                class="h-3 animate-pulse rounded bg-bg-tertiary"
+              />
             </div>
-            <div class="h-7 w-16 animate-pulse rounded bg-bg-tertiary" />
           </div>
         </template>
 
@@ -452,153 +448,205 @@ onUnmounted(() =>
         </div>
 
         <template v-else-if="sortedFeeds.length > 0">
-          <div
-            v-for="feed in sortedFeeds"
-            :key="feed.id"
-            :data-feed-id="feed.id"
-            :class="[
-              'group flex min-h-16 cursor-pointer items-center gap-3 border-b border-border/70 px-3 py-2 transition-colors last:border-0 hover:bg-bg-secondary',
-              feed.is_freshrss_source ? 'bg-info/5' : 'bg-bg-primary',
-            ]"
-            data-testid="feed-row"
-            @click="handleFeedClick(feed, $event)"
-          >
-            <input
-              v-model="selectedFeeds"
-              type="checkbox"
-              :value="feed.id"
-              :disabled="feed.is_freshrss_source"
-              :aria-label="feed.title"
-              class="h-4 w-4 shrink-0 cursor-pointer rounded border-border text-accent focus:ring-2 focus:ring-accent disabled:cursor-not-allowed disabled:opacity-40"
-            />
-
+          <div class="min-w-[740px]" data-testid="feed-list-grid">
             <div
-              class="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-bg-tertiary text-text-tertiary"
+              class="sticky top-0 z-10 grid grid-cols-[16px_32px_minmax(220px,1fr)_100px_96px_64px_48px_72px] items-center gap-2 border-b border-border bg-bg-secondary px-3 py-2 text-xs font-medium text-text-secondary"
+              data-testid="feed-column-headers"
             >
-              <img
-                v-if="getFeedIconSource(feed)"
-                :src="getFeedIconSource(feed)"
-                :alt="feed.title"
-                class="h-full w-full object-cover"
-                loading="lazy"
-                @error="handleFeedIconError(feed)"
-              />
-              <PhRss v-else :size="18" data-testid="feed-icon-fallback" />
+              <span aria-hidden="true" />
+              <span aria-hidden="true" />
+              <span data-testid="feed-column-name">{{ t('modal.feed.feedName') }}</span>
+              <span data-testid="feed-column-category">{{ t('common.form.category') }}</span>
+              <span class="text-center" data-testid="feed-column-latest">{{
+                t('sidebar.sort.latest')
+              }}</span>
+              <span class="text-center" data-testid="feed-column-frequency">{{
+                t('sidebar.sort.frequency')
+              }}</span>
+              <span class="text-center" data-testid="feed-column-status">{{
+                t('common.form.status')
+              }}</span>
+              <span class="text-center" data-testid="feed-column-actions">{{
+                t('modal.rule.actions')
+              }}</span>
             </div>
 
-            <div class="min-w-0 flex-1">
-              <div class="flex min-w-0 items-center gap-1.5">
-                <span
-                  class="min-w-0 truncate text-sm font-medium text-text-primary group-hover:text-accent"
-                  :title="feed.title"
-                  data-testid="feed-title"
-                >
-                  {{ feed.title }}
-                </span>
+            <div
+              v-for="feed in sortedFeeds"
+              :key="feed.id"
+              :data-feed-id="feed.id"
+              :class="[
+                'group grid min-h-16 grid-cols-[16px_32px_minmax(220px,1fr)_100px_96px_64px_48px_72px] items-center gap-2 border-b border-border/70 px-3 py-2 transition-colors last:border-0',
+                feed.is_freshrss_source
+                  ? 'cursor-default bg-info/5'
+                  : 'cursor-pointer bg-bg-primary hover:bg-bg-secondary',
+              ]"
+              data-testid="feed-row"
+              @click="handleFeedClick(feed)"
+            >
+              <input
+                v-model="selectedFeeds"
+                type="checkbox"
+                :value="feed.id"
+                :disabled="feed.is_freshrss_source"
+                :aria-label="feed.title"
+                class="h-4 w-4 cursor-pointer rounded border-border text-accent focus:ring-2 focus:ring-accent disabled:cursor-not-allowed disabled:opacity-40"
+                @click.stop
+              />
+
+              <div
+                class="flex h-8 w-8 items-center justify-center overflow-hidden rounded-lg bg-bg-tertiary text-text-tertiary"
+              >
                 <img
-                  v-if="feed.is_freshrss_source"
-                  src="/assets/plugin_icons/freshrss.svg"
-                  class="h-4 w-4 shrink-0"
-                  :title="t('setting.freshrss.syncedFeed')"
-                  alt="FreshRSS"
+                  v-if="getFeedIconSource(feed)"
+                  :src="getFeedIconSource(feed)"
+                  :alt="feed.title"
+                  class="h-full w-full object-cover"
+                  loading="lazy"
+                  @error="handleFeedIconError(feed)"
                 />
-                <img
-                  v-if="isRSSHubFeed(feed)"
-                  src="/assets/plugin_icons/rsshub.svg"
-                  class="h-4 w-4 shrink-0"
-                  :title="t('setting.rsshub.feed')"
-                  alt="RSSHub"
-                />
-                <PhCode
-                  v-if="feed.script_path || isXPathFeed(feed)"
-                  :size="15"
-                  class="shrink-0 text-accent"
-                  :title="feed.type || t('setting.customization.script')"
-                />
-                <PhImage
-                  v-if="feed.is_image_mode"
-                  :size="15"
-                  class="shrink-0 text-accent"
-                  :title="t('setting.feed.imageMode')"
-                />
-                <PhEyeSlash
-                  v-if="feed.hide_from_timeline"
-                  :size="15"
-                  class="shrink-0 text-text-secondary"
-                  :title="t('setting.reading.hideFromTimeline')"
-                />
+                <PhRss v-else :size="18" data-testid="feed-icon-fallback" />
               </div>
 
-              <div class="mt-1 flex min-w-0 items-center gap-2 text-xs text-text-tertiary">
-                <span
-                  class="min-w-0 truncate"
+              <div class="min-w-0">
+                <div class="flex min-w-0 items-center gap-1.5">
+                  <span
+                    class="min-w-0 truncate text-sm font-medium text-text-primary group-hover:text-accent"
+                    :title="feed.title"
+                    data-testid="feed-title"
+                  >
+                    {{ feed.title }}
+                  </span>
+                  <img
+                    v-if="feed.is_freshrss_source"
+                    src="/assets/plugin_icons/freshrss.svg"
+                    class="h-4 w-4 shrink-0"
+                    :title="t('setting.freshrss.syncedFeed')"
+                    alt="FreshRSS"
+                  />
+                  <img
+                    v-if="isRSSHubFeed(feed)"
+                    src="/assets/plugin_icons/rsshub.svg"
+                    class="h-4 w-4 shrink-0"
+                    :title="t('setting.rsshub.feed')"
+                    alt="RSSHub"
+                  />
+                  <PhCode
+                    v-if="feed.script_path || isXPathFeed(feed)"
+                    :size="15"
+                    class="shrink-0 text-accent"
+                    :title="feed.type || t('setting.customization.script')"
+                  />
+                  <PhImage
+                    v-if="feed.is_image_mode"
+                    :size="15"
+                    class="shrink-0 text-accent"
+                    :title="t('setting.feed.imageMode')"
+                  />
+                  <PhEyeSlash
+                    v-if="feed.hide_from_timeline"
+                    :size="15"
+                    class="shrink-0 text-text-secondary"
+                    :title="t('setting.reading.hideFromTimeline')"
+                  />
+                  <span
+                    v-for="tag in (feed.tags || []).slice(0, 2)"
+                    :key="tag.id"
+                    class="hidden max-w-20 shrink-0 truncate rounded px-1.5 py-0.5 text-[10px] text-white xl:inline"
+                    :style="{ backgroundColor: tag.color }"
+                    :title="tag.name"
+                  >
+                    {{ tag.name }}
+                  </span>
+                </div>
+                <div
+                  class="mt-1 truncate text-xs text-text-tertiary"
                   :title="getFeedSourceTitle(feed)"
                   data-testid="feed-source"
                 >
                   {{ getFeedSource(feed) }}
-                </span>
-                <span
-                  v-if="feed.category"
-                  class="hidden max-w-32 shrink-0 items-center gap-1 truncate sm:flex"
-                  :title="feed.category"
-                >
-                  <span class="text-border">·</span>
-                  <PhFolder :size="12" class="shrink-0" />
-                  <span class="truncate">{{ feed.category }}</span>
-                </span>
-                <span
-                  v-for="tag in (feed.tags || []).slice(0, 2)"
-                  :key="tag.id"
-                  class="hidden max-w-20 shrink-0 truncate rounded px-1.5 py-0.5 text-[10px] text-white xl:inline"
-                  :style="{ backgroundColor: tag.color }"
-                  :title="tag.name"
-                >
-                  {{ tag.name }}
-                </span>
+                </div>
               </div>
-            </div>
 
-            <div class="flex w-6 shrink-0 items-center justify-center">
-              <PhCheckCircle
-                v-if="feed.last_update_status === 'success'"
-                :size="18"
-                class="text-green-500"
-                :title="t('setting.update.updateSuccess')"
-              />
-              <PhWarningCircle
-                v-else-if="feed.last_update_status === 'failed'"
-                :size="18"
-                class="text-yellow-500"
-                :title="getFriendlyErrorMessage(feed.last_error || '')"
-              />
-              <span v-else class="h-1.5 w-1.5 rounded-full bg-text-tertiary/50" />
-            </div>
+              <div
+                class="flex min-w-0 items-center gap-1 truncate text-xs text-text-secondary"
+                :title="feed.category || '-'"
+                data-testid="feed-category"
+              >
+                <PhFolder v-if="feed.category" :size="13" class="shrink-0" />
+                <span class="truncate">{{ feed.category || '-' }}</span>
+              </div>
 
-            <div class="flex shrink-0 items-center gap-0.5">
-              <button
-                type="button"
-                class="rounded-md p-1.5 text-text-secondary transition-colors hover:bg-bg-tertiary hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
-                :title="
-                  feed.is_freshrss_source ? t('setting.freshrss.feedLocked') : t('common.edit')
-                "
-                :disabled="feed.is_freshrss_source"
-                data-testid="feed-edit"
-                @click="emit('edit-feed', feed)"
+              <div
+                class="truncate text-center text-xs text-text-secondary"
+                :title="feed.latest_article_time || '-'"
+                data-testid="feed-latest"
               >
-                <PhPencil :size="16" />
-              </button>
-              <button
-                type="button"
-                class="rounded-md p-1.5 text-text-secondary transition-colors hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-red-950/30 dark:hover:text-red-400"
-                :title="
-                  feed.is_freshrss_source ? t('setting.freshrss.feedLocked') : t('common.delete')
-                "
-                :disabled="feed.is_freshrss_source"
-                data-testid="feed-delete"
-                @click="emit('delete-feed', feed.id)"
+                {{
+                  feed.latest_article_time
+                    ? formatRelativeTime(feed.latest_article_time, locale, t)
+                    : '-'
+                }}
+              </div>
+
+              <div
+                class="truncate text-center text-xs text-text-secondary"
+                :title="String(feed.articles_per_month ?? 0)"
+                data-testid="feed-frequency"
               >
-                <PhTrash :size="16" />
-              </button>
+                {{ feed.articles_per_month ?? 0 }}
+              </div>
+
+              <div
+                class="flex items-center justify-center"
+                :title="
+                  feed.last_update_status === 'failed'
+                    ? getFriendlyErrorMessage(feed.last_error || '')
+                    : feed.last_update_status || ''
+                "
+                data-testid="feed-status"
+              >
+                <PhCheckCircle
+                  v-if="feed.last_update_status === 'success'"
+                  :size="18"
+                  class="text-green-500"
+                  :title="t('setting.update.updateSuccess')"
+                />
+                <PhWarningCircle
+                  v-else-if="feed.last_update_status === 'failed'"
+                  :size="18"
+                  class="text-yellow-500"
+                  :title="getFriendlyErrorMessage(feed.last_error || '')"
+                />
+                <span v-else class="h-1.5 w-1.5 rounded-full bg-text-tertiary/50" />
+              </div>
+
+              <div class="flex items-center justify-center gap-0.5" data-testid="feed-actions">
+                <button
+                  type="button"
+                  class="rounded-md p-1.5 text-text-secondary transition-colors hover:bg-bg-tertiary hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
+                  :title="
+                    feed.is_freshrss_source ? t('setting.freshrss.feedLocked') : t('common.edit')
+                  "
+                  :disabled="feed.is_freshrss_source"
+                  data-testid="feed-edit"
+                  @click.stop="emit('edit-feed', feed)"
+                >
+                  <PhPencil :size="16" />
+                </button>
+                <button
+                  type="button"
+                  class="rounded-md p-1.5 text-text-secondary transition-colors hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-red-950/30 dark:hover:text-red-400"
+                  :title="
+                    feed.is_freshrss_source ? t('setting.freshrss.feedLocked') : t('common.delete')
+                  "
+                  :disabled="feed.is_freshrss_source"
+                  data-testid="feed-delete"
+                  @click.stop="emit('delete-feed', feed.id)"
+                >
+                  <PhTrash :size="16" />
+                </button>
+              </div>
             </div>
           </div>
         </template>
