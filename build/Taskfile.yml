@@ -63,17 +63,21 @@ tasks:
       - wails3 generate bindings -f '{{.BUILD_FLAGS}}' -clean=true
 
   generate:icons:
-    summary: Generates Windows `.ico` and Mac `.icns` files from an image
+    summary: Generates platform application and tray icons
     dir: build
     sources:
       - "appicon.png"
-      - "windows/icon.png"
+      - "../frontend/public/assets/logo.svg"
+      - "../frontend/scripts/generate-windows-icons.mjs"
+      - "../frontend/package-lock.json"
     generates:
       - "darwin/icons.icns"
       - "windows/icon.ico"
+      - "windows/tray-light.ico"
+      - "windows/tray-dark.ico"
     cmds:
       - wails3 generate icons -input appicon.png -macfilename darwin/icons.icns
-      - wails3 generate icons -input windows/icon.png -windowsfilename windows/icon.ico
+      - npm --prefix ../frontend run generate:windows-icons
 
   dev:frontend:
     summary: Runs the frontend in development mode

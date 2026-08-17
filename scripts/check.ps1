@@ -23,6 +23,9 @@ Push-Location frontend
 npm run lint
 if ($LASTEXITCODE -ne 0) { Pop-Location; exit $LASTEXITCODE }
 
+npm run check:windows-icons
+if ($LASTEXITCODE -ne 0) { Pop-Location; exit $LASTEXITCODE }
+
 npm test -- --run --reporter=verbose
 if ($LASTEXITCODE -ne 0) { Pop-Location; exit $LASTEXITCODE }
 Pop-Location

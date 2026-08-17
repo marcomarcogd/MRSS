@@ -445,7 +445,6 @@ jobs:
             exit 1
           }
         shell: pwsh
-        continue-on-error: true
 
       - name: Create portable package (Windows)
         if: steps.check_artifacts.outputs.skip_build == 'false' && matrix.platform == 'windows'

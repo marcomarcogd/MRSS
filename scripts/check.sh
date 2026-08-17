@@ -32,6 +32,9 @@ cd frontend
 npm run lint
 echo "✅ Frontend linting passed"
 
+npm run check:windows-icons
+echo "✅ Windows icon assets passed"
+
 npm test -- --run --reporter=verbose
 echo "✅ Frontend tests passed"
 

@@ -118,6 +118,10 @@ jobs:
         working-directory: ./frontend
         run: npm ci
 
+      - name: Validate Windows icon assets
+        working-directory: ./frontend
+        run: npm run check:windows-icons
+
       - name: Build application (Linux)
         if: matrix.platform == 'linux'
         env:
@@ -214,7 +218,51 @@ jobs:
             exit 1
           }
         shell: pwsh
-        continue-on-error: true
+
+      - name: Verify Windows release metadata
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $packageJson = Get-Content "frontend/package.json" -Raw | ConvertFrom-Json
+          $expectedVersion = $packageJson.version
+          $executable = Get-Item "build/bin/MRSS.exe"
+          $installer = Get-Item "build/bin/MRSS-$expectedVersion-windows-${{ matrix.arch }}-installer.exe"
+
+          foreach ($artifact in @($executable, $installer)) {
+            $productVersion = $artifact.VersionInfo.ProductVersion
+            if ($productVersion -eq $expectedVersion) {
+              Write-Host "$($artifact.Name): ProductVersion=$productVersion"
+              continue
+            }
+
+            # FileVersionInfo can return an empty ProductVersion for a native
+            # ARM64 executable even when the VERSIONINFO resource is present.
+            # Verify the exact UTF-16 resource pair before treating that as a failure.
+            $binaryText = [Text.Encoding]::Unicode.GetString([IO.File]::ReadAllBytes($artifact.FullName))
+            $resourceVersion = "ProductVersion`0$expectedVersion`0"
+            if (-not $binaryText.Contains($resourceVersion)) {
+              Write-Error "$($artifact.Name) ProductVersion '$productVersion' does not match '$expectedVersion'"
+              exit 1
+            }
+            Write-Host "$($artifact.Name): ProductVersion=$expectedVersion (verified from VERSIONINFO resource)"
+          }
+
+          # Authenticode is intentionally deferred for v1.6.0. Report the
+          # status so unsigned artifacts cannot be mistaken for signed ones.
+          foreach ($artifact in @($executable, $installer)) {
+            $signature = Get-AuthenticodeSignature $artifact.FullName
+            Write-Host "$($artifact.Name): Authenticode=$($signature.Status)"
+          }
+
+      - name: Upload Windows test artifacts
+        if: matrix.platform == 'windows'
+        uses: actions/upload-artifact@v7
+        with:
+          name: MRSS-${{ matrix.arch }}-windows-test
+          if-no-files-found: error
+          path: |
+            build/bin/MRSS.exe
+            build/bin/MRSS-*-windows-${{ matrix.arch }}-installer.exe
 
       - name: Create installer (Linux)
         if: matrix.platform == 'linux'

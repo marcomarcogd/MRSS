@@ -43,23 +43,17 @@ func debugLog(format string, args ...interface{}) {
 //go:embed frontend/dist
 var frontendFiles embed.FS
 
-// Platform-specific icon embedding
-// Windows and macOS both use PNG format for system tray
-// Windows .ico is only used for executable icon (via syso)
+// Windows uses dedicated multi-resolution tray icons so the shell can select
+// the correct small-icon frame for the active DPI and colour scheme.
 //
-//go:embed build/windows/icon.png
-var appIconWindows []byte
+//go:embed build/windows/tray-light.ico
+var trayIconWindowsLight []byte
+
+//go:embed build/windows/tray-dark.ico
+var trayIconWindowsDark []byte
 
 //go:embed build/appicon.png
 var appIconMacOS []byte
-
-// getAppIcon returns the appropriate icon for the current platform
-func getAppIcon() []byte {
-	if runtime.GOOS == "windows" {
-		return appIconWindows
-	}
-	return appIconMacOS
-}
 
 type windowState struct {
 	width     int
@@ -404,7 +398,12 @@ func main() {
 		}
 
 		systemTray = app.SystemTray.New()
-		systemTray.SetIcon(getAppIcon())
+		if runtime.GOOS == "windows" {
+			systemTray.SetIcon(trayIconWindowsLight)
+			systemTray.SetDarkModeIcon(trayIconWindowsDark)
+		} else {
+			systemTray.SetIcon(appIconMacOS)
+		}
 
 		// Create tray menu
 		trayMenu := app.NewMenu()

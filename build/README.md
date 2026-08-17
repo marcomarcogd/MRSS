@@ -171,9 +171,16 @@ task android:build
 
 ### Utility Tasks
 
-- `task common:generate:icons` - Generate platform icons from appicon.png
+- `task common:generate:icons` - Generate platform application and tray icons
 - `task common:generate:bindings` - Generate TypeScript bindings
 - `task common:update:build-assets` - Update build assets from config
+
+#### Windows icon assets
+
+- `frontend/public/assets/logo.svg` is the canonical MRSS brand source.
+- `build/windows/icon.ico` is the multi-resolution application icon embedded in the EXE and used by NSIS and desktop shortcuts.
+- `build/windows/tray-light.ico` and `build/windows/tray-dark.ico` are small-icon resources used only by the Windows system tray.
+- Run `npm --prefix frontend run generate:windows-icons` after changing the brand source and `npm --prefix frontend run check:windows-icons` to verify sizes, alpha transparency, and deterministic output.
 
 ## Configuration
 

@@ -111,14 +111,18 @@ tasks:
       ARCH: '{{.ARCH | default ARCH}}'
 
   generate:icon:ico:
-    summary: Generates Windows `.ico` file from `.png`
-    dir: build
+    summary: Generates multi-resolution Windows application and tray icons
+    dir: '{{.ROOT_DIR}}'
     sources:
-      - "windows/icon.png"
+      - "frontend/public/assets/logo.svg"
+      - "frontend/scripts/generate-windows-icons.mjs"
+      - "frontend/package-lock.json"
     generates:
-      - "windows/icon.ico"
+      - "build/windows/icon.ico"
+      - "build/windows/tray-light.ico"
+      - "build/windows/tray-dark.ico"
     cmds:
-      - wails3 generate icons -input windows/icon.png -windowsfilename windows/icon.ico
+      - npm --prefix frontend run generate:windows-icons
 
   create:nsis:installer:
     summary: Creates an NSIS installer
