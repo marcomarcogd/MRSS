@@ -529,6 +529,13 @@ const en: TranslationMessages = {
   },
   setting: {
     about: {
+      forkNotice:
+        'MRSS is an unofficial modified fork based on DevXDojo/MrRSS. This distribution was modified on August 17, 2026.',
+      licenseNotice:
+        'Licensed under GPL-3.0. Source code and upstream attribution are available through the links below.',
+      noWarranty: 'Distributed without warranty; see the GPL-3.0 license for details.',
+      sourceCode: 'MRSS Source Code',
+      upstreamProject: 'Upstream Project',
       version: 'Version',
       viewOnGitHub: 'View on GitHub',
     },
@@ -737,7 +744,7 @@ const en: TranslationMessages = {
         headers: 'HTTP Headers',
         headersDesc: 'Custom HTTP headers',
         langMapping: 'Language Code Mapping',
-        langMappingDesc: 'Map MrRSS language codes to API-specific codes',
+        langMappingDesc: 'Map MRSS language codes to API-specific codes',
         method: 'HTTP Method',
         methodDesc: 'HTTP method for the API request',
         responsePath: 'Response Path',
@@ -863,7 +870,7 @@ const en: TranslationMessages = {
       uiFontSize: 'Interface Font Size',
       uiFontSizeDesc: 'Base font size for the application interface',
       startupOnBoot: 'Start on System Boot',
-      startupOnBootDesc: 'Automatically start MrRSS when the computer starts',
+      startupOnBootDesc: 'Automatically start MRSS when the computer starts',
       theme: 'Theme',
       themeDesc: 'Choose the preferred color scheme',
     },
@@ -1206,7 +1213,7 @@ const en: TranslationMessages = {
 
   // Top-level keys (used without namespace)
   // Only appName should remain as top-level key
-  appName: 'MrRSS',
+  appName: 'MRSS',
 };
 
 export default en;

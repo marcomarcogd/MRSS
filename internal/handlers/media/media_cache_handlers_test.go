@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"MrRSS/internal/database"
-	"MrRSS/internal/handlers/core"
-	"MrRSS/internal/utils/fileutil"
+	"MRSS/internal/database"
+	"MRSS/internal/handlers/core"
+	"MRSS/internal/utils/fileutil"
 )
 
 func TestHandleMediaCacheInfoAndCleanup(t *testing.T) {

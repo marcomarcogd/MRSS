@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	dbpkg "MrRSS/internal/database"
-	"MrRSS/internal/models"
+	dbpkg "MRSS/internal/database"
+	"MRSS/internal/models"
 )
 
 func setupDBWithFeed(t *testing.T) *dbpkg.DB {

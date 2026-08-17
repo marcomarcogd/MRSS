@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"time"
 
-	"MrRSS/internal/freshrss"
-	"MrRSS/internal/handlers/core"
-	"MrRSS/internal/handlers/response"
+	"MRSS/internal/freshrss"
+	"MRSS/internal/handlers/core"
+	"MRSS/internal/handlers/response"
 )
 
 // HandleSyncFeed syncs articles for a single FreshRSS feed

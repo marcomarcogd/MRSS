@@ -9,6 +9,7 @@ import (
 
 func TestCreateHTTPClientHonorsInsecureTLSVerifyEnv(t *testing.T) {
 	t.Setenv(InsecureSkipTLSVerifyEnv, "true")
+	t.Setenv(LegacyInsecureSkipTLSVerifyEnv, "")
 
 	client, err := CreateHTTPClient("", time.Second)
 	if err != nil {
@@ -30,8 +31,24 @@ func TestCreateHTTPClientHonorsInsecureTLSVerifyEnv(t *testing.T) {
 	}
 }
 
+func TestCreateHTTPClientHonorsLegacyInsecureTLSVerifyEnv(t *testing.T) {
+	t.Setenv(InsecureSkipTLSVerifyEnv, "")
+	t.Setenv(LegacyInsecureSkipTLSVerifyEnv, "true")
+
+	client, err := CreateHTTPClient("", time.Second)
+	if err != nil {
+		t.Fatalf("CreateHTTPClient returned error: %v", err)
+	}
+
+	transport := client.Transport.(*http.Transport)
+	if !transport.TLSClientConfig.InsecureSkipVerify {
+		t.Fatalf("expected legacy environment variable to enable InsecureSkipVerify")
+	}
+}
+
 func TestCreateHTTPClientKeepsTLSVerificationByDefault(t *testing.T) {
 	t.Setenv(InsecureSkipTLSVerifyEnv, "")
+	t.Setenv(LegacyInsecureSkipTLSVerifyEnv, "")
 
 	client, err := CreateHTTPClient("", time.Second)
 	if err != nil {

@@ -1,20 +1,20 @@
 ---
-name: mrrss-assistant
-description: Control and analyze a running MrRSS desktop or server-mode instance through its local REST API. Use when a user asks an AI agent to inspect feeds, search or summarize articles, diagnose feed health, manage read/favorite/read-later state, refresh feeds, export data, review statistics, or configure MrRSS using its API.
+name: mrss-assistant
+description: Control and analyze a running MRSS desktop or server-mode instance through its local REST API. Use when a user asks an AI agent to inspect feeds, search or summarize articles, diagnose feed health, manage read/favorite/read-later state, refresh feeds, export data, review statistics, or configure MRSS using its API.
 ---
 
-# MrRSS Assistant
+# MRSS Assistant
 
 ## Overview
 
-Use the MrRSS HTTP API as the source of truth for user data. Prefer read-only inspection first, ask before destructive operations, and keep outputs concise enough for a user to act on.
+Use the MRSS HTTP API as the source of truth for user data. Prefer read-only inspection first, ask before destructive operations, and keep outputs concise enough for a user to act on.
 
 ## Connection Workflow
 
 1. Determine the base URL. Default to `http://localhost:1234` for server mode unless the user provides another host or port. Desktop development builds may use a different local port; ask the user or inspect their running command if the API is unreachable.
 2. Set the API root to `{base_url}/api`.
 3. Verify connectivity with `GET {api_root}/version`, then `GET {api_root}/feeds`.
-4. If both fail, explain that MrRSS or `mrrss-server` must be running and stop before attempting data operations.
+4. If both fail, explain that MRSS or `mrss-server` must be running and stop before attempting data operations.
 5. Use `references/api.md` for supported endpoints and request shapes. If the repo is available and API details may have changed, regenerate it with `scripts/generate_api_reference.py`.
 
 ## Safety
@@ -37,7 +37,7 @@ Use `GET /articles` with `filter`, `feed_id`, `category`, `page`, and `limit`. F
 
 ### Summarize Or Translate
 
-Prefer MrRSS endpoints so user settings and cached results are respected:
+Prefer MRSS endpoints so user settings and cached results are respected:
 
 - `POST /summarize` for article summaries.
 - `POST /translate/text` for ad hoc text translation.
@@ -55,10 +55,10 @@ Use `GET /api/statistics`, `/api/statistics/all-time`, and `/api/statistics/avai
 
 ## API Reference
 
-Read `references/api.md` when you need endpoint details. It is generated from `docs/SERVER_MODE/swagger.json` in the MrRSS repository.
+Read `references/api.md` when you need endpoint details. It is generated from `docs/SERVER_MODE/swagger.json` in the MRSS repository.
 
 To regenerate:
 
 ```bash
-python skills/mrrss-assistant/scripts/generate_api_reference.py docs/SERVER_MODE/swagger.json skills/mrrss-assistant/references/api.md
+python skills/mrss-assistant/scripts/generate_api_reference.py docs/SERVER_MODE/swagger.json skills/mrss-assistant/references/api.md
 ```

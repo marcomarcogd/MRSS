@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"time"
 
-	"MrRSS/internal/handlers/core"
-	"MrRSS/internal/handlers/response"
-	"MrRSS/internal/network"
-	"MrRSS/internal/utils/httputil"
+	"MRSS/internal/handlers/core"
+	"MRSS/internal/handlers/response"
+	"MRSS/internal/network"
+	"MRSS/internal/utils/httputil"
 )
 
 // HandleDetectNetwork detects network speed and updates settings

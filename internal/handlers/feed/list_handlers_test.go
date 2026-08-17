@@ -5,8 +5,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	fh "MrRSS/internal/handlers/feed"
-	"MrRSS/internal/models"
+	fh "MRSS/internal/handlers/feed"
+	"MRSS/internal/models"
 )
 
 func TestHandleFeeds_ReturnsList(t *testing.T) {

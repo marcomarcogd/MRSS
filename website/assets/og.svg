@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#061A31"/>
+      <stop offset="1" stop-color="#0B3155"/>
+    </linearGradient>
+    <linearGradient id="signal" x1="118" y1="172" x2="382" y2="430" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#287BFF"/>
+      <stop offset="0.55" stop-color="#20B8F2"/>
+      <stop offset="1" stop-color="#52E4D3"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" rx="48" fill="url(#bg)"/>
+  <circle cx="1080" cy="78" r="220" fill="#287BFF" opacity=".08"/>
+  <circle cx="1020" cy="590" r="270" fill="#52E4D3" opacity=".06"/>
+  <rect x="72" y="95" width="360" height="440" rx="88" fill="#041326" stroke="#174A73" stroke-width="2"/>
+  <path d="M132 444V267l120 120 120-120v177" fill="none" stroke="url(#signal)" stroke-width="48" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="252" cy="221" r="15" fill="#52E4D3"/>
+  <path d="M213 208a49 49 0 0 1 78 0" fill="none" stroke="#31CFF0" stroke-width="17" stroke-linecap="round"/>
+  <path d="M181 186a89 89 0 0 1 142 0" fill="none" stroke="#287BFF" stroke-width="17" stroke-linecap="round"/>
+  <text x="500" y="230" fill="#F7FBFF" font-family="Inter, Arial, sans-serif" font-size="108" font-weight="800">MRSS</text>
+  <text x="505" y="302" fill="#52E4D3" font-family="Inter, Arial, sans-serif" font-size="36" font-weight="650">Privacy-first RSS reader</text>
+  <text x="505" y="378" fill="#C4D5E5" font-family="Inter, Arial, sans-serif" font-size="31">Read. Translate. Summarize.</text>
+  <text x="505" y="424" fill="#C4D5E5" font-family="Inter, Arial, sans-serif" font-size="31">Own your data.</text>
+  <text x="505" y="500" fill="#7FA3C2" font-family="Inter, Arial, sans-serif" font-size="23">github.com/marcomarcogd/MRSS</text>
+</svg>

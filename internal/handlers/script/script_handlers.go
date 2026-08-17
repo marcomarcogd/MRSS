@@ -8,9 +8,9 @@ import (
 	"runtime"
 	"strings"
 
-	"MrRSS/internal/handlers/core"
-	"MrRSS/internal/handlers/response"
-	"MrRSS/internal/utils/fileutil"
+	"MRSS/internal/handlers/core"
+	"MRSS/internal/handlers/response"
+	"MRSS/internal/utils/fileutil"
 )
 
 // HandleGetScriptsDir returns the path to the scripts directory

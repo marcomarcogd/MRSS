@@ -69,7 +69,7 @@ func (x *XPathSource) Fetch(ctx context.Context, config *Config) (*gofeed.Feed, 
 	if config.UserAgent != "" {
 		req.Header.Set("User-Agent", config.UserAgent)
 	} else {
-		req.Header.Set("User-Agent", "MrRSS/1.0")
+		req.Header.Set("User-Agent", "MRSS/1.0")
 	}
 
 	// Execute request
@@ -213,7 +213,7 @@ func (x *XPathSource) FetchRaw(ctx context.Context, url string, userAgent string
 	if userAgent != "" {
 		req.Header.Set("User-Agent", userAgent)
 	} else {
-		req.Header.Set("User-Agent", "MrRSS/1.0")
+		req.Header.Set("User-Agent", "MRSS/1.0")
 	}
 
 	resp, err := x.client.Do(req)

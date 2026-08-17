@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key>
-    <string>MrRSS</string>
+    <string>MRSS</string>
     <key>CFBundleIdentifier</key>
-    <string>com.mrrss.app.dev</string>
+    <string>io.github.marcomarcogd.mrss.dev</string>
     <key>CFBundleName</key>
-    <string>MrRSS (Dev)</string>
+    <string>MRSS (Dev)</string>
     <key>CFBundleDisplayName</key>
-    <string>MrRSS (Dev)</string>
+    <string>MRSS (Dev)</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -52,7 +52,7 @@
     <true/>
 
     <key>NSHumanReadableCopyright</key>
-    <string>Copyright © 2026</string>
+    <string>Copyright © 2026 marcomarcogd and contributors</string>
 
 
     <key>CFBundleGetInfoString</key>

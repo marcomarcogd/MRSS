@@ -6,12 +6,12 @@ We release patches for security vulnerabilities in the following versions:
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.3.x   | :white_check_mark: |
-| < 1.3   | :x:                |
+| 1.5.x   | :white_check_mark: |
+| < 1.5   | :x:                |
 
 ## Reporting a Vulnerability
 
-We take the security of MrRSS seriously. If you believe you have found a security vulnerability, please report it to us as described below.
+We take the security of MRSS seriously. If you believe you have found a security vulnerability, please report it to us as described below.
 
 ### Please Do NOT
 
@@ -20,7 +20,7 @@ We take the security of MrRSS seriously. If you believe you have found a securit
 
 ### Please Do
 
-1. **Email us directly** at [INSERT SECURITY EMAIL HERE]
+1. Open a private [GitHub security advisory](https://github.com/marcomarcogd/MRSS/security/advisories/new)
 2. **Include the following information**:
    - Type of vulnerability
    - Full description of the vulnerability
@@ -38,7 +38,7 @@ We take the security of MrRSS seriously. If you believe you have found a securit
 
 ## Security Best Practices
 
-When using MrRSS:
+When using MRSS:
 
 ### For Users
 
@@ -58,7 +58,7 @@ When using MrRSS:
 
 ## Security Features
 
-MrRSS implements the following security features:
+MRSS implements the following security features:
 
 ### Data Storage
 
@@ -109,10 +109,8 @@ Security updates are released as soon as possible after a vulnerability is confi
 
 ## Contact
 
-For security-related questions that are not vulnerabilities:
-
-- Contact us at [mail@ch3nyang.top](mailto:mail@ch3nyang.top)
+For non-sensitive security questions, use [MRSS Issues](https://github.com/marcomarcogd/MRSS/issues).
 
 ---
 
-Thank you for helping keep MrRSS and its users safe!
+Thank you for helping keep MRSS and its users safe!

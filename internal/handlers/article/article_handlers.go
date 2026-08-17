@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"MrRSS/internal/handlers/core"
-	"MrRSS/internal/handlers/response"
-	"MrRSS/internal/models"
-	"MrRSS/internal/rsshub"
+	"MRSS/internal/handlers/core"
+	"MRSS/internal/handlers/response"
+	"MRSS/internal/models"
+	"MRSS/internal/rsshub"
 )
 
 // GetFeedType returns the type code of a feed

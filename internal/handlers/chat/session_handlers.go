@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"strconv"
 
-	"MrRSS/internal/handlers/core"
-	"MrRSS/internal/handlers/response"
-	"MrRSS/internal/utils/textutil"
+	"MRSS/internal/handlers/core"
+	"MRSS/internal/handlers/response"
+	"MRSS/internal/utils/textutil"
 )
 
 // CreateSessionRequest represents the request to create a new chat session

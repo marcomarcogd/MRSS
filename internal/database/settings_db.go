@@ -1,7 +1,7 @@
 package database
 
 import (
-	"MrRSS/internal/crypto"
+	"MRSS/internal/crypto"
 	"fmt"
 	"log"
 )

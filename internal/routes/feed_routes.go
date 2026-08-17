@@ -1,15 +1,15 @@
-// Package routes provides centralized route registration for the MrRSS API.
+// Package routes provides centralized route registration for the MRSS API.
 package routes
 
 import (
 	"net/http"
 
-	"MrRSS/internal/handlers/core"
-	discovery "MrRSS/internal/handlers/discovery"
-	feedhandlers "MrRSS/internal/handlers/feed"
-	filter_category "MrRSS/internal/handlers/filter_category"
-	rsshubHandler "MrRSS/internal/handlers/rsshub"
-	taghandlers "MrRSS/internal/handlers/tags"
+	"MRSS/internal/handlers/core"
+	discovery "MRSS/internal/handlers/discovery"
+	feedhandlers "MRSS/internal/handlers/feed"
+	filter_category "MRSS/internal/handlers/filter_category"
+	rsshubHandler "MRSS/internal/handlers/rsshub"
+	taghandlers "MRSS/internal/handlers/tags"
 )
 
 // registerFeedRoutes registers all feed-related routes

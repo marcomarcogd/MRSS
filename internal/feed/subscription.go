@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"MrRSS/internal/models"
-	"MrRSS/internal/rsshub"
-	"MrRSS/internal/utils"
-	"MrRSS/internal/utils/httputil"
+	"MRSS/internal/models"
+	"MRSS/internal/rsshub"
+	"MRSS/internal/utils"
+	"MRSS/internal/utils/httputil"
 
 	"github.com/antchfx/htmlquery"
 	"github.com/antchfx/xmlquery"

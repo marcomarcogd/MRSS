@@ -1,7 +1,7 @@
 package feed
 
 import (
-	"MrRSS/internal/models"
+	"MRSS/internal/models"
 	"strings"
 	"testing"
 	"time"

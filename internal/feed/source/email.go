@@ -15,7 +15,7 @@ import (
 	"github.com/emersion/go-imap/client"
 	"github.com/mmcdole/gofeed"
 
-	"MrRSS/internal/version"
+	"MRSS/internal/version"
 )
 
 // EmailSource fetches newsletter emails via IMAP.
@@ -164,9 +164,9 @@ func (e *EmailSource) sendIMAPID(c *client.Client) error {
 	}
 
 	clientID := id.ID{
-		id.FieldName:    "MrRSS",
+		id.FieldName:    "MRSS",
 		id.FieldVersion: version.Version,
-		id.FieldVendor:  "MrRSS",
+		id.FieldVendor:  "MRSS",
 		id.FieldOS:      runtime.GOOS,
 	}
 

@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"MrRSS/internal/database"
-	corepkg "MrRSS/internal/handlers/core"
-	"MrRSS/internal/utils/fileutil"
+	"MRSS/internal/database"
+	corepkg "MRSS/internal/handlers/core"
+	"MRSS/internal/utils/fileutil"
 )
 
 func setupHandler(t *testing.T) *corepkg.Handler {

@@ -1,18 +1,18 @@
 package routes
 
 import (
-	"MrRSS/internal/handlers/article"
-	browser "MrRSS/internal/handlers/browser"
-	"MrRSS/internal/handlers/core"
-	customcss "MrRSS/internal/handlers/custom_css"
-	freshrssHandler "MrRSS/internal/handlers/freshrss"
-	media "MrRSS/internal/handlers/media"
-	networkhandlers "MrRSS/internal/handlers/network"
-	opml "MrRSS/internal/handlers/opml"
-	rules "MrRSS/internal/handlers/rules"
-	script "MrRSS/internal/handlers/script"
-	update "MrRSS/internal/handlers/update"
-	window "MrRSS/internal/handlers/window"
+	"MRSS/internal/handlers/article"
+	browser "MRSS/internal/handlers/browser"
+	"MRSS/internal/handlers/core"
+	customcss "MRSS/internal/handlers/custom_css"
+	freshrssHandler "MRSS/internal/handlers/freshrss"
+	media "MRSS/internal/handlers/media"
+	networkhandlers "MRSS/internal/handlers/network"
+	opml "MRSS/internal/handlers/opml"
+	rules "MRSS/internal/handlers/rules"
+	script "MRSS/internal/handlers/script"
+	update "MRSS/internal/handlers/update"
+	window "MRSS/internal/handlers/window"
 	"net/http"
 )
 

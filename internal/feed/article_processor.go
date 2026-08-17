@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"MrRSS/internal/models"
-	"MrRSS/internal/utils/textutil"
+	"MRSS/internal/models"
+	"MRSS/internal/utils/textutil"
 
 	"github.com/mmcdole/gofeed"
 )

@@ -1,7 +1,7 @@
 package feed
 
 import (
-	"MrRSS/internal/utils/httputil"
+	"MRSS/internal/utils/httputil"
 )
 
 // BuildProxyURL constructs a proxy URL from settings

@@ -3,6 +3,7 @@
 package fileutil
 
 import (
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -14,6 +15,13 @@ var (
 	isPortableMode   bool
 	portableModeOnce sync.Once
 	isServerMode     bool
+	renameDataDir    = os.Rename
+)
+
+const (
+	dataDirName             = "MRSS"
+	legacyDataDirName       = "MrRSS"
+	legacyMonitorIDFileName = "monitor_device_id.txt"
 )
 
 // SetServerMode sets the server mode flag.
@@ -44,7 +52,49 @@ func IsPortableMode() bool {
 	return isPortableMode
 }
 
-// GetDataDir returns the platform-specific user data directory for MrRSS.
+func isRegularFile(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
+}
+
+func cleanupLegacyMonitorID(dataDir string) {
+	path := filepath.Join(dataDir, legacyMonitorIDFileName)
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		log.Printf("Warning: Failed to remove legacy analytics identifier %s: %v", path, err)
+	}
+}
+
+func resolveNormalDataDir(baseDir string) string {
+	newDir := filepath.Join(baseDir, dataDirName)
+	legacyDir := filepath.Join(baseDir, legacyDataDirName)
+	newDBExists := isRegularFile(filepath.Join(newDir, "rss.db"))
+	legacyDBExists := isRegularFile(filepath.Join(legacyDir, "rss.db"))
+
+	switch {
+	case newDBExists && legacyDBExists:
+		log.Printf("Warning: Both MRSS and legacy MrRSS data directories contain rss.db; using %s and leaving %s unchanged", newDir, legacyDir)
+		cleanupLegacyMonitorID(newDir)
+		return newDir
+	case newDBExists:
+		cleanupLegacyMonitorID(newDir)
+		return newDir
+	case legacyDBExists:
+		if err := renameDataDir(legacyDir, newDir); err == nil {
+			log.Printf("Migrated legacy MrRSS data directory to %s", newDir)
+			cleanupLegacyMonitorID(newDir)
+			return newDir
+		} else {
+			log.Printf("Warning: Failed to migrate legacy MrRSS data directory to %s: %v; continuing with %s", newDir, err, legacyDir)
+			cleanupLegacyMonitorID(legacyDir)
+			return legacyDir
+		}
+	default:
+		cleanupLegacyMonitorID(newDir)
+		return newDir
+	}
+}
+
+// GetDataDir returns the platform-specific user data directory for MRSS.
 func GetDataDir() (string, error) {
 	var dataDir string
 	var err error
@@ -99,7 +149,7 @@ func GetDataDir() (string, error) {
 			}
 		}
 
-		dataDir = filepath.Join(baseDir, "MrRSS")
+		dataDir = resolveNormalDataDir(baseDir)
 	}
 
 	err = os.MkdirAll(dataDir, 0755)

@@ -7,13 +7,13 @@ import (
 
 func TestCustomTranslatorReplacePlaceholdersAcceptsQuotedTextPlaceholder(t *testing.T) {
 	translator := &CustomTranslator{}
-	body := translator.replacePlaceholders(`{"q":"{{text}}","target":"{{target_lang}}"}`, `Hello "MrRSS"`, "zh")
+	body := translator.replacePlaceholders(`{"q":"{{text}}","target":"{{target_lang}}"}`, `Hello "MRSS"`, "zh")
 
 	var payload map[string]string
 	if err := json.Unmarshal([]byte(body), &payload); err != nil {
 		t.Fatalf("body is not valid JSON: %v\n%s", err, body)
 	}
-	if payload["q"] != `Hello "MrRSS"` {
+	if payload["q"] != `Hello "MRSS"` {
 		t.Fatalf("q = %q", payload["q"])
 	}
 	if payload["target"] != "zh" {

@@ -3,7 +3,7 @@
 #
 # The lines below are called `modelines`. See `:help modeline`
 
-name: "MrRSS"
+name: "MRSS"
 arch: ${GOARCH}
 platform: "linux"
 version: "1.4.2"
@@ -11,18 +11,22 @@ section: "default"
 priority: "extra"
 maintainer: ${GIT_COMMITTER_NAME} <${GIT_COMMITTER_EMAIL}>
 description: "A modern, standalone RSS reader"
-vendor: "Ch3nyang"
-homepage: "https://mrrss.ch3nyang.top"
-license: "MIT"
+vendor: "marcomarcogd"
+homepage: "https://github.com/marcomarcogd/MRSS"
+license: "GPL-3.0"
 release: "1"
 
 contents:
-  - src: "./bin/MrRSS"
-    dst: "/usr/local/bin/MrRSS"
+  - src: "./bin/MRSS"
+    dst: "/usr/local/bin/MRSS"
   - src: "./build/appicon.png"
-    dst: "/usr/share/icons/hicolor/128x128/apps/MrRSS.png"
-  - src: "./build/linux/MrRSS.desktop"
-    dst: "/usr/share/applications/MrRSS.desktop"
+    dst: "/usr/share/icons/hicolor/128x128/apps/MRSS.png"
+  - src: "./build/linux/MRSS.desktop"
+    dst: "/usr/share/applications/MRSS.desktop"
+  - src: "./LICENSE"
+    dst: "/usr/share/doc/MRSS/LICENSE"
+  - src: "./NOTICE"
+    dst: "/usr/share/doc/MRSS/NOTICE"
 
 # Default dependencies for Ubuntu 24.04+ with GTK4/WebKitGTK 6.0
 depends:

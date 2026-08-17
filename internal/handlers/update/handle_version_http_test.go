@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"MrRSS/internal/handlers/core"
+	"MRSS/internal/handlers/core"
 )
 
 func TestHandleVersion_GET(t *testing.T) {

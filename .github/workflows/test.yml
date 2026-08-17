@@ -101,18 +101,18 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Verify MrRSS skill metadata
+      - name: Verify MRSS skill metadata
         run: |
-          test -f skills/mrrss-assistant/SKILL.md
-          test -f skills/mrrss-assistant/agents/openai.yaml
-          grep -q '^name: mrrss-assistant$' skills/mrrss-assistant/SKILL.md
-          grep -q '^description: ' skills/mrrss-assistant/SKILL.md
-          grep -q 'Use $mrrss-assistant' skills/mrrss-assistant/agents/openai.yaml
+          test -f skills/mrss-assistant/SKILL.md
+          test -f skills/mrss-assistant/agents/openai.yaml
+          grep -q '^name: mrss-assistant$' skills/mrss-assistant/SKILL.md
+          grep -q '^description: ' skills/mrss-assistant/SKILL.md
+          grep -q 'Use $mrss-assistant' skills/mrss-assistant/agents/openai.yaml
 
       - name: Verify generated skill API reference
         run: |
-          python skills/mrrss-assistant/scripts/generate_api_reference.py docs/SERVER_MODE/swagger.json skills/mrrss-assistant/references/api.md
-          git diff --exit-code skills/mrrss-assistant/references/api.md
+          python skills/mrss-assistant/scripts/generate_api_reference.py docs/SERVER_MODE/swagger.json skills/mrss-assistant/references/api.md
+          git diff --exit-code skills/mrss-assistant/references/api.md
 
   build-check:
     name: Build Check

@@ -1,4 +1,4 @@
-// Copyright 2026 Ch3nyang & MrRSS Team. All rights reserved.
+// Copyright 2026 marcomarcogd and MRSS contributors. Licensed under GPL-3.0.
 //
 // Auto-generated settings composable helpers
 // CODE GENERATED - DO NOT EDIT MANUALLY

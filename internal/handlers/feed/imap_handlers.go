@@ -8,9 +8,9 @@ import (
 	"net/http"
 	"runtime"
 
-	"MrRSS/internal/handlers/core"
-	"MrRSS/internal/handlers/response"
-	"MrRSS/internal/version"
+	"MRSS/internal/handlers/core"
+	"MRSS/internal/handlers/response"
+	"MRSS/internal/version"
 
 	id "github.com/emersion/go-imap-id"
 	"github.com/emersion/go-imap/client"
@@ -145,9 +145,9 @@ func sendIMAPIDCommand(c *client.Client) {
 
 	// Send client identification
 	clientID := id.ID{
-		id.FieldName:    "MrRSS",
+		id.FieldName:    "MRSS",
 		id.FieldVersion: version.Version,
-		id.FieldVendor:  "MrRSS",
+		id.FieldVendor:  "MRSS",
 		id.FieldOS:      runtime.GOOS,
 	}
 

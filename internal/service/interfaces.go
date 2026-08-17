@@ -5,7 +5,7 @@ package service
 import (
 	"context"
 
-	"MrRSS/internal/models"
+	"MRSS/internal/models"
 )
 
 // ArticleService defines article-related operations

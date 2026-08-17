@@ -5,7 +5,7 @@
 package settings
 
 import (
-	"MrRSS/internal/handlers/core"
+	"MRSS/internal/handlers/core"
 )
 
 // SettingDef defines a single setting's metadata

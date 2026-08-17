@@ -5,8 +5,9 @@ describe('Auto Update Feature', () => {
     has_update: true,
     current_version: '1.3.12',
     latest_version: '1.3.13',
-    download_url: 'https://github.com/DevXDojo/MrRSS/releases/download/v1.3.13/MrRSS-1.3.13-windows-amd64-installer.exe',
-    asset_name: 'MrRSS-1.3.13-windows-amd64-installer.exe',
+    download_url:
+      'https://github.com/marcomarcogd/MRSS/releases/download/v1.3.13/MRSS-1.3.13-windows-amd64-installer.exe',
+    asset_name: 'MRSS-1.3.13-windows-amd64-installer.exe',
   };
 
   const mockNoUpdateInfo = {
@@ -40,11 +41,26 @@ describe('Auto Update Feature', () => {
   });
 
   describe('Auto Update Setting UI', () => {
+    it('should display MRSS branding and fork attribution', () => {
+      cy.title().should('eq', 'MRSS');
+      cy.wait('@getFeeds', { timeout: 10000 });
+      cy.get('button')
+        .filter('[title="Settings"], [title="设置"]')
+        .should('exist')
+        .click({ force: true });
+      cy.contains(/about|关于/i).click({ force: true });
+      cy.contains('MRSS').should('be.visible');
+      cy.contains(/unofficial modified fork|非官方复刻版/i).should('be.visible');
+    });
+
     it('should display auto update toggle in settings', () => {
       cy.wait('@getFeeds', { timeout: 10000 });
 
       // Open settings modal
-      cy.get('button').filter('[title="Settings"], [title="设置"]').should('exist').click({ force: true });
+      cy.get('button')
+        .filter('[title="Settings"], [title="设置"]')
+        .should('exist')
+        .click({ force: true });
 
       // Wait for settings modal to be visible
       cy.contains(/settings|设置/i).should('be.visible');
@@ -63,7 +79,10 @@ describe('Auto Update Feature', () => {
       cy.wait('@getFeeds', { timeout: 10000 });
 
       // Open settings modal
-      cy.get('button').filter('[title="Settings"], [title="设置"]').should('exist').click({ force: true });
+      cy.get('button')
+        .filter('[title="Settings"], [title="设置"]')
+        .should('exist')
+        .click({ force: true });
 
       cy.contains(/general|常规/i).click({ force: true });
       cy.wait('@getSettings');
@@ -97,7 +116,10 @@ describe('Auto Update Feature', () => {
       cy.wait('@getFeeds', { timeout: 10000 });
 
       // Open settings and enable auto update
-      cy.get('button').filter('[title="Settings"], [title="设置"]').should('exist').click({ force: true });
+      cy.get('button')
+        .filter('[title="Settings"], [title="设置"]')
+        .should('exist')
+        .click({ force: true });
 
       cy.contains(/general|常规/i).click({ force: true });
       cy.wait('@getSettings');
@@ -120,7 +142,10 @@ describe('Auto Update Feature', () => {
       cy.wait(500);
 
       // Reopen settings
-      cy.get('button').filter('[title="Settings"], [title="设置"]').should('exist').click({ force: true });
+      cy.get('button')
+        .filter('[title="Settings"], [title="设置"]')
+        .should('exist')
+        .click({ force: true });
       cy.wait('@getSettings');
 
       // Navigate to general tab
@@ -318,7 +343,10 @@ describe('Auto Update Feature', () => {
       cy.wait('@getFeeds', { timeout: 10000 });
 
       // Open settings modal
-      cy.get('button').filter('[title="Settings"], [title="设置"]').should('exist').click({ force: true });
+      cy.get('button')
+        .filter('[title="Settings"], [title="设置"]')
+        .should('exist')
+        .click({ force: true });
 
       // Navigate to About tab
       cy.contains(/about|关于/i).click({ force: true });
@@ -344,7 +372,10 @@ describe('Auto Update Feature', () => {
       cy.wait('@getFeeds', { timeout: 10000 });
 
       // Open settings modal
-      cy.get('button').filter('[title="Settings"], [title="设置"]').should('exist').click({ force: true });
+      cy.get('button')
+        .filter('[title="Settings"], [title="设置"]')
+        .should('exist')
+        .click({ force: true });
 
       // Navigate to About tab
       cy.contains(/about|关于/i).click({ force: true });
@@ -506,7 +537,10 @@ describe('Auto Update Feature', () => {
       cy.wait('@getFeeds', { timeout: 10000 });
 
       // Open settings modal
-      cy.get('button').filter('[title="Settings"], [title="设置"]').should('exist').click({ force: true });
+      cy.get('button')
+        .filter('[title="Settings"], [title="设置"]')
+        .should('exist')
+        .click({ force: true });
 
       // Navigate to About tab
       cy.contains(/about|关于/i).click({ force: true });

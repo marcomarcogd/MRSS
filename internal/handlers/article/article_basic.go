@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"MrRSS/internal/handlers/core"
-	"MrRSS/internal/handlers/response"
+	"MRSS/internal/handlers/core"
+	"MRSS/internal/handlers/response"
 )
 
 // HandleArticles returns articles with filtering and pagination.

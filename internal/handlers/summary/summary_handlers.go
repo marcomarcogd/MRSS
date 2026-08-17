@@ -5,11 +5,11 @@ import (
 	"log"
 	"net/http"
 
-	"MrRSS/internal/ai"
-	"MrRSS/internal/handlers/core"
-	"MrRSS/internal/handlers/response"
-	"MrRSS/internal/summary"
-	"MrRSS/internal/utils/textutil"
+	"MRSS/internal/ai"
+	"MRSS/internal/handlers/core"
+	"MRSS/internal/handlers/response"
+	"MRSS/internal/summary"
+	"MRSS/internal/utils/textutil"
 )
 
 // HandleSummarizeArticle generates a summary for an article's content.

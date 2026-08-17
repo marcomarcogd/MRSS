@@ -18,7 +18,10 @@ describe('Settings Persistence', () => {
     cy.wait('@getFeeds', { timeout: 10000 });
 
     // Open settings modal - find the gear icon button
-    cy.get('button').filter('[title="Settings"], [title="设置"]').should('exist').click({ force: true });
+    cy.get('button')
+      .filter('[title="Settings"], [title="设置"]')
+      .should('exist')
+      .click({ force: true });
 
     // Wait for settings modal to be visible
     cy.contains(/settings|设置/i).should('be.visible');
@@ -45,7 +48,10 @@ describe('Settings Persistence', () => {
     cy.wait(500);
 
     // Reopen settings to verify the change persisted
-    cy.get('button').filter('[title="Settings"], [title="设置"]').should('exist').click({ force: true });
+    cy.get('button')
+      .filter('[title="Settings"], [title="设置"]')
+      .should('exist')
+      .click({ force: true });
 
     // Wait for settings to load again
     cy.wait('@getSettings');
@@ -59,7 +65,10 @@ describe('Settings Persistence', () => {
     cy.wait('@getFeeds', { timeout: 10000 });
 
     // Open settings
-    cy.get('button').filter('[title="Settings"], [title="设置"]').should('exist').click({ force: true });
+    cy.get('button')
+      .filter('[title="Settings"], [title="设置"]')
+      .should('exist')
+      .click({ force: true });
 
     // Navigate to general tab if not already there
     cy.contains(/general|常规/i).click({ force: true });
@@ -91,7 +100,10 @@ describe('Settings Persistence', () => {
     cy.wait(500);
 
     // Reopen settings to verify
-    cy.get('button').filter('[title="Settings"], [title="设置"]').should('exist').click({ force: true });
+    cy.get('button')
+      .filter('[title="Settings"], [title="设置"]')
+      .should('exist')
+      .click({ force: true });
     cy.wait('@getSettings');
 
     // Verify language selector exists
@@ -103,7 +115,10 @@ describe('Settings Persistence', () => {
     cy.wait('@getFeeds', { timeout: 10000 });
 
     // Open settings
-    cy.get('button').filter('[title="Settings"], [title="设置"]').should('exist').click({ force: true });
+    cy.get('button')
+      .filter('[title="Settings"], [title="设置"]')
+      .should('exist')
+      .click({ force: true });
 
     // Navigate to general tab (update settings are here)
     cy.contains(/general|常规/i).click({ force: true });
@@ -132,7 +147,10 @@ describe('Settings Persistence', () => {
             cy.wait(500);
 
             // Reopen to verify
-            cy.get('button').filter('[title="Settings"], [title="设置"]').should('exist').click({ force: true });
+            cy.get('button')
+              .filter('[title="Settings"], [title="设置"]')
+              .should('exist')
+              .click({ force: true });
             cy.wait('@getSettings');
 
             // Verify the input exists
@@ -152,7 +170,10 @@ describe('Settings Persistence', () => {
     cy.wait('@getFeeds', { timeout: 10000 });
 
     // Open settings
-    cy.get('button').filter('[title="Settings"], [title="设置"]').should('exist').click({ force: true });
+    cy.get('button')
+      .filter('[title="Settings"], [title="设置"]')
+      .should('exist')
+      .click({ force: true });
     cy.wait('@getSettings');
 
     // Change theme
@@ -179,7 +200,10 @@ describe('Settings Persistence', () => {
     cy.get('body').type('{esc}');
     cy.wait(500);
 
-    cy.get('button').filter('[title="Settings"], [title="设置"]').should('exist').click({ force: true });
+    cy.get('button')
+      .filter('[title="Settings"], [title="设置"]')
+      .should('exist')
+      .click({ force: true });
     cy.wait('@getSettings');
 
     // Verify settings modal is open
@@ -191,7 +215,10 @@ describe('Settings Persistence', () => {
     cy.wait('@getFeeds', { timeout: 10000 });
 
     // Open settings
-    cy.get('button').filter('[title="Settings"], [title="设置"]').should('exist').click({ force: true });
+    cy.get('button')
+      .filter('[title="Settings"], [title="设置"]')
+      .should('exist')
+      .click({ force: true });
     cy.wait('@getSettings');
 
     // Make a change in general tab
@@ -215,7 +242,10 @@ describe('Settings Persistence', () => {
 
     // Reopen and verify the change was saved
     cy.wait(500);
-    cy.get('button').filter('[title="Settings"], [title="设置"]').should('exist').click({ force: true });
+    cy.get('button')
+      .filter('[title="Settings"], [title="设置"]')
+      .should('exist')
+      .click({ force: true });
     cy.wait('@getSettings');
 
     cy.contains(/general|常规/i).click({ force: true });
@@ -448,11 +478,21 @@ describe('Settings Persistence', () => {
     });
 
     cy.get('body').type('{esc}');
+    cy.window().then((win) => {
+      win.localStorage.setItem('mrrssArticleScrollPositions', JSON.stringify({ 1: 42 }));
+      win.localStorage.removeItem('mrssArticleScrollPositions');
+    });
     cy.get('.article-card').first().click();
     cy.get('.prose-content').should(($content) => {
       const style = getComputedStyle($content[0]);
       expect(style.fontSize).to.equal('16px');
       expect(style.fontFamily).not.to.contain('Georgia');
+    });
+    cy.window().then((win) => {
+      expect(win.localStorage.getItem('mrssArticleScrollPositions')).to.equal(
+        JSON.stringify({ 1: 42 })
+      );
+      expect(win.localStorage.getItem('mrrssArticleScrollPositions')).to.equal(null);
     });
 
     cy.get('button[title="Settings"]').click();

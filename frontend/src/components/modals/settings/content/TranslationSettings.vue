@@ -589,9 +589,7 @@ async function clearTranslationCache() {
 
           <KeyValueList
             :model-value="settings.custom_translation_lang_mapping"
-            :key-placeholder="
-              t('setting.content.custom.mrssLangCode') || 'MrRSS code (en, zh, ...)'
-            "
+            :key-placeholder="t('setting.content.custom.mrssLangCode') || 'MRSS code (en, zh, ...)'"
             :value-placeholder="t('setting.content.apiLangCode') || 'API code'"
             :add-button-text="t('setting.content.addLangMapping')"
             :remove-button-title="t('common.action.remove') || 'Remove'"

@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"MrRSS/internal/ai"
+	"MRSS/internal/ai"
 )
 
 // SettingsProvider is an interface for retrieving translation settings.

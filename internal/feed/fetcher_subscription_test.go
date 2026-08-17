@@ -1,7 +1,7 @@
 package feed
 
 import (
-	"MrRSS/internal/database"
+	"MRSS/internal/database"
 	"context"
 	"testing"
 

@@ -107,7 +107,7 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.get_version.outputs.tag }}
-          name: MrRSS ${{ steps.get_version.outputs.tag }}
+          name: MRSS ${{ steps.get_version.outputs.tag }}
           body_path: RELEASE_NOTES.md
           draft: false
           prerelease: ${{ steps.get_version.outputs.is_prerelease == 'true' }}
@@ -127,23 +127,25 @@ jobs:
 
       - name: Validate generated skill API reference
         run: |
-          python skills/mrrss-assistant/scripts/generate_api_reference.py docs/SERVER_MODE/swagger.json skills/mrrss-assistant/references/api.md
-          git diff --exit-code skills/mrrss-assistant/references/api.md
+          python skills/mrss-assistant/scripts/generate_api_reference.py docs/SERVER_MODE/swagger.json skills/mrss-assistant/references/api.md
+          git diff --exit-code skills/mrss-assistant/references/api.md
 
-      - name: Package MrRSS skills
+      - name: Package MRSS skills
         run: |
           VERSION="${{ needs.create-release.outputs.version }}"
-          mkdir -p build/skills
-          cd skills
-          zip -r "../build/skills/MrRSS-${VERSION}-skills.zip" mrrss-assistant
-          cd ..
-          unzip -t "build/skills/MrRSS-${VERSION}-skills.zip"
+          mkdir -p build/skills/package/mrss-assistant
+          cp -R skills/mrss-assistant/. build/skills/package/mrss-assistant/
+          cp LICENSE NOTICE build/skills/package/mrss-assistant/
+          cd build/skills/package
+          zip -r "../MRSS-${VERSION}-skills.zip" mrss-assistant
+          cd ../../..
+          unzip -t "build/skills/MRSS-${VERSION}-skills.zip"
 
       - name: Upload Skills Release Asset
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.create-release.outputs.tag }}
-          files: build/skills/MrRSS-${{ needs.create-release.outputs.version }}-skills.zip
+          files: build/skills/MRSS-${{ needs.create-release.outputs.version }}-skills.zip
           token: ${{ secrets.GITHUB_TOKEN }}
 
   build-release:
@@ -216,19 +218,19 @@ jobs:
 
           # Determine expected artifact names for this platform/arch
           if [ "${{ matrix.platform }}" = "windows" ]; then
-            INSTALLER="MrRSS-${VERSION}-windows-${{ matrix.arch }}-installer.exe"
+            INSTALLER="MRSS-${VERSION}-windows-${{ matrix.arch }}-installer.exe"
             PACKAGE=""  # No package for Windows
           elif [ "${{ matrix.platform }}" = "linux" ]; then
-            INSTALLER="MrRSS-${VERSION}-linux-${{ matrix.arch }}.AppImage"
-            PACKAGE="MrRSS-${VERSION}-linux-${{ matrix.arch }}.tar.gz"
+            INSTALLER="MRSS-${VERSION}-linux-${{ matrix.arch }}.AppImage"
+            PACKAGE="MRSS-${VERSION}-linux-${{ matrix.arch }}.tar.gz"
           elif [ "${{ matrix.platform }}" = "darwin" ]; then
-            INSTALLER="MrRSS-${VERSION}-darwin-${{ matrix.arch }}.dmg"
+            INSTALLER="MRSS-${VERSION}-darwin-${{ matrix.arch }}.dmg"
             PACKAGE=""  # No package for macOS
           elif [ "${{ matrix.platform }}" = "ios" ]; then
-            INSTALLER="MrRSS-${VERSION}-ios-${{ matrix.arch }}.ipa"
+            INSTALLER="MRSS-${VERSION}-ios-${{ matrix.arch }}.ipa"
             PACKAGE=""  # No package for iOS
           elif [ "${{ matrix.platform }}" = "android" ]; then
-            INSTALLER="MrRSS-${VERSION}-android-${{ matrix.arch }}.apk"
+            INSTALLER="MRSS-${VERSION}-android-${{ matrix.arch }}.apk"
             PACKAGE=""  # No package for Android
           fi
 
@@ -355,13 +357,13 @@ jobs:
           task linux:build
 
           # Verify the build
-          if [ ! -f "build/bin/MrRSS" ]; then
+          if [ ! -f "build/bin/MRSS" ]; then
             echo "Error: Binary not found"
             exit 1
           fi
 
           # Check architecture
-          file build/bin/MrRSS
+          file build/bin/MRSS
           echo "Binary built successfully for ${{ matrix.arch }}"
 
       - name: Build application (Windows)
@@ -375,7 +377,7 @@ jobs:
           task windows:build
 
           # Verify the build
-          if (-not (Test-Path "build/bin/MrRSS.exe")) {
+          if (-not (Test-Path "build/bin/MRSS.exe")) {
             Write-Error "Binary not created"
             exit 1
           }
@@ -428,7 +430,7 @@ jobs:
           if (Test-Path $installerPath) {
             $content = Get-Content $installerPath -Raw
             $content = $content -replace '!define APP_VERSION ".*"', "!define APP_VERSION `"$version`""
-            $content = $content -replace 'OutFile ".*"', "OutFile `"..\bin\MrRSS-$version-windows-$arch-installer.exe`""
+            $content = $content -replace 'OutFile ".*"', "OutFile `"..\bin\MRSS-$version-windows-$arch-installer.exe`""
             Set-Content $installerPath $content
 
             # Build NSIS installer
@@ -456,25 +458,26 @@ jobs:
           New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
 
           # Copy executable
-          Copy-Item "build/bin/MrRSS.exe" -Destination $portableDir
+          Copy-Item "build/bin/MRSS.exe" -Destination $portableDir
+          Copy-Item "LICENSE", "NOTICE" -Destination $portableDir
 
           # Create portable.txt marker
           New-Item -ItemType File -Path "$portableDir/portable.txt" | Out-Null
 
           # Create README for portable version
           @"
-          MrRSS Portable Edition
+          MRSS Portable Edition
 
-          This is the portable version of MrRSS. All data will be stored in the 'data' folder
+          This is the portable version of MRSS. All data will be stored in the 'data' folder
           next to this executable.
 
-          To run: Double-click MrRSS.exe
+          To run: Double-click MRSS.exe
 
-          For more information, visit: https://github.com/DevXDojo/MrRSS
+          For more information, visit: https://github.com/marcomarcogd/MRSS
           "@ | Out-File -FilePath "$portableDir/README.txt" -Encoding UTF8
 
           # Create zip file
-          $zipName = "MrRSS-$version-windows-$arch-portable.zip"
+          $zipName = "MRSS-$version-windows-$arch-portable.zip"
           Compress-Archive -Path "$portableDir/*" -DestinationPath "build/bin/$zipName" -Force
 
           Write-Host "Created portable package: $zipName"
@@ -492,7 +495,7 @@ jobs:
 
           # Debug: Verify binary architecture
           echo "Binary architecture check:"
-          file build/bin/MrRSS || true
+          file build/bin/MRSS || true
 
           chmod +x build/linux/create-appimage.sh
           ARCH=${{ matrix.arch }} ./build/linux/create-appimage.sh || echo "AppImage creation failed, will use tar.gz"
@@ -516,38 +519,41 @@ jobs:
           mkdir -p "$PORTABLE_DIR"
 
           # Copy .app bundle
-          cp -R build/bin/MrRSS.app "$PORTABLE_DIR/"
+          cp -R build/bin/MRSS.app "$PORTABLE_DIR/"
+          cp LICENSE NOTICE "$PORTABLE_DIR/"
 
           # Create portable.txt marker
           touch "$PORTABLE_DIR/portable.txt"
 
           # Create README for portable version
           cat > "$PORTABLE_DIR/README.txt" << 'EOF'
-          MrRSS Portable Edition
+          MRSS Portable Edition
 
-          This is the portable version of MrRSS. All data will be stored in the 'data' folder
-          next to the MrRSS.app.
+          This is the portable version of MRSS. All data will be stored in the 'data' folder
+          next to the MRSS.app.
 
-          To run: Double-click MrRSS.app
+          To run: Double-click MRSS.app
 
-          For more information, visit: https://github.com/DevXDojo/MrRSS
+          For more information, visit: https://github.com/marcomarcogd/MRSS
           EOF
 
           # Create zip file
           cd "$PORTABLE_DIR"
-          zip -r "../bin/MrRSS-${VERSION}-darwin-${ARCH}-portable.zip" *
+          zip -r "../bin/MRSS-${VERSION}-darwin-${ARCH}-portable.zip" *
           cd ../..
 
-          echo "Created portable package: MrRSS-${VERSION}-darwin-${ARCH}-portable.zip"
+          echo "Created portable package: MRSS-${VERSION}-darwin-${ARCH}-portable.zip"
 
       - name: Package application (Linux - tar.gz fallback)
         if: steps.check_artifacts.outputs.skip_build == 'false' && matrix.platform == 'linux'
         run: |
-          cd build/bin
-          if [ -f "MrRSS" ]; then
-            tar -czf MrRSS-${{ needs.create-release.outputs.version }}-linux-${{ matrix.arch }}.tar.gz MrRSS
+          PACKAGE_DIR="build/package-temp"
+          mkdir -p "$PACKAGE_DIR"
+          if [ -f "build/bin/MRSS" ]; then
+            cp build/bin/MRSS LICENSE NOTICE "$PACKAGE_DIR/"
+            tar -C "$PACKAGE_DIR" -czf "build/bin/MRSS-${{ needs.create-release.outputs.version }}-linux-${{ matrix.arch }}.tar.gz" MRSS LICENSE NOTICE
           else
-            echo "Error: MrRSS binary not found"
+            echo "Error: MRSS binary not found"
             exit 1
           fi
 
@@ -562,30 +568,31 @@ jobs:
           mkdir -p "$PORTABLE_DIR"
 
           # Copy executable
-          cp build/bin/MrRSS "$PORTABLE_DIR/"
-          chmod +x "$PORTABLE_DIR/MrRSS"
+          cp build/bin/MRSS "$PORTABLE_DIR/"
+          chmod +x "$PORTABLE_DIR/MRSS"
+          cp LICENSE NOTICE "$PORTABLE_DIR/"
 
           # Create portable.txt marker
           touch "$PORTABLE_DIR/portable.txt"
 
           # Create README for portable version
           cat > "$PORTABLE_DIR/README.txt" << 'EOF'
-          MrRSS Portable Edition
+          MRSS Portable Edition
 
-          This is the portable version of MrRSS. All data will be stored in the 'data' folder
+          This is the portable version of MRSS. All data will be stored in the 'data' folder
           next to this executable.
 
-          To run: ./MrRSS
+          To run: ./MRSS
 
-          For more information, visit: https://github.com/DevXDojo/MrRSS
+          For more information, visit: https://github.com/marcomarcogd/MRSS
           EOF
 
           # Create tar.gz file
           cd "$PORTABLE_DIR"
-          tar -czf "../bin/MrRSS-${VERSION}-linux-${ARCH}-portable.tar.gz" *
+          tar -czf "../bin/MRSS-${VERSION}-linux-${ARCH}-portable.tar.gz" *
           cd ../..
 
-          echo "Created portable package: MrRSS-${VERSION}-linux-${ARCH}-portable.tar.gz"
+          echo "Created portable package: MRSS-${VERSION}-linux-${ARCH}-portable.tar.gz"
 
       - name: Collect artifacts
         if: steps.check_artifacts.outputs.skip_build == 'false'
@@ -597,8 +604,8 @@ jobs:
 
           # Check for installer and portable package
           if [ "${{ matrix.platform }}" = "windows" ]; then
-            installer="MrRSS-${{ needs.create-release.outputs.version }}-windows-${{ matrix.arch }}-installer.exe"
-            portable="MrRSS-${{ needs.create-release.outputs.version }}-windows-${{ matrix.arch }}-portable.zip"
+            installer="MRSS-${{ needs.create-release.outputs.version }}-windows-${{ matrix.arch }}-installer.exe"
+            portable="MRSS-${{ needs.create-release.outputs.version }}-windows-${{ matrix.arch }}-portable.zip"
             if [ -f "$installer" ]; then
               artifacts="$artifacts$installer,"
             fi
@@ -606,13 +613,13 @@ jobs:
               artifacts="$artifacts$portable,"
             fi
           elif [ "${{ matrix.platform }}" = "linux" ]; then
-            installer="MrRSS-${{ needs.create-release.outputs.version }}-linux-${{ matrix.arch }}.AppImage"
-            portable="MrRSS-${{ needs.create-release.outputs.version }}-linux-${{ matrix.arch }}-portable.tar.gz"
+            installer="MRSS-${{ needs.create-release.outputs.version }}-linux-${{ matrix.arch }}.AppImage"
+            portable="MRSS-${{ needs.create-release.outputs.version }}-linux-${{ matrix.arch }}-portable.tar.gz"
             if [ -f "$installer" ]; then
               artifacts="$artifacts$installer,"
             fi
             # Check for tar.gz fallback
-            package="MrRSS-${{ needs.create-release.outputs.version }}-linux-${{ matrix.arch }}.tar.gz"
+            package="MRSS-${{ needs.create-release.outputs.version }}-linux-${{ matrix.arch }}.tar.gz"
             if [ -f "$package" ]; then
               artifacts="$artifacts$package,"
             fi
@@ -620,8 +627,8 @@ jobs:
               artifacts="$artifacts$portable,"
             fi
           elif [ "${{ matrix.platform }}" = "darwin" ]; then
-            installer="MrRSS-${{ needs.create-release.outputs.version }}-darwin-${{ matrix.arch }}.dmg"
-            portable="MrRSS-${{ needs.create-release.outputs.version }}-darwin-${{ matrix.arch }}-portable.zip"
+            installer="MRSS-${{ needs.create-release.outputs.version }}-darwin-${{ matrix.arch }}.dmg"
+            portable="MRSS-${{ needs.create-release.outputs.version }}-darwin-${{ matrix.arch }}-portable.zip"
             if [ -f "$installer" ]; then
               artifacts="$artifacts$installer,"
             fi
@@ -639,6 +646,6 @@ jobs:
         with:
           tag_name: ${{ needs.create-release.outputs.tag }}
           files: |
-            build/bin/MrRSS-${{ needs.create-release.outputs.version }}-*
+            build/bin/MRSS-${{ needs.create-release.outputs.version }}-*
           token: ${{ secrets.GITHUB_TOKEN }}
           fail_on_unmatched_files: false

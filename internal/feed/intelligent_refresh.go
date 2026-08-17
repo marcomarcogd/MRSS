@@ -1,8 +1,8 @@
 package feed
 
 import (
-	"MrRSS/internal/database"
-	"MrRSS/internal/models"
+	"MRSS/internal/database"
+	"MRSS/internal/models"
 	"math"
 	"time"
 )

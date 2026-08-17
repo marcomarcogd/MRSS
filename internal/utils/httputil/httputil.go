@@ -17,7 +17,10 @@ import (
 // InsecureSkipTLSVerifyEnv enables TLS certificate verification bypass for
 // private LAN services such as self-signed Ollama endpoints. It is intentionally
 // opt-in and environment-scoped.
-const InsecureSkipTLSVerifyEnv = "MRRSS_INSECURE_SKIP_TLS_VERIFY"
+const (
+	InsecureSkipTLSVerifyEnv       = "MRSS_INSECURE_SKIP_TLS_VERIFY"
+	LegacyInsecureSkipTLSVerifyEnv = "MRRSS_INSECURE_SKIP_TLS_VERIFY"
+)
 
 // BuildProxyURL constructs a proxy URL from settings.
 func BuildProxyURL(proxyType, proxyHost, proxyPort, username, password string) string {
@@ -67,7 +70,11 @@ func CreateHTTPClient(proxyURL string, timeout time.Duration) (*http.Client, err
 }
 
 func insecureSkipTLSVerifyEnabled() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv(InsecureSkipTLSVerifyEnv))) {
+	value := os.Getenv(InsecureSkipTLSVerifyEnv)
+	if value == "" {
+		value = os.Getenv(LegacyInsecureSkipTLSVerifyEnv)
+	}
+	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "1", "true", "yes", "y", "on":
 		return true
 	default:

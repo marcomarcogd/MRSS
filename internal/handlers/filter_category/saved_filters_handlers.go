@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"strconv"
 
-	"MrRSS/internal/handlers/core"
-	"MrRSS/internal/handlers/response"
-	"MrRSS/internal/models"
+	"MRSS/internal/handlers/core"
+	"MRSS/internal/handlers/response"
+	"MRSS/internal/models"
 )
 
 // HandleSavedFilters handles CRUD operations for saved filters

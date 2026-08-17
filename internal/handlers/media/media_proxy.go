@@ -16,11 +16,11 @@ import (
 	"strings"
 	"time"
 
-	"MrRSS/internal/cache"
-	"MrRSS/internal/handlers/core"
-	"MrRSS/internal/handlers/response"
-	"MrRSS/internal/utils/fileutil"
-	"MrRSS/internal/utils/httputil"
+	"MRSS/internal/cache"
+	"MRSS/internal/handlers/core"
+	"MRSS/internal/handlers/response"
+	"MRSS/internal/utils/fileutil"
+	"MRSS/internal/utils/httputil"
 )
 
 // validateMediaURL validates that the URL is HTTP/HTTPS and properly formatted

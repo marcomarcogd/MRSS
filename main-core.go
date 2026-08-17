@@ -18,25 +18,25 @@ import (
 	"syscall"
 	"time"
 
-	"MrRSS/internal/ai"
-	"MrRSS/internal/database"
-	"MrRSS/internal/feed"
-	handlers "MrRSS/internal/handlers/core"
-	"MrRSS/internal/network"
-	"MrRSS/internal/routes"
-	"MrRSS/internal/translation"
-	"MrRSS/internal/utils/fileutil"
+	"MRSS/internal/ai"
+	"MRSS/internal/database"
+	"MRSS/internal/feed"
+	handlers "MRSS/internal/handlers/core"
+	"MRSS/internal/network"
+	"MRSS/internal/routes"
+	"MRSS/internal/translation"
+	appUtils "MRSS/internal/utils"
+	"MRSS/internal/utils/fileutil"
 
 	httpSwagger "github.com/swaggo/http-swagger"
 )
 
-// @title           MrRSS API
+// @title           MRSS API
 // @version         1.4.2
-// @description     MrRSS is a modern, cross-platform desktop RSS reader with auto-translation, smart feed discovery, and AI-powered summarization.
+// @description     MRSS is a modern, cross-platform desktop RSS reader with auto-translation, smart feed discovery, and AI-powered summarization.
 
 // @contact.name   API Support
-// @contact.url    https://github.com/DevXDojojo/MrRSS
-// @contact.email  mail@ch3nyang.top
+// @contact.url    https://github.com/marcomarcogd/MRSS/issues
 
 // @license.name  GPL-3.0
 // @license.url   https://www.gnu.org/licenses/gpl-3.0.en.html
@@ -49,7 +49,7 @@ import (
 // @name Authorization
 // @description Type "Bearer" followed by a space and JWT token.
 
-var debugLogging = os.Getenv("MRRSS_DEBUG") != ""
+var debugLogging = appUtils.EnvValue(appUtils.DebugEnv, appUtils.LegacyDebugEnv) != ""
 
 func debugLog(format string, args ...interface{}) {
 	if debugLogging {

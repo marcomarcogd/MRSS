@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"MrRSS/internal/handlers/core"
-	"MrRSS/internal/handlers/response"
-	"MrRSS/internal/models"
+	"MRSS/internal/handlers/core"
+	"MRSS/internal/handlers/response"
+	"MRSS/internal/models"
 
 	md "github.com/JohannesKaufmann/html-to-markdown"
 )

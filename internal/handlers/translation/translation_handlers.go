@@ -5,11 +5,11 @@ import (
 	"log"
 	"net/http"
 
-	"MrRSS/internal/ai"
-	"MrRSS/internal/handlers/core"
-	"MrRSS/internal/handlers/response"
-	"MrRSS/internal/translation"
-	"MrRSS/internal/utils/textutil"
+	"MRSS/internal/ai"
+	"MRSS/internal/handlers/core"
+	"MRSS/internal/handlers/response"
+	"MRSS/internal/translation"
+	"MRSS/internal/utils/textutil"
 )
 
 // TestCustomTranslationRequest represents a request to test custom translation configuration

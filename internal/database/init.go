@@ -1,7 +1,7 @@
 package database
 
 import (
-	"MrRSS/internal/config"
+	"MRSS/internal/config"
 	"log"
 
 	_ "modernc.org/sqlite"

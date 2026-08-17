@@ -1,4 +1,4 @@
-module MrRSS
+module MRSS
 
 go 1.25.0
 

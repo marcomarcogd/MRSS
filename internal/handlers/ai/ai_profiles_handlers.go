@@ -11,10 +11,10 @@ import (
 	"sync"
 	"time"
 
-	"MrRSS/internal/ai"
-	"MrRSS/internal/handlers/core"
-	"MrRSS/internal/handlers/response"
-	"MrRSS/internal/models"
+	"MRSS/internal/ai"
+	"MRSS/internal/handlers/core"
+	"MRSS/internal/handlers/response"
+	"MRSS/internal/models"
 )
 
 // ProfileRequest represents the request body for creating/updating an AI profile

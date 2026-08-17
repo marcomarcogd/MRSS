@@ -1,7 +1,8 @@
 {
-  "name": "mrrss-frontend",
+  "name": "mrss-frontend",
   "private": true,
   "version": "1.4.2",
+  "license": "GPL-3.0-only",
   "type": "module",
   "scripts": {
     "dev": "vite",

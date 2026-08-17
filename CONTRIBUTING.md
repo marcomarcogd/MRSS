@@ -1,6 +1,6 @@
-# Contributing to MrRSS
+# Contributing to MRSS
 
-Thank you for your interest in contributing to MrRSS! We welcome contributions from everyone.
+Thank you for your interest in contributing to MRSS! We welcome contributions from everyone.
 
 ## Table of Contents
 
@@ -21,8 +21,8 @@ This project and everyone participating in it is governed by our [Code of Conduc
 ## Getting Started
 
 1. Fork the repository
-2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/MrRSS.git`
-3. Add upstream remote: `git remote add upstream https://github.com/DevXDojo/MrRSS.git`
+2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/MRSS.git`
+3. Add upstream remote: `git remote add upstream https://github.com/marcomarcogd/MRSS.git`
 4. Create a new branch: `git checkout -b feature/your-feature-name`
 
 ## Development Setup
@@ -266,8 +266,8 @@ Use the [Feature Request template](.github/ISSUE_TEMPLATE/feature_request.md) an
 
 ## Questions?
 
-- Check existing [Issues](https://github.com/DevXDojo/MrRSS/issues)
-- Start a [Discussion](https://github.com/DevXDojo/MrRSS/discussions)
+- Check existing [Issues](https://github.com/marcomarcogd/MRSS/issues)
+- Start a [Discussion](https://github.com/marcomarcogd/MRSS/discussions)
 - Read the [README](README.md) and other documentation
 
 ## License
@@ -276,4 +276,4 @@ By contributing, you agree that your contributions will be licensed under the GP
 
 ---
 
-Thank you for contributing to MrRSS! 🎉
+Thank you for contributing to MRSS! 🎉

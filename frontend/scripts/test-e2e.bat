@@ -1,12 +1,12 @@
 @echo off
-REM MrRSS E2E Test Runner for Windows
+REM MRSS E2E Test Runner for Windows
 REM This script helps you run E2E tests with the Wails backend
 
 setlocal enabledelayedexpansion
 
 echo.
 echo ========================================
-echo   MrRSS E2E Test Runner
+echo   MRSS E2E Test Runner
 echo ========================================
 echo.
 

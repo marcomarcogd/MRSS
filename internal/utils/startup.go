@@ -11,6 +11,10 @@ import (
 
 // EnableStartup enables the application to start on system boot
 func EnableStartup() error {
+	if err := CleanupLegacyStartupRegistration(); err != nil {
+		log.Printf("Warning: Failed to clean legacy startup registration: %v", err)
+	}
+
 	executable, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("failed to get executable path: %w", err)
@@ -30,15 +34,35 @@ func EnableStartup() error {
 
 // DisableStartup disables the application from starting on system boot
 func DisableStartup() error {
+	var err error
 	switch runtime.GOOS {
 	case "windows":
-		return disableStartupWindows()
+		err = disableStartupWindows()
 	case "linux":
-		return disableStartupLinux()
+		err = disableStartupLinux()
 	case "darwin":
-		return disableStartupDarwin()
+		err = disableStartupDarwin()
 	default:
 		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
+	}
+	if err != nil {
+		return err
+	}
+	return CleanupLegacyStartupRegistration()
+}
+
+// CleanupLegacyStartupRegistration removes startup entries created by releases
+// that used the old application name and identifiers.
+func CleanupLegacyStartupRegistration() error {
+	switch runtime.GOOS {
+	case "windows":
+		return deleteStartupWindowsValue("MrRSS")
+	case "linux":
+		return removeStartupFile(filepath.Join(".config", "autostart", "mrrss.desktop"))
+	case "darwin":
+		return removeStartupFile(filepath.Join("Library", "LaunchAgents", "com.mrrss.app.plist"))
+	default:
+		return nil
 	}
 }
 
@@ -47,7 +71,7 @@ func enableStartupWindows(executable string) error {
 	// Use reg.exe to add registry entry
 	cmd := exec.Command("reg", "add",
 		"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
-		"/v", "MrRSS",
+		"/v", "MRSS",
 		"/t", "REG_SZ",
 		"/d", fmt.Sprintf("\"%s\"", executable),
 		"/f")
@@ -62,10 +86,14 @@ func enableStartupWindows(executable string) error {
 }
 
 func disableStartupWindows() error {
+	return deleteStartupWindowsValue("MRSS")
+}
+
+func deleteStartupWindowsValue(valueName string) error {
 	// Use reg.exe to remove registry entry
 	cmd := exec.Command("reg", "delete",
 		"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
-		"/v", "MrRSS",
+		"/v", valueName,
 		"/f")
 
 	output, err := cmd.CombinedOutput()
@@ -79,7 +107,7 @@ func disableStartupWindows() error {
 		return fmt.Errorf("failed to remove registry entry: %v, output: %s", err, output)
 	}
 
-	log.Println("Startup disabled for Windows")
+	log.Printf("Startup registry value removed for Windows: %s", valueName)
 	return nil
 }
 
@@ -95,10 +123,10 @@ func enableStartupLinux(executable string) error {
 		return fmt.Errorf("failed to create autostart directory: %w", err)
 	}
 
-	desktopFile := filepath.Join(autostartDir, "mrrss.desktop")
+	desktopFile := filepath.Join(autostartDir, "mrss.desktop")
 	content := fmt.Sprintf(`[Desktop Entry]
 Type=Application
-Name=MrRSS
+Name=MRSS
 Exec=%s
 Hidden=false
 NoDisplay=false
@@ -114,18 +142,9 @@ X-GNOME-Autostart-enabled=true
 }
 
 func disableStartupLinux() error {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("failed to get home directory: %w", err)
+	if err := removeStartupFile(filepath.Join(".config", "autostart", "mrss.desktop")); err != nil {
+		return err
 	}
-
-	desktopFile := filepath.Join(homeDir, ".config", "autostart", "mrrss.desktop")
-	if err := os.Remove(desktopFile); err != nil {
-		if !os.IsNotExist(err) {
-			return fmt.Errorf("failed to remove desktop file: %w", err)
-		}
-	}
-
 	log.Println("Startup disabled for Linux")
 	return nil
 }
@@ -142,13 +161,13 @@ func enableStartupDarwin(executable string) error {
 		return fmt.Errorf("failed to create LaunchAgents directory: %w", err)
 	}
 
-	plistFile := filepath.Join(launchAgentsDir, "com.mrrss.app.plist")
+	plistFile := filepath.Join(launchAgentsDir, "io.github.marcomarcogd.mrss.plist")
 	content := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
 	<key>Label</key>
-	<string>com.mrrss.app</string>
+	<string>io.github.marcomarcogd.mrss</string>
 	<key>ProgramArguments</key>
 	<array>
 		<string>%s</string>
@@ -168,18 +187,24 @@ func enableStartupDarwin(executable string) error {
 }
 
 func disableStartupDarwin() error {
+	if err := removeStartupFile(filepath.Join("Library", "LaunchAgents", "io.github.marcomarcogd.mrss.plist")); err != nil {
+		return err
+	}
+	log.Println("Startup disabled for macOS")
+	return nil
+}
+
+func removeStartupFile(relativePath string) error {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("failed to get home directory: %w", err)
 	}
 
-	plistFile := filepath.Join(homeDir, "Library", "LaunchAgents", "com.mrrss.app.plist")
-	if err := os.Remove(plistFile); err != nil {
+	path := filepath.Join(homeDir, relativePath)
+	if err := os.Remove(path); err != nil {
 		if !os.IsNotExist(err) {
-			return fmt.Errorf("failed to remove plist file: %w", err)
+			return fmt.Errorf("failed to remove startup file %s: %w", path, err)
 		}
 	}
-
-	log.Println("Startup disabled for macOS")
 	return nil
 }

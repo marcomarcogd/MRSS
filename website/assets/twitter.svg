@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="500" viewBox="0 0 1500 500">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1500" y2="500" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#061A31"/>
+      <stop offset="1" stop-color="#0B3155"/>
+    </linearGradient>
+    <linearGradient id="signal" x1="104" y1="122" x2="356" y2="385" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#287BFF"/>
+      <stop offset="0.55" stop-color="#20B8F2"/>
+      <stop offset="1" stop-color="#52E4D3"/>
+    </linearGradient>
+  </defs>
+  <rect width="1500" height="500" fill="url(#bg)"/>
+  <circle cx="1360" cy="35" r="260" fill="#287BFF" opacity=".09"/>
+  <rect x="70" y="55" width="390" height="390" rx="92" fill="#041326" stroke="#174A73" stroke-width="2"/>
+  <path d="M132 374V213l133 133 133-133v161" fill="none" stroke="url(#signal)" stroke-width="50" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="265" cy="171" r="15" fill="#52E4D3"/>
+  <path d="M225 159a50 50 0 0 1 80 0" fill="none" stroke="#31CFF0" stroke-width="18" stroke-linecap="round"/>
+  <path d="M192 136a92 92 0 0 1 146 0" fill="none" stroke="#287BFF" stroke-width="18" stroke-linecap="round"/>
+  <text x="540" y="210" fill="#F7FBFF" font-family="Inter, Arial, sans-serif" font-size="110" font-weight="800">MRSS</text>
+  <text x="545" y="282" fill="#52E4D3" font-family="Inter, Arial, sans-serif" font-size="38" font-weight="650">A privacy-first RSS reader</text>
+  <text x="545" y="348" fill="#C4D5E5" font-family="Inter, Arial, sans-serif" font-size="29">Local data · Translation · Summaries · Automation</text>
+</svg>

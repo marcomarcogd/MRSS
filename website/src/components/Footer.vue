@@ -7,8 +7,8 @@
     <div class="container">
       <div class="footer-main">
         <div class="footer-brand">
-          <img src="../../assets/logo.svg" alt="MrRSS Logo" width="45" height="45" />
-          <h3 class="brand-name">MrRSS</h3>
+          <img src="../../assets/logo.svg" alt="MRSS Logo" width="45" height="45" />
+          <h3 class="brand-name">MRSS</h3>
           <p class="brand-tagline">Read Smarter with AI</p>
         </div>
 
@@ -19,9 +19,9 @@
               <li><a href="#features">Features</a></li>
               <li><a href="#download">Download</a></li>
               <li>
-                <a href="https://github.com/DevXDojo/MrRSS/blob/main/CHANGELOG.md">Changelog</a>
+                <a href="https://github.com/marcomarcogd/MRSS/blob/main/CHANGELOG.md">Changelog</a>
               </li>
-              <li><a href="https://github.com/users/DevXDojo/projects/2">Roadmap</a></li>
+              <li><a href="https://github.com/marcomarcogd/MRSS/issues">Roadmap</a></li>
             </ul>
           </div>
 
@@ -29,19 +29,18 @@
             <h4 class="link-title">Resources</h4>
             <ul class="link-list">
               <li>
-                <a href="https://github.com/DevXDojo/MrRSS/blob/main/README.md">Documentation</a>
+                <a href="https://github.com/marcomarcogd/MRSS/blob/main/README.md">Documentation</a>
               </li>
               <li>
-                <a href="https://github.com/DevXDojo/MrRSS/blob/main/CODE_OF_CONDUCT.md"
-                  >User Guide</a
-                >
+                <a href="https://github.com/marcomarcogd/MRSS/blob/main/README.md">User Guide</a>
               </li>
               <li>
-                <a href="https://github.com/DevXDojo/MrRSS/blob/main/docs/SERVER_MODE.md"
+                <a
+                  href="https://github.com/marcomarcogd/MRSS/blob/main/docs/SERVER_MODE/swagger.json"
                   >API Reference</a
                 >
               </li>
-              <li><a href="https://github.com/DevXDojo/MrRSS/discussions">Community</a></li>
+              <li><a href="https://github.com/marcomarcogd/MRSS/discussions">Community</a></li>
             </ul>
           </div>
 
@@ -49,10 +48,12 @@
             <h4 class="link-title">Legal</h4>
             <ul class="link-list">
               <li>
-                <a href="https://github.com/DevXDojo/MrRSS/blob/main/SECURITY.md">Security Policy</a>
+                <a href="https://github.com/marcomarcogd/MRSS/blob/main/SECURITY.md"
+                  >Security Policy</a
+                >
               </li>
-              <li><a href="https://github.com/DevXDojo/MrRSS/blob/main/LICENSE">License</a></li>
-              <li><a href="https://github.com/DevXDojo/MrRSS/issues">Contact</a></li>
+              <li><a href="https://github.com/marcomarcogd/MRSS/blob/main/LICENSE">License</a></li>
+              <li><a href="https://github.com/marcomarcogd/MRSS/issues">Contact</a></li>
             </ul>
           </div>
 
@@ -60,7 +61,7 @@
             <h4 class="link-title">Connect</h4>
             <ul class="link-list">
               <li>
-                <a href="https://github.com/DevXDojo/MrRSS" class="social-link">
+                <a href="https://github.com/marcomarcogd/MRSS" class="social-link">
                   <PhGithubLogo :size="20" />
                   GitHub
                 </a>
@@ -88,8 +89,11 @@
 
       <div class="footer-bottom">
         <div class="footer-copyright">
-          <p>&copy; 2026 MrRSS. All rights reserved.</p>
-          <p class="copyright-note">Open source and available under GPL-3.0 License.</p>
+          <p>&copy; 2026 marcomarcogd and MRSS contributors.</p>
+          <p class="copyright-note">
+            GPL-3.0 · Unofficial fork of
+            <a href="https://github.com/DevXDojo/MrRSS">DevXDojo/MrRSS</a> · No warranty
+          </p>
         </div>
 
         <div class="footer-badge">

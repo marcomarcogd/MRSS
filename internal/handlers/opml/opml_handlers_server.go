@@ -8,9 +8,9 @@ import (
 	"net/http"
 	"strings"
 
-	"MrRSS/internal/handlers/core"
-	"MrRSS/internal/handlers/response"
-	"MrRSS/internal/opml"
+	"MRSS/internal/handlers/core"
+	"MRSS/internal/handlers/response"
+	"MRSS/internal/opml"
 )
 
 // HandleOPMLImport handles OPML file import for server mode.

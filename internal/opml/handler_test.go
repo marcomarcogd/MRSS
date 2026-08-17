@@ -1,7 +1,7 @@
 package opml
 
 import (
-	"MrRSS/internal/models"
+	"MRSS/internal/models"
 	"strings"
 	"testing"
 )
@@ -110,14 +110,14 @@ func TestGenerate(t *testing.T) {
 	}
 }
 
-// TestParseSelfExportFormat tests that MrRSS's own exported OPML format (which includes both xmlUrl and feedURL)
+// TestParseSelfExportFormat tests that MRSS's own exported OPML format (which includes both xmlUrl and feedURL)
 // can be parsed correctly without the feedURL empty string overwriting the valid xmlUrl.
 func TestParseSelfExportFormat(t *testing.T) {
 	xmlData := `
 	<?xml version="1.0" encoding="UTF-8"?>
 	<opml version="1.0">
 		<head>
-			<title>MrRSS Subscriptions</title>
+			<title>MRSS Subscriptions</title>
 		</head>
 		<body>
 			<outline text="v2ex hot" title="v2ex hot" type="" xmlUrl="rsshub://v2ex/topics/hot" htmlUrl="" feedURL="" description="" category=""/>

@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"time"
 
-	"MrRSS/internal/handlers/core"
-	"MrRSS/internal/handlers/response"
-	"MrRSS/internal/statistics"
+	"MRSS/internal/handlers/core"
+	"MRSS/internal/handlers/response"
+	"MRSS/internal/statistics"
 )
 
 // HandleGetStatistics retrieves statistics for a specific time period

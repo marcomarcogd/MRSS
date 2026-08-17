@@ -1,6 +1,6 @@
-# Custom Scripts for MrRSS
+# Custom Scripts for MRSS
 
-MrRSS supports custom scripts that can be used to fetch RSS feeds from sources that don't provide standard RSS/Atom feeds.
+MRSS supports custom scripts that can be used to fetch RSS feeds from sources that don't provide standard RSS/Atom feeds.
 
 ## Using AI to Write Crawler Scripts
 
@@ -37,7 +37,7 @@ Please provide complete, runnable code example.
 
 ### Notes
 
-- The generated script needs to meet MrRSS script requirements (see below)
+- The generated script needs to meet MRSS script requirements (see below)
 - Ensure the script outputs valid RSS XML format
 - Test if the script runs properly in your environment
 - Respect the website's robots.txt and terms of use
@@ -46,7 +46,7 @@ Please provide complete, runnable code example.
 
 ## How It Works
 
-1. Place your scripts in the `scripts` folder inside the MrRSS data directory
+1. Place your scripts in the `scripts` folder inside the MRSS data directory
 2. When adding a new feed, select "Custom Script" instead of "RSS URL"
 3. Choose your script from the dropdown
 4. The script will be executed whenever the feed is refreshed
@@ -173,7 +173,7 @@ console.log('</rss>');
 
 ## Tips
 
-1. **Error Handling**: If your script encounters an error, write the error message to stderr. MrRSS will display this in the feed's error indicator.
+1. **Error Handling**: If your script encounters an error, write the error message to stderr. MRSS will display this in the feed's error indicator.
 
 2. **Timeout**: Scripts have a 30-second timeout. If your script takes longer, it will be terminated.
 
@@ -196,13 +196,13 @@ console.log('</rss>');
 
 ## Data Directory Location
 
-The scripts folder is located in the MrRSS data directory:
+The scripts folder is located in the MRSS data directory:
 
-- **Windows**: `%APPDATA%\MrRSS\scripts\`
-- **macOS**: `~/Library/Application Support/MrRSS/scripts/`
-- **Linux**: `~/.local/share/MrRSS/scripts/`
+- **Windows**: `%APPDATA%\MRSS\scripts\`
+- **macOS**: `~/Library/Application Support/MRSS/scripts/`
+- **Linux**: `~/.local/share/MRSS/scripts/`
 
-You can also open the scripts folder directly from the MrRSS interface when adding a new feed.
+You can also open the scripts folder directly from the MRSS interface when adding a new feed.
 
 ## Additional Resources
 

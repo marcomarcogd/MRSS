@@ -59,8 +59,8 @@ representative at an online or offline event.
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the community leaders responsible for enforcement at
-[mail@ch3nyang.top](mailto:mail@ch3nyang.top).
+reported privately through the repository's
+[security advisory form](https://github.com/marcomarcogd/MRSS/security/advisories/new).
 
 All complaints will be reviewed and investigated promptly and fairly.
 

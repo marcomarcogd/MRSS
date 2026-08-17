@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"net/http"
 
-	"MrRSS/internal/handlers/core"
-	"MrRSS/internal/handlers/response"
-	"MrRSS/internal/rsshub"
+	"MRSS/internal/handlers/core"
+	"MRSS/internal/handlers/response"
+	"MRSS/internal/rsshub"
 )
 
 // HandleAddFeed adds a new RSSHub feed subscription

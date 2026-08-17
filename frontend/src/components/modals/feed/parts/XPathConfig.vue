@@ -56,8 +56,8 @@ const xpathTypeOptions = computed<SelectOption[]>(() => {
 
 function openDocumentation() {
   const docUrl = locale.value.startsWith('zh')
-    ? 'https://github.com/DevXDojo/MrRSS/blob/main/docs/XPATH_MODE.zh.md'
-    : 'https://github.com/DevXDojo/MrRSS/blob/main/docs/XPATH_MODE.md';
+    ? 'https://github.com/marcomarcogd/MRSS/blob/main/docs/XPATH_MODE.zh.md'
+    : 'https://github.com/marcomarcogd/MRSS/blob/main/docs/XPATH_MODE.md';
   openInBrowser(docUrl);
 }
 

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"MrRSS/internal/utils/httputil"
+	"MRSS/internal/utils/httputil"
 )
 
 // ClientConfig holds the configuration for the AI client

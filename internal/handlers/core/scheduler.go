@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"time"
 
-	"MrRSS/internal/cache"
-	"MrRSS/internal/models"
-	"MrRSS/internal/utils/fileutil"
+	"MRSS/internal/cache"
+	"MRSS/internal/models"
+	"MRSS/internal/utils/fileutil"
 )
 
 // StartBackgroundScheduler starts the background scheduler for auto-updates and cleanup.

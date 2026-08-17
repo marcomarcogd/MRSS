@@ -5,19 +5,19 @@
 !include "FileFunc.nsh"
 
 !ifndef INFO_PROJECTNAME
-    !define INFO_PROJECTNAME "MrRSS"
+    !define INFO_PROJECTNAME "MRSS"
 !endif
 !ifndef INFO_COMPANYNAME
-    !define INFO_COMPANYNAME "Ch3nyang"
+    !define INFO_COMPANYNAME "marcomarcogd"
 !endif
 !ifndef INFO_PRODUCTNAME
-    !define INFO_PRODUCTNAME "MrRSS"
+    !define INFO_PRODUCTNAME "MRSS"
 !endif
 !ifndef INFO_PRODUCTVERSION
     !define INFO_PRODUCTVERSION "1.4.2"
 !endif
 !ifndef INFO_COPYRIGHT
-    !define INFO_COPYRIGHT "Copyright © 2026"
+    !define INFO_COPYRIGHT "Copyright © 2026 marcomarcogd and contributors"
 !endif
 !ifndef PRODUCT_EXECUTABLE
     !define PRODUCT_EXECUTABLE "${INFO_PROJECTNAME}.exe"
@@ -34,7 +34,7 @@
 RequestExecutionLevel "${REQUEST_EXECUTION_LEVEL}"
 
 !ifndef ARG_WAILS_AMD64_BINARY
-    !define ARG_WAILS_AMD64_BINARY "MrRSS.exe"
+    !define ARG_WAILS_AMD64_BINARY "MRSS.exe"
 !endif
 
 !ifdef ARG_WAILS_AMD64_BINARY

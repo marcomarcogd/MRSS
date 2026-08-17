@@ -15,6 +15,12 @@ const createStub = (name: string) => ({
 });
 
 describe('App', () => {
+  it('uses the MRSS brand and fork attribution', () => {
+    expect(en.appName).toBe('MRSS');
+    expect(en.setting.about.forkNotice).toContain('DevXDojo/MrRSS');
+    expect(en.setting.about.licenseNotice).toContain('GPL-3.0');
+  });
+
   it('renders and reacts to interface typography settings', async () => {
     setSettingsFromRawData({});
     const pinia = createPinia();

@@ -1,9 +1,9 @@
 package feed
 
 import (
-	"MrRSS/internal/database"
-	"MrRSS/internal/models"
-	"MrRSS/internal/utils/httputil"
+	"MRSS/internal/database"
+	"MRSS/internal/models"
+	"MRSS/internal/utils/httputil"
 	"context"
 	"net/http"
 	"net/url"

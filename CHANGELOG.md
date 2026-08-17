@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to MrRSS will be documented in this file.
+All notable changes to MRSS will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -1032,7 +1032,7 @@ MrRSS follows [Semantic Versioning](https://semver.org/):
 
 ### Download
 
-Downloads for all platforms are available on the [GitHub Releases](https://github.com/DevXDojo/MrRSS/releases) page.
+Downloads for all platforms are available on the [GitHub Releases](https://github.com/marcomarcogd/MRSS/releases) page.
 
 ### Upgrade Notes
 
@@ -1044,6 +1044,6 @@ When upgrading from a previous version:
 
 ### Support
 
-- Report bugs: [GitHub Issues](https://github.com/DevXDojo/MrRSS/issues)
-- Feature requests: [GitHub Issues](https://github.com/DevXDojo/MrRSS/issues)
+- Report bugs: [GitHub Issues](https://github.com/marcomarcogd/MRSS/issues)
+- Feature requests: [GitHub Issues](https://github.com/marcomarcogd/MRSS/issues)
 - Documentation: [README](README.md)

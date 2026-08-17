@@ -3,9 +3,9 @@ package database_test
 import (
 	"testing"
 
-	"MrRSS/internal/config"
-	"MrRSS/internal/crypto"
-	dbpkg "MrRSS/internal/database"
+	"MRSS/internal/config"
+	"MRSS/internal/crypto"
+	dbpkg "MRSS/internal/database"
 )
 
 func setupTestDB(t *testing.T) *dbpkg.DB {

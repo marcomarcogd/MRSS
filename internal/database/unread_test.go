@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"MrRSS/internal/models"
+	"MRSS/internal/models"
 )
 
 func TestUnreadCounts(t *testing.T) {

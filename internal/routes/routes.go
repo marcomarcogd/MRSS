@@ -1,12 +1,12 @@
-// Package routes provides centralized route registration for the MrRSS API.
+// Package routes provides centralized route registration for the MRSS API.
 // This eliminates code duplication between main.go and main-core.go.
 package routes
 
 import (
 	"net/http"
 
-	"MrRSS/internal/handlers/core"
-	"MrRSS/internal/middleware"
+	"MRSS/internal/handlers/core"
+	"MRSS/internal/middleware"
 )
 
 // Config contains options for route registration.

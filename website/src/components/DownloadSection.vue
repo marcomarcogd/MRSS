@@ -31,12 +31,12 @@ const onBtnLeave = (event) => {
           </h2>
           <p class="download-description">
             Join thousands of users who have already transformed their RSS reading experience.
-            Download MrRSS and harness the power of AI.
+            Download MRSS and harness the power of AI.
           </p>
 
           <div class="download-buttons">
             <a
-              href="https://github.com/DevXDojo/MrRSS/releases"
+              href="https://github.com/marcomarcogd/MRSS/releases"
               class="download-btn windows"
               @mouseenter="onBtnHover"
               @mouseleave="onBtnLeave"
@@ -52,7 +52,7 @@ const onBtnLeave = (event) => {
             </a>
 
             <a
-              href="https://github.com/DevXDojo/MrRSS/releases"
+              href="https://github.com/marcomarcogd/MRSS/releases"
               class="download-btn macos"
               @mouseenter="onBtnHover"
               @mouseleave="onBtnLeave"
@@ -68,7 +68,7 @@ const onBtnLeave = (event) => {
             </a>
 
             <a
-              href="https://github.com/DevXDojo/MrRSS/releases"
+              href="https://github.com/marcomarcogd/MRSS/releases"
               class="download-btn linux"
               @mouseenter="onBtnHover"
               @mouseleave="onBtnLeave"
@@ -101,7 +101,7 @@ const onBtnLeave = (event) => {
               </div>
             </div>
             <p class="testimonial-text">
-              "MrRSS has completely transformed how I consume news. The AI summaries are incredibly
+              "MRSS has completely transformed how I consume news. The AI summaries are incredibly
               accurate and save me hours every week. The local processing gives me peace of mind
               about my data."
             </p>

@@ -4,11 +4,11 @@
         <key>CFBundlePackageType</key>
             <string>APPL</string>
         <key>CFBundleName</key>
-            <string>MrRSS</string>
+            <string>MRSS</string>
         <key>CFBundleExecutable</key>
-            <string>MrRSS</string>
+            <string>MRSS</string>
         <key>CFBundleIdentifier</key>
-            <string>com.mrrss.app</string>
+            <string>io.github.marcomarcogd.mrss</string>
         <key>CFBundleVersion</key>
             <string>1.3.24</string>
         <key>CFBundleGetInfoString</key>
@@ -22,7 +22,7 @@
         <key>NSHighResolutionCapable</key>
             <string>true</string>
         <key>NSHumanReadableCopyright</key>
-            <string>Copyright © 2026</string>
+            <string>Copyright © 2026 marcomarcogd and contributors</string>
         <key>NSAppTransportSecurity</key>
         <dict>
             <key>NSAllowsLocalNetworking</key>

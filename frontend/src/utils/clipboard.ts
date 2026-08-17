@@ -1,5 +1,5 @@
 /**
- * Clipboard utilities for MrRSS
+ * Clipboard utilities for MRSS
  * Uses Wails v3 native Clipboard API
  */
 

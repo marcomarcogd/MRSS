@@ -1,25 +1,25 @@
 #!/bin/bash
-# Script to create a Linux AppImage for MrRSS
+# Script to create a Linux AppImage for MRSS
 #
 # Application Information:
-# Name: MrRSS
+# Name: MRSS
 # Description: A Modern, Cross-Platform Desktop RSS Reader
-# Publisher: Ch3nyang
-# URL: https://github.com/DevXDojo/MrRSS
-# Copyright: Copyright © Ch3nyang
+# Publisher: marcomarcogd
+# URL: https://github.com/marcomarcogd/MRSS
+# Copyright: Copyright © marcomarcogd
 
 # Exit on error, but allow some commands to fail gracefully
 set -e
 
-APP_NAME="MrRSS"
+APP_NAME="MRSS"
 # Get version from frontend/package.json if available, otherwise use default
 VERSION=$(grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' frontend/package.json 2>/dev/null | head -1 | sed 's/.*"\([^"]*\)".*/\1/' || echo "1.3.24")
 # Get architecture from environment variable or default to amd64
 ARCH=${ARCH:-amd64}
 echo "Target architecture: ${ARCH}"
 echo "System architecture: $(uname -m)"
-APP_PUBLISHER="Ch3nyang"
-APP_URL="https://github.com/DevXDojo/MrRSS"
+APP_PUBLISHER="marcomarcogd"
+APP_URL="https://github.com/marcomarcogd/MRSS"
 APP_DESCRIPTION="A Modern, Cross-Platform Desktop RSS Reader"
 BUILD_DIR="build/bin"
 APPDIR="build/appimage/${APP_NAME}.AppDir"
@@ -43,11 +43,13 @@ rm -rf "build/appimage"
 mkdir -p "${APPDIR}/usr/bin"
 mkdir -p "${APPDIR}/usr/share/applications"
 mkdir -p "${APPDIR}/usr/share/icons/hicolor/256x256/apps"
+mkdir -p "${APPDIR}/usr/share/doc/${APP_NAME}"
 
 # Copy binary
 echo "Copying binary..."
 cp "${BUILD_DIR}/${APP_NAME}" "${APPDIR}/usr/bin/"
 chmod +x "${APPDIR}/usr/bin/${APP_NAME}"
+cp LICENSE NOTICE "${APPDIR}/usr/share/doc/${APP_NAME}/"
 
 # Create desktop file
 echo "Creating desktop file..."
@@ -74,7 +76,7 @@ SELF=$(readlink -f "$0")
 HERE=${SELF%/*}
 export PATH="${HERE}/usr/bin:${PATH}"
 export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
-exec "${HERE}/usr/bin/MrRSS" "$@"
+exec "${HERE}/usr/bin/MRSS" "$@"
 EOF
 chmod +x "${APPDIR}/AppRun"
 
@@ -222,4 +224,4 @@ echo "Installation instructions:"
 echo "1. Make the AppImage executable: chmod +x ${APPIMAGE_NAME}"
 echo "2. Run the AppImage: ./${APPIMAGE_NAME}"
 echo ""
-echo "User data will be stored in: ~/.local/share/MrRSS/"
+echo "User data will be stored in: ~/.local/share/MRSS/"

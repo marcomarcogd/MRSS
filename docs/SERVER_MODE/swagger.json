@@ -1,12 +1,11 @@
 {
     "swagger": "2.0",
     "info": {
-        "description": "MrRSS is a modern, cross-platform desktop RSS reader with auto-translation, smart feed discovery, and AI-powered summarization.",
-        "title": "MrRSS API",
+        "description": "MRSS is a modern, cross-platform desktop RSS reader with auto-translation, smart feed discovery, and AI-powered summarization.",
+        "title": "MRSS API",
         "contact": {
             "name": "API Support",
-            "url": "https://github.com/DevXDojo/MrRSS",
-            "email": "mail@ch3nyang.top"
+            "url": "https://github.com/marcomarcogd/MRSS/issues"
         },
         "license": {
             "name": "GPL-3.0",

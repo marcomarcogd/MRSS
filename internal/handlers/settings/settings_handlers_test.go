@@ -7,8 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"MrRSS/internal/database"
-	"MrRSS/internal/handlers/core"
+	"MRSS/internal/database"
+	"MRSS/internal/handlers/core"
 )
 
 func setupHandlerWithDB(t *testing.T) *core.Handler {

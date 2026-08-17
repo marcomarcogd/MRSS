@@ -66,7 +66,7 @@ tasks:
           <key>CFBundleIconFile</key>
           <string>icons.icns</string>
           <key>CFBundleIdentifier</key>
-          <string>com.mrrss.app</string>
+          <string>io.github.marcomarcogd.mrss</string>
           <key>CFBundleName</key>
           <string>{{.APP_NAME}}</string>
           <key>CFBundlePackageType</key>
@@ -82,15 +82,15 @@ tasks:
           <key>NSSupportsAutomaticGraphicsSwitching</key>
           <true/>
           <key>NSHumanReadableCopyright</key>
-          <string>Copyright © 2026</string>
+          <string>Copyright © 2026 marcomarcogd and contributors</string>
           <key>NSAppleEventsUsageDescription</key>
-          <string>MrRSS needs permission to open articles in your default web browser and execute custom feed scripts.</string>
+          <string>MRSS needs permission to open articles in your default web browser and execute custom feed scripts.</string>
           <key>NSNetworkUsageDescription</key>
-          <string>MrRSS requires network access to fetch RSS feeds and update content.</string>
+          <string>MRSS requires network access to fetch RSS feeds and update content.</string>
           <key>NSDocumentsFolderUsageDescription</key>
-          <string>MrRSS needs access to Documents folder to import and export OPML feed lists.</string>
+          <string>MRSS needs access to Documents folder to import and export OPML feed lists.</string>
           <key>NSDownloadsFolderUsageDescription</key>
-          <string>MrRSS needs access to Downloads folder to import feed lists and save exported content.</string>
+          <string>MRSS needs access to Downloads folder to import feed lists and save exported content.</string>
           <key>NSAppTransportSecurity</key>
           <dict>
             <key>NSAllowsArbitraryLoads</key>
@@ -199,10 +199,10 @@ tasks:
     deps:
       - task: common:build:frontend
     cmds:
-      - docker build -f Dockerfile.server -t mrrss-server:latest .
-      - docker create --name mrrss-server-temp mrrss-server:latest
-      - docker cp mrrss-server-temp:/app/mrrss-server {{.BIN_DIR}}/{{.APP_NAME}}-server
-      - docker rm mrrss-server-temp
+      - docker build -f Dockerfile.server -t mrss-server:latest .
+      - docker create --name mrss-server-temp mrss-server:latest
+      - docker cp mrss-server-temp:/app/mrss-server {{.BIN_DIR}}/{{.APP_NAME}}-server
+      - docker rm mrss-server-temp
     preconditions:
       - sh: docker info > /dev/null 2>&1
         msg: "Docker is required for building the server version"

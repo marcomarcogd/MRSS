@@ -1,8 +1,8 @@
-# MrRSS Landing Page
+# MRSS Landing Page
 
-A modern, visually stunning landing page for MrRSS - an AI-powered RSS reader application.
+A modern, visually stunning landing page for MRSS - an AI-powered RSS reader application.
 
-![MrRSS Landing Page](https://img.shields.io/badge/Vue.js-3.4+-42b883?style=flat&logo=vue.js&logoColor=white)
+![MRSS Landing Page](https://img.shields.io/badge/Vue.js-3.4+-42b883?style=flat&logo=vue.js&logoColor=white)
 ![Vite](https://img.shields.io/badge/Vite-5.0-646cff?style=flat&logo=vite&logoColor=white)
 
 ## Features
@@ -59,7 +59,7 @@ npm run preview
 ## Project Structure
 
 ```
-mrrss-landing-page/
+mrss-landing-page/
 ├── src/
 │   ├── components/
 │   │   ├── HeroSection.vue       # Hero with particle animation
@@ -123,7 +123,7 @@ Update the text and links in each component file:
 
 ## License
 
-MIT
+GPL-3.0. See the repository root [LICENSE](../LICENSE) and [NOTICE](../NOTICE).
 
 ## Credits
 

@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"MrRSS/internal/ai"
-	"MrRSS/internal/config"
-	"MrRSS/internal/handlers/core"
-	"MrRSS/internal/handlers/response"
+	"MRSS/internal/ai"
+	"MRSS/internal/config"
+	"MRSS/internal/handlers/core"
+	"MRSS/internal/handlers/response"
 )
 
 // TestResult represents the result of AI configuration test

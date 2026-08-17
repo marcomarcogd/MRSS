@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"MrRSS/internal/database"
-	"MrRSS/internal/feed"
-	"MrRSS/internal/models"
+	"MRSS/internal/database"
+	"MRSS/internal/feed"
+	"MRSS/internal/models"
 
 	"github.com/mmcdole/gofeed"
 )

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"MrRSS/internal/utils/httputil"
+	"MRSS/internal/utils/httputil"
 )
 
 // Translator defines the interface for translation services

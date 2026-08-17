@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://DevXDojo.github.io/MrRSS/sitemap.xml
+Sitemap: https://marcomarcogd.github.io/MRSS/sitemap.xml

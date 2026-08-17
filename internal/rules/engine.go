@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"MrRSS/internal/database"
-	"MrRSS/internal/freshrss"
-	"MrRSS/internal/models"
-	"MrRSS/internal/rsshub"
+	"MRSS/internal/database"
+	"MRSS/internal/freshrss"
+	"MRSS/internal/models"
+	"MRSS/internal/rsshub"
 )
 
 // getFeedType returns the type code of a feed

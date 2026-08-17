@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"time"
 
-	"MrRSS/internal/models"
+	"MRSS/internal/models"
 )
 
 // FeedUpdateOptions contains optional fields for updating a feed.

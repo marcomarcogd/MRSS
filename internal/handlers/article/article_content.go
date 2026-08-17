@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"strconv"
 
-	"MrRSS/internal/feed"
-	"MrRSS/internal/handlers/core"
-	"MrRSS/internal/handlers/response"
+	"MRSS/internal/feed"
+	"MRSS/internal/handlers/core"
+	"MRSS/internal/handlers/response"
 )
 
 // HandleGetArticleContent fetches the article content from RSS feed dynamically.

@@ -20,19 +20,19 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 
-	"MrRSS/internal/ai"
-	"MrRSS/internal/database"
-	"MrRSS/internal/feed"
-	handlers "MrRSS/internal/handlers/core"
-	"MrRSS/internal/monitor"
-	"MrRSS/internal/network"
-	"MrRSS/internal/routes"
-	"MrRSS/internal/translation"
-	"MrRSS/internal/utils/fileutil"
-	"MrRSS/internal/utils/httputil"
+	"MRSS/internal/ai"
+	"MRSS/internal/database"
+	"MRSS/internal/feed"
+	handlers "MRSS/internal/handlers/core"
+	"MRSS/internal/network"
+	"MRSS/internal/routes"
+	"MRSS/internal/translation"
+	appUtils "MRSS/internal/utils"
+	"MRSS/internal/utils/fileutil"
+	"MRSS/internal/utils/httputil"
 )
 
-var debugLogging = os.Getenv("MRRSS_DEBUG") != ""
+var debugLogging = appUtils.EnvValue(appUtils.DebugEnv, appUtils.LegacyDebugEnv) != ""
 
 func debugLog(format string, args ...interface{}) {
 	if debugLogging {
@@ -153,6 +153,14 @@ func main() {
 	}
 	log.Println("Database initialized successfully")
 
+	if startupOnBoot, err := db.GetSetting("startup_on_boot"); err == nil && startupOnBoot == "true" {
+		if err := appUtils.EnableStartup(); err != nil {
+			log.Printf("Warning: Failed to migrate startup registration: %v", err)
+		}
+	} else if err := appUtils.CleanupLegacyStartupRegistration(); err != nil {
+		log.Printf("Warning: Failed to clean legacy startup registration: %v", err)
+	}
+
 	// Initialize AI profile provider
 	profileProvider := ai.NewProfileProvider(db)
 	translator := translation.NewDynamicTranslatorWithCache(db, db)
@@ -211,7 +219,7 @@ func main() {
 
 	// Create new Wails v3 application
 	app := application.New(application.Options{
-		Name:        "MrRSS",
+		Name:        "MRSS",
 		Description: "A modern, privacy-focused RSS reader",
 		LogLevel:    slog.LevelError,
 		Assets: application.AssetOptions{
@@ -227,7 +235,7 @@ func main() {
 				return nil
 			}
 			return &application.SingleInstanceOptions{
-				UniqueID:      "com.mrrss.app",
+				UniqueID:      "io.github.marcomarcogd.mrss",
 				EncryptionKey: encryptionKey,
 				OnSecondInstanceLaunch: func(data application.SecondInstanceData) {
 					log.Printf("Second instance detected, bringing window to front")
@@ -338,8 +346,8 @@ func main() {
 
 	// Create main window options
 	windowOptions := application.WebviewWindowOptions{
-		Name:             "MrRSS-main-window",
-		Title:            "MrRSS",
+		Name:             "MRSS-main-window",
+		Title:            "MRSS",
 		Width:            windowWidth,
 		Height:           windowHeight,
 		URL:              "/",
@@ -410,11 +418,11 @@ func main() {
 		var showLabel, refreshLabel, quitLabel string
 		switch lang {
 		case "zh-CN", "zh", "zh-cn":
-			showLabel = "显示 MrRSS"
+			showLabel = "显示 MRSS"
 			refreshLabel = "立即刷新"
 			quitLabel = "退出"
 		default:
-			showLabel = "Show MrRSS"
+			showLabel = "Show MRSS"
 			refreshLabel = "Refresh now"
 			quitLabel = "Quit"
 		}
@@ -624,13 +632,6 @@ func main() {
 		time.Sleep(5 * time.Second)
 		log.Println("Starting background scheduler...")
 		h.StartBackgroundScheduler(bgCtx)
-	}()
-
-	// Report app startup to analytics (non-blocking)
-	go func() {
-		time.Sleep(2 * time.Second) // Small delay to ensure app starts smoothly
-		monitorClient := monitor.NewMonitorClient("https://cf-monitor-api.ch3nyang.workers.dev", "mrrss")
-		_ = monitorClient.ReportAppStart(context.Background())
 	}()
 
 	log.Println("Window initialized, running app...")

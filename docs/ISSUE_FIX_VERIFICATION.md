@@ -15,7 +15,7 @@ This document records the urgent and low-effort open issue fixes handled in this
   - Covered by frontend build.
 
 - #911 LAN Ollama/local AI with self-signed TLS
-  - AI HTTP clients now use the shared HTTP client and can opt into `MRRSS_INSECURE_SKIP_TLS_VERIFY=true`.
+  - AI HTTP clients now use the shared HTTP client and can opt into `MRSS_INSECURE_SKIP_TLS_VERIFY=true`.
   - Covered by `TestCreateHTTPClientHonorsInsecureTLSVerifyEnv` and `TestCreateHTTPClientKeepsTLSVerificationByDefault`.
 
 - #875 full-text fetch does not use proxy

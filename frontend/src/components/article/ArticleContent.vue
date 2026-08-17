@@ -68,7 +68,8 @@ const { settings: appSettings, fetchSettings } = useSettings();
 const store = useAppStore();
 const isChatPanelOpen = ref(false);
 const articleScrollContainer = ref<HTMLElement | null>(null);
-const ARTICLE_SCROLL_POSITIONS_KEY = 'mrrssArticleScrollPositions';
+const ARTICLE_SCROLL_POSITIONS_KEY = 'mrssArticleScrollPositions';
+const LEGACY_ARTICLE_SCROLL_POSITIONS_KEY = 'mrrssArticleScrollPositions';
 let scrollSaveTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingScrollRestoreArticleId: number | null = null;
 let pendingScrollRestoreAttempts = 0;
@@ -202,7 +203,14 @@ let summaryTranslationRequestId = 0;
 
 function loadArticleScrollPositions(): Record<string, number> {
   try {
-    const raw = localStorage.getItem(ARTICLE_SCROLL_POSITIONS_KEY);
+    let raw = localStorage.getItem(ARTICLE_SCROLL_POSITIONS_KEY);
+    if (!raw) {
+      raw = localStorage.getItem(LEGACY_ARTICLE_SCROLL_POSITIONS_KEY);
+      if (raw) {
+        localStorage.setItem(ARTICLE_SCROLL_POSITIONS_KEY, raw);
+        localStorage.removeItem(LEGACY_ARTICLE_SCROLL_POSITIONS_KEY);
+      }
+    }
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed === 'object' ? parsed : {};

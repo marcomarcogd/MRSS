@@ -5,8 +5,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"MrRSS/internal/database"
-	corepkg "MrRSS/internal/handlers/core"
+	"MRSS/internal/database"
+	corepkg "MRSS/internal/handlers/core"
 )
 
 func setupHandler(t *testing.T) *corepkg.Handler {

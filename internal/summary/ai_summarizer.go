@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"MrRSS/internal/ai"
-	"MrRSS/internal/config"
-	"MrRSS/internal/utils/httputil"
+	"MRSS/internal/ai"
+	"MRSS/internal/config"
+	"MRSS/internal/utils/httputil"
 )
 
 // AISummarizer implements summarization using OpenAI-compatible APIs (GPT, Claude, etc.).

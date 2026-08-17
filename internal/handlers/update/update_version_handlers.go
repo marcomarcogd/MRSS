@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"strings"
 
-	"MrRSS/internal/handlers/core"
-	"MrRSS/internal/handlers/response"
-	"MrRSS/internal/version"
+	"MRSS/internal/handlers/core"
+	"MRSS/internal/handlers/response"
+	"MRSS/internal/version"
 )
 
 // HandleVersion returns the current application version.

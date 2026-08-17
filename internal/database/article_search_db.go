@@ -6,7 +6,7 @@ import (
 	"log"
 	"time"
 
-	"MrRSS/internal/models"
+	"MRSS/internal/models"
 )
 
 // GetImageGalleryArticles retrieves articles from image mode feeds with pagination.

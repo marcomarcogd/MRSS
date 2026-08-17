@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"MrRSS/internal/handlers/core"
-	"MrRSS/internal/handlers/response"
+	"MRSS/internal/handlers/core"
+	"MRSS/internal/handlers/response"
 )
 
 // WindowState represents the saved window state

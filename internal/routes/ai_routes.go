@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"strings"
 
-	aihandlers "MrRSS/internal/handlers/ai"
-	chat "MrRSS/internal/handlers/chat"
-	"MrRSS/internal/handlers/core"
-	"MrRSS/internal/handlers/response"
+	aihandlers "MRSS/internal/handlers/ai"
+	chat "MRSS/internal/handlers/chat"
+	"MRSS/internal/handlers/core"
+	"MRSS/internal/handlers/response"
 )
 
 // registerAIRoutes registers all AI-related routes

@@ -84,14 +84,15 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ghcr.io/${{ needs.extract-metadata.outputs.owner_lowercase }}/mrrss:${{ needs.extract-metadata.outputs.version }}-amd64
-            ${{ needs.extract-metadata.outputs.is_prerelease == 'false' && format('ghcr.io/{0}/mrrss:latest-amd64', needs.extract-metadata.outputs.owner_lowercase) || '' }}
+            ghcr.io/${{ needs.extract-metadata.outputs.owner_lowercase }}/mrss:${{ needs.extract-metadata.outputs.version }}-amd64
+            ${{ needs.extract-metadata.outputs.is_prerelease == 'false' && format('ghcr.io/{0}/mrss:latest-amd64', needs.extract-metadata.outputs.owner_lowercase) || '' }}
           labels: |
-            org.opencontainers.image.title=MrRSS
+            org.opencontainers.image.title=MRSS
             org.opencontainers.image.description=A modern, privacy-focused RSS reader
             org.opencontainers.image.version=${{ needs.extract-metadata.outputs.version }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=GPL-3.0
           cache-from: type=gha,scope=amd64
           cache-to: type=gha,mode=max,scope=amd64
 
@@ -131,14 +132,15 @@ jobs:
           platforms: linux/arm64
           push: true
           tags: |
-            ghcr.io/${{ needs.extract-metadata.outputs.owner_lowercase }}/mrrss:${{ needs.extract-metadata.outputs.version }}-arm64
-            ${{ needs.extract-metadata.outputs.is_prerelease == 'false' && format('ghcr.io/{0}/mrrss:latest-arm64', needs.extract-metadata.outputs.owner_lowercase) || '' }}
+            ghcr.io/${{ needs.extract-metadata.outputs.owner_lowercase }}/mrss:${{ needs.extract-metadata.outputs.version }}-arm64
+            ${{ needs.extract-metadata.outputs.is_prerelease == 'false' && format('ghcr.io/{0}/mrss:latest-arm64', needs.extract-metadata.outputs.owner_lowercase) || '' }}
           labels: |
-            org.opencontainers.image.title=MrRSS
+            org.opencontainers.image.title=MRSS
             org.opencontainers.image.description=A modern, privacy-focused RSS reader
             org.opencontainers.image.version=${{ needs.extract-metadata.outputs.version }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=GPL-3.0
           cache-from: type=gha,scope=arm64
           cache-to: type=gha,mode=max,scope=arm64
 
@@ -162,15 +164,15 @@ jobs:
           OWNER="${{ needs.extract-metadata.outputs.owner_lowercase }}"
 
           # Create version-specific manifest
-          docker buildx imagetools create -t ghcr.io/${OWNER}/mrrss:${VERSION} \
-            ghcr.io/${OWNER}/mrrss:${VERSION}-amd64 \
-            ghcr.io/${OWNER}/mrrss:${VERSION}-arm64
+          docker buildx imagetools create -t ghcr.io/${OWNER}/mrss:${VERSION} \
+            ghcr.io/${OWNER}/mrss:${VERSION}-amd64 \
+            ghcr.io/${OWNER}/mrss:${VERSION}-arm64
 
           # Create latest manifest (only for stable releases)
           if [ "${{ needs.extract-metadata.outputs.is_prerelease }}" = "false" ]; then
-            docker buildx imagetools create -t ghcr.io/${OWNER}/mrrss:latest \
-              ghcr.io/${OWNER}/mrrss:latest-amd64 \
-              ghcr.io/${OWNER}/mrrss:latest-arm64
+            docker buildx imagetools create -t ghcr.io/${OWNER}/mrss:latest \
+              ghcr.io/${OWNER}/mrss:latest-amd64 \
+              ghcr.io/${OWNER}/mrss:latest-arm64
           fi
 
       - name: Summary
@@ -185,31 +187,31 @@ jobs:
           echo "### Available Images" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Multi-architecture images:" >> $GITHUB_STEP_SUMMARY
-          echo "- \`ghcr.io/${OWNER}/mrrss:${VERSION}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`ghcr.io/${OWNER}/mrss:${VERSION}\`" >> $GITHUB_STEP_SUMMARY
 
           if [ "${{ needs.extract-metadata.outputs.is_prerelease }}" = "false" ]; then
-            echo "- \`ghcr.io/${OWNER}/mrrss:latest\`" >> $GITHUB_STEP_SUMMARY
+            echo "- \`ghcr.io/${OWNER}/mrss:latest\`" >> $GITHUB_STEP_SUMMARY
           fi
 
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Architecture-specific images:" >> $GITHUB_STEP_SUMMARY
-          echo "- \`ghcr.io/${OWNER}/mrrss:${VERSION}-amd64\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`ghcr.io/${OWNER}/mrrss:${VERSION}-arm64\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`ghcr.io/${OWNER}/mrss:${VERSION}-amd64\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`ghcr.io/${OWNER}/mrss:${VERSION}-arm64\`" >> $GITHUB_STEP_SUMMARY
 
           if [ "${{ needs.extract-metadata.outputs.is_prerelease }}" = "false" ]; then
-            echo "- \`ghcr.io/${OWNER}/mrrss:latest-amd64\`" >> $GITHUB_STEP_SUMMARY
-            echo "- \`ghcr.io/${OWNER}/mrrss:latest-arm64\`" >> $GITHUB_STEP_SUMMARY
+            echo "- \`ghcr.io/${OWNER}/mrss:latest-amd64\`" >> $GITHUB_STEP_SUMMARY
+            echo "- \`ghcr.io/${OWNER}/mrss:latest-arm64\`" >> $GITHUB_STEP_SUMMARY
           fi
 
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Pull Command" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ghcr.io/${OWNER}/mrrss:${VERSION}" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ghcr.io/${OWNER}/mrss:${VERSION}" >> $GITHUB_STEP_SUMMARY
 
           if [ "${{ needs.extract-metadata.outputs.is_prerelease }}" = "false" ]; then
             echo "# or" >> $GITHUB_STEP_SUMMARY
-            echo "docker pull ghcr.io/${OWNER}/mrrss:latest" >> $GITHUB_STEP_SUMMARY
+            echo "docker pull ghcr.io/${OWNER}/mrss:latest" >> $GITHUB_STEP_SUMMARY
           fi
 
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

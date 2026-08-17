@@ -74,11 +74,15 @@ function handleDownloadInstall() {
 }
 
 function openGitHubRepo() {
-  openInBrowser('https://github.com/marcomarcogd/MrRSSM');
+  openInBrowser('https://github.com/marcomarcogd/MRSS');
 }
 
 function openGitHubRelease() {
-  openInBrowser('https://github.com/marcomarcogd/MrRSSM/releases/latest');
+  openInBrowser('https://github.com/marcomarcogd/MRSS/releases/latest');
+}
+
+function openUpstreamRepo() {
+  openInBrowser('https://github.com/DevXDojo/MrRSS');
 }
 </script>
 
@@ -173,21 +177,40 @@ function openGitHubRelease() {
       </div>
     </div>
 
-    <div class="mt-4 sm:mt-6">
+    <div
+      class="mt-4 sm:mt-6 mx-auto max-w-lg rounded-lg border border-border bg-bg-secondary p-3 text-left"
+    >
+      <p class="text-text-secondary text-xs leading-relaxed">
+        {{ t('setting.about.forkNotice') }}
+      </p>
+      <p class="mt-2 text-text-secondary text-xs leading-relaxed">
+        {{ t('setting.about.licenseNotice') }}
+      </p>
+    </div>
+
+    <div class="mt-4 sm:mt-6 flex flex-wrap justify-center gap-4">
       <button
         type="button"
         class="inline-flex items-center gap-1.5 sm:gap-2 text-accent hover:text-accent-hover transition-colors text-xs sm:text-sm font-medium"
         @click="openGitHubRepo"
       >
         <PhGithubLogo :size="20" class="sm:w-6 sm:h-6" />
-        {{ t('setting.about.viewOnGitHub') }}
+        {{ t('setting.about.sourceCode') }}
+      </button>
+      <button
+        type="button"
+        class="inline-flex items-center gap-1.5 sm:gap-2 text-accent hover:text-accent-hover transition-colors text-xs sm:text-sm font-medium"
+        @click="openUpstreamRepo"
+      >
+        <PhGithubLogo :size="20" class="sm:w-6 sm:h-6" />
+        {{ t('setting.about.upstreamProject') }}
       </button>
     </div>
 
     <!-- Copyright information at the bottom -->
     <div class="mt-auto pt-4 text-center">
-      <p class="text-text-secondary text-xs">© 2026 MrRSS. All rights reserved.</p>
-      <p class="text-text-secondary text-xs">Open source and available under GPL-3.0 License.</p>
+      <p class="text-text-secondary text-xs">© 2026 marcomarcogd and MRSS contributors.</p>
+      <p class="text-text-secondary text-xs">{{ t('setting.about.noWarranty') }}</p>
     </div>
   </div>
 </template>

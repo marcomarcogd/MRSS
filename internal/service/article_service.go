@@ -3,8 +3,8 @@ package service
 import (
 	"context"
 
-	"MrRSS/internal/database"
-	"MrRSS/internal/models"
+	"MRSS/internal/database"
+	"MRSS/internal/models"
 )
 
 // articleService implements ArticleService interface

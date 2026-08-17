@@ -23,8 +23,10 @@ const (
 	keySize = 32
 	// Salt size for key derivation
 	saltSize = 16
-	// Version marker to identify encrypted values (prevents false positives in IsEncrypted)
-	versionMarker = "MrRSS-v1:"
+	// Version markers identify encrypted values and preserve compatibility with
+	// data written before the application was renamed.
+	versionMarker       = "MRSS-v1:"
+	legacyVersionMarker = "MrRSS-v1:"
 )
 
 var (
@@ -132,11 +134,15 @@ func Decrypt(ciphertextBase64 string) (string, error) {
 		return "", nil
 	}
 
-	// Check and strip version marker
-	if !strings.HasPrefix(ciphertextBase64, versionMarker) {
+	// Check and strip either the current or legacy version marker.
+	switch {
+	case strings.HasPrefix(ciphertextBase64, versionMarker):
+		ciphertextBase64 = strings.TrimPrefix(ciphertextBase64, versionMarker)
+	case strings.HasPrefix(ciphertextBase64, legacyVersionMarker):
+		ciphertextBase64 = strings.TrimPrefix(ciphertextBase64, legacyVersionMarker)
+	default:
 		return "", fmt.Errorf("missing or invalid version marker")
 	}
-	ciphertextBase64 = strings.TrimPrefix(ciphertextBase64, versionMarker)
 
 	// Decode from base64
 	data, err := base64.StdEncoding.DecodeString(ciphertextBase64)
@@ -199,5 +205,5 @@ func IsEncrypted(value string) bool {
 	}
 
 	// Check for version marker - this is definitive, not a heuristic
-	return strings.HasPrefix(value, versionMarker)
+	return strings.HasPrefix(value, versionMarker) || strings.HasPrefix(value, legacyVersionMarker)
 }

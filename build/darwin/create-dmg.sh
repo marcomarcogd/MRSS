@@ -1,20 +1,20 @@
 #!/bin/bash
-# Script to create a macOS DMG installer for MrRSS
+# Script to create a macOS DMG installer for MRSS
 #
 # Application Information:
-# Name: MrRSS
+# Name: MRSS
 # Description: A Modern, Cross-Platform Desktop RSS Reader
-# Publisher: Ch3nyang
-# URL: https://github.com/DevXDojo/MrRSS
-# Copyright: Copyright © Ch3nyang
+# Publisher: marcomarcogd
+# URL: https://github.com/marcomarcogd/MRSS
+# Copyright: Copyright © marcomarcogd
 
 set -e
 
-APP_NAME="MrRSS"
+APP_NAME="MRSS"
 # Get version from frontend/package.json if available, otherwise use default
 VERSION=$(grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' frontend/package.json 2>/dev/null | head -1 | sed 's/.*"\([^"]*\)".*/\1/' || echo "1.3.24")
-APP_PUBLISHER="Ch3nyang"
-APP_URL="https://github.com/DevXDojo/MrRSS"
+APP_PUBLISHER="marcomarcogd"
+APP_URL="https://github.com/marcomarcogd/MRSS"
 APP_DESCRIPTION="A Modern, Cross-Platform Desktop RSS Reader"
 BUILD_DIR="build/bin"
 DMG_DIR="build/dmg"
@@ -40,6 +40,7 @@ mkdir -p "${DMG_DIR}"
 # Copy app to DMG directory
 echo "Copying application..."
 cp -R "${APP_PATH}" "${DMG_DIR}/"
+cp LICENSE NOTICE "${DMG_DIR}/"
 
 # Create Applications symlink
 echo "Creating Applications symlink..."
@@ -75,4 +76,4 @@ echo "1. Open the DMG file"
 echo "2. Drag ${APP_NAME}.app to the Applications folder"
 echo "3. Launch ${APP_NAME} from Applications"
 echo ""
-echo "User data will be stored in: ~/Library/Application Support/MrRSS/"
+echo "User data will be stored in: ~/Library/Application Support/MRSS/"

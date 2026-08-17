@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"strconv"
 
-	"MrRSS/internal/database"
-	"MrRSS/internal/freshrss"
-	"MrRSS/internal/handlers/core"
-	"MrRSS/internal/handlers/response"
+	"MRSS/internal/database"
+	"MRSS/internal/freshrss"
+	"MRSS/internal/handlers/core"
+	"MRSS/internal/handlers/response"
 )
 
 // HandleMarkReadWithImmediateSync marks an article as read/unread and immediately syncs to FreshRSS

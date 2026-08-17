@@ -7,10 +7,10 @@ import (
 	"strconv"
 	"time"
 
-	"MrRSS/internal/handlers/core"
-	"MrRSS/internal/handlers/response"
-	"MrRSS/internal/rsshub"
-	"MrRSS/internal/utils/urlutil"
+	"MRSS/internal/handlers/core"
+	"MRSS/internal/handlers/response"
+	"MRSS/internal/rsshub"
+	"MRSS/internal/utils/urlutil"
 )
 
 // HandleFeeds returns all feeds.

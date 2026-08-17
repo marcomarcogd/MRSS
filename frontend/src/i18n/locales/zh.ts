@@ -521,6 +521,12 @@ const zh: TranslationMessages = {
   },
   setting: {
     about: {
+      forkNotice:
+        'MRSS 是基于 DevXDojo/MrRSS 修改的非官方复刻版，本发行版修改日期为 2026 年 8 月 17 日。',
+      licenseNotice: '本项目采用 GPL-3.0 许可证，源码与上游归属可通过下方链接查看。',
+      noWarranty: '本软件不提供任何担保，详情请参阅 GPL-3.0 许可证。',
+      sourceCode: 'MRSS 源代码',
+      upstreamProject: '上游项目',
       version: '版本',
       viewOnGitHub: '在 GitHub 上查看',
     },
@@ -724,7 +730,7 @@ const zh: TranslationMessages = {
         headers: 'HTTP 请求头',
         headersDesc: '自定义 HTTP 请求头',
         langMapping: '语言代码映射',
-        langMappingDesc: '将 MrRSS 语言代码映射到 API 特定代码',
+        langMappingDesc: '将 MRSS 语言代码映射到 API 特定代码',
         method: 'HTTP 方法',
         methodDesc: 'API 请求的 HTTP 方法',
         responsePath: '响应路径',
@@ -845,7 +851,7 @@ const zh: TranslationMessages = {
       uiFontSize: '界面字号',
       uiFontSizeDesc: '应用界面的基础字体大小',
       startupOnBoot: '开机自启动',
-      startupOnBootDesc: '在电脑启动时自动启动 MrRSS',
+      startupOnBootDesc: '在电脑启动时自动启动 MRSS',
       theme: '主题',
       themeDesc: '选择首选配色方案',
     },
@@ -1183,7 +1189,7 @@ const zh: TranslationMessages = {
 
   // 顶级键（不带命名空间使用）
   // 只有 appName 应保留为顶级键
-  appName: 'MrRSS',
+  appName: 'MRSS',
 };
 
 export default zh;

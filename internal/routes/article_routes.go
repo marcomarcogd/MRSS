@@ -3,10 +3,10 @@ package routes
 import (
 	"net/http"
 
-	article "MrRSS/internal/handlers/article"
-	"MrRSS/internal/handlers/core"
-	summary "MrRSS/internal/handlers/summary"
-	translationhandlers "MrRSS/internal/handlers/translation"
+	article "MRSS/internal/handlers/article"
+	"MRSS/internal/handlers/core"
+	summary "MRSS/internal/handlers/summary"
+	translationhandlers "MRSS/internal/handlers/translation"
 )
 
 // registerArticleRoutes registers all article-related routes

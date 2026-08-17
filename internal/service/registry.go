@@ -3,13 +3,13 @@ package service
 import (
 	"sync"
 
-	"MrRSS/internal/ai"
-	"MrRSS/internal/cache"
-	"MrRSS/internal/database"
-	"MrRSS/internal/discovery"
-	"MrRSS/internal/feed"
-	"MrRSS/internal/statistics"
-	"MrRSS/internal/translation"
+	"MRSS/internal/ai"
+	"MRSS/internal/cache"
+	"MRSS/internal/database"
+	"MRSS/internal/discovery"
+	"MRSS/internal/feed"
+	"MRSS/internal/statistics"
+	"MRSS/internal/translation"
 )
 
 // Registry is the central service registry that manages all application services.

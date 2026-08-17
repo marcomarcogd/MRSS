@@ -6,8 +6,9 @@ import (
 	"net/http"
 	"strings"
 
-	"MrRSS/internal/handlers/core"
-	"MrRSS/internal/handlers/response"
+	"MRSS/internal/handlers/core"
+	"MRSS/internal/handlers/response"
+	appUtils "MRSS/internal/utils"
 )
 
 // safeGetEncryptedSetting safely retrieves an encrypted setting, returning empty string on error.
@@ -77,6 +78,20 @@ func HandleSettings(h *core.Handler, w http.ResponseWriter, r *http.Request) {
 		if shouldCleanupFreshRSSData(wasFreshRSSEnabled, req["freshrss_enabled"]) {
 			if err := h.DB.CleanupFreshRSSData(); err != nil {
 				log.Printf("Failed to cleanup FreshRSS data after disabling sync: %v", err)
+				response.Error(w, err, http.StatusInternalServerError)
+				return
+			}
+		}
+
+		if startupOnBoot, ok := req["startup_on_boot"]; ok {
+			var err error
+			if strings.EqualFold(strings.TrimSpace(startupOnBoot), "true") {
+				err = appUtils.EnableStartup()
+			} else {
+				err = appUtils.DisableStartup()
+			}
+			if err != nil {
+				log.Printf("Failed to update startup registration: %v", err)
 				response.Error(w, err, http.StatusInternalServerError)
 				return
 			}

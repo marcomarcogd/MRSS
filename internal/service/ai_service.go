@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"MrRSS/internal/ai"
-	"MrRSS/internal/config"
-	"MrRSS/internal/database"
-	"MrRSS/internal/models"
+	"MRSS/internal/ai"
+	"MRSS/internal/config"
+	"MRSS/internal/database"
+	"MRSS/internal/models"
 )
 
 // aiService implements AIService interface

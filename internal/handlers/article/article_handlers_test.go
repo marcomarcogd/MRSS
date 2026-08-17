@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"MrRSS/internal/database"
-	ff "MrRSS/internal/feed"
-	"MrRSS/internal/handlers/article"
-	"MrRSS/internal/handlers/core"
-	"MrRSS/internal/models"
+	"MRSS/internal/database"
+	ff "MRSS/internal/feed"
+	"MRSS/internal/handlers/article"
+	"MRSS/internal/handlers/core"
+	"MRSS/internal/models"
 )
 
 func setupHandler(t *testing.T) *core.Handler {

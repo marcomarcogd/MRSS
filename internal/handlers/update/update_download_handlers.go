@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"MrRSS/internal/handlers/core"
-	"MrRSS/internal/handlers/response"
+	"MRSS/internal/handlers/core"
+	"MRSS/internal/handlers/response"
 )
 
 // HandleDownloadUpdate downloads the update file.

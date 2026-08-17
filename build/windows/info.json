@@ -5,10 +5,10 @@
 	"info": {
 		"0000": {
 			"ProductVersion": "1.4.2",
-			"CompanyName": "Ch3nyang",
-			"FileDescription": "MrRSS",
-			"LegalCopyright": "Copyright © 2026",
-			"ProductName": "MrRSS",
+			"CompanyName": "marcomarcogd",
+			"FileDescription": "MRSS",
+			"LegalCopyright": "Copyright © 2026 marcomarcogd and contributors",
+			"ProductName": "MRSS",
 			"Comments": "Built with Wails"
 		}
 	}

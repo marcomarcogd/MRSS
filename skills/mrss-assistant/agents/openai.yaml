@@ -1,0 +1,4 @@
+interface:
+  display_name: "MRSS Assistant"
+  short_description: "Control and analyze MRSS through its local API"
+  default_prompt: "Use $mrss-assistant to inspect my MRSS feeds and summarize recent unread articles."

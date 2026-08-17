@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"MrRSS/internal/database"
-	"MrRSS/internal/models"
+	"MRSS/internal/database"
+	"MRSS/internal/models"
 )
 
 func TestIntelligentRefreshCalculator_NoArticles(t *testing.T) {

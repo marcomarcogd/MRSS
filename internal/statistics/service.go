@@ -4,7 +4,7 @@ import (
 	"log"
 	"time"
 
-	"MrRSS/internal/database"
+	"MRSS/internal/database"
 )
 
 // Service handles statistics tracking and retrieval

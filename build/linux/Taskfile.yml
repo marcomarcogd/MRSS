@@ -122,7 +122,13 @@ tasks:
     deps:
       - task: build
     cmds:
-      - cd {{.BIN_DIR}} && tar -czf {{.APP_NAME}}-{{.VERSION}}-linux-{{.ARCH}}.tar.gz {{.APP_NAME}}
+      - |
+        PACKAGE_DIR="{{.BIN_DIR}}/package-{{.ARCH}}"
+        rm -rf "$PACKAGE_DIR"
+        mkdir -p "$PACKAGE_DIR"
+        cp "{{.BIN_DIR}}/{{.APP_NAME}}" LICENSE NOTICE "$PACKAGE_DIR/"
+        tar -C "$PACKAGE_DIR" -czf "{{.BIN_DIR}}/{{.APP_NAME}}-{{.VERSION}}-linux-{{.ARCH}}.tar.gz" "{{.APP_NAME}}" LICENSE NOTICE
+        rm -rf "$PACKAGE_DIR"
     vars:
       VERSION: '1.4.2'
       ARCH: '{{.ARCH | default "amd64"}}'
@@ -153,10 +159,10 @@ tasks:
     deps:
       - task: common:build:frontend
     cmds:
-      - docker build -f Dockerfile.server -t mrrss-server:latest .
-      - docker create --name mrrss-server-temp mrrss-server:latest
-      - docker cp mrrss-server-temp:/app/mrrss-server {{.BIN_DIR}}/{{.APP_NAME}}-server
-      - docker rm mrrss-server-temp
+      - docker build -f Dockerfile.server -t mrss-server:latest .
+      - docker create --name mrss-server-temp mrss-server:latest
+      - docker cp mrss-server-temp:/app/mrss-server {{.BIN_DIR}}/{{.APP_NAME}}-server
+      - docker rm mrss-server-temp
     preconditions:
       - sh: docker info > /dev/null 2>&1
         msg: "Docker is required for building the server version"

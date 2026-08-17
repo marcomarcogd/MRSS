@@ -1,9 +1,9 @@
-# MrRSS API Reference
+# MRSS API Reference
 
 Generated from `docs/SERVER_MODE/swagger.json`. Regenerate with:
 
 ```bash
-python skills/mrrss-assistant/scripts/generate_api_reference.py docs/SERVER_MODE/swagger.json skills/mrrss-assistant/references/api.md
+python skills/mrss-assistant/scripts/generate_api_reference.py docs/SERVER_MODE/swagger.json skills/mrss-assistant/references/api.md
 ```
 
 - API version: `1.4.2`

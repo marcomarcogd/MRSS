@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"MrRSS/internal/ai"
-	"MrRSS/internal/handlers/core"
-	"MrRSS/internal/handlers/response"
-	"MrRSS/internal/utils/textutil"
+	"MRSS/internal/ai"
+	"MRSS/internal/handlers/core"
+	"MRSS/internal/handlers/response"
+	"MRSS/internal/utils/textutil"
 )
 
 // ChatMessage represents a message in the chat conversation

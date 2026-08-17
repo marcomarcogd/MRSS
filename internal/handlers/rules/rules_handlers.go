@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"MrRSS/internal/handlers/core"
-	"MrRSS/internal/handlers/response"
-	"MrRSS/internal/rules"
+	"MRSS/internal/handlers/core"
+	"MRSS/internal/handlers/response"
+	"MRSS/internal/rules"
 )
 
 // HandleApplyRule applies a rule to matching articles

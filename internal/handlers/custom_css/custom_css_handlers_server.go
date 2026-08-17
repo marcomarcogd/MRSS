@@ -11,9 +11,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"MrRSS/internal/handlers/core"
-	"MrRSS/internal/handlers/response"
-	"MrRSS/internal/utils/fileutil"
+	"MRSS/internal/handlers/core"
+	"MRSS/internal/handlers/response"
+	"MRSS/internal/utils/fileutil"
 )
 
 const customCSSFileName = "custom_article.css"

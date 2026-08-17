@@ -198,7 +198,7 @@ defineExpose({
     >
       <!-- Logo -->
       <div class="mb-6">
-        <img :src="LogoSvg" alt="MrRSS" class="w-6 h-6" />
+        <img :src="LogoSvg" alt="MRSS" class="w-6 h-6" />
       </div>
 
       <!-- Divider -->

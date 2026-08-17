@@ -16,9 +16,9 @@ import (
 	"strings"
 	"time"
 
-	"MrRSS/internal/handlers/core"
-	"MrRSS/internal/handlers/response"
-	"MrRSS/internal/utils/fileutil"
+	"MRSS/internal/handlers/core"
+	"MRSS/internal/handlers/response"
+	"MRSS/internal/utils/fileutil"
 )
 
 // HandleInstallUpdate triggers the installation of the downloaded update.
@@ -176,7 +176,7 @@ func installPortableUpdate(archivePath string, platform string) error {
 	exeName := filepath.Base(exePath)
 
 	// Create temporary extraction directory
-	extractDir := filepath.Join(os.TempDir(), "mrrss-update-extract")
+	extractDir := filepath.Join(os.TempDir(), "mrss-update-extract")
 	if err := os.RemoveAll(extractDir); err != nil {
 		log.Printf("Warning: failed to clean extract directory: %v", err)
 	}
@@ -208,7 +208,7 @@ func installPortableUpdate(archivePath string, platform string) error {
 		if err != nil {
 			return err
 		}
-		// Look for the executable file (MrRSS.exe on Windows, MrRSS on Unix)
+		// Look for the executable file (MRSS.exe on Windows, MRSS on Unix)
 		if !info.IsDir() {
 			baseName := filepath.Base(path)
 			if platform == "windows" && strings.EqualFold(baseName, exeName) {

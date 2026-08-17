@@ -1,7 +1,7 @@
 package service
 
 import (
-	"MrRSS/internal/database"
+	"MRSS/internal/database"
 )
 
 // settingsService implements SettingsService interface

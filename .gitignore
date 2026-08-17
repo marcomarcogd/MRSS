@@ -8,16 +8,16 @@
 *.so
 *.dylib
 *.pyc
-MrRSS
-mrrss
-MrRSS.exe
-mrrss.exe
-mrrss-test
-mrrss-test.exe
+MRSS
+mrss
+MRSS.exe
+mrss.exe
+mrss-test
+mrss-test.exe
 test-build
 test-build.exe
-mrrss-server
-mrrss-server.exe
+mrss-server
+mrss-server.exe
 nul
 
 # Test binary, built with `go test -c`

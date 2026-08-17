@@ -10,7 +10,7 @@ includes:
   # android: ./build/android/Taskfile.yml
 
 vars:
-  APP_NAME: "MrRSS"
+  APP_NAME: "MRSS"
   BIN_DIR: "build/bin"
   VITE_PORT: '{{.WAILS_VITE_PORT | default 5173}}'
 
@@ -35,7 +35,7 @@ tasks:
     cmds:
       - wails3 dev -config ./build/config.yml
     env:
-      MRRSS_DEBUG: "1"
+      MRSS_DEBUG: "1"
 
   setup:docker:
     summary: Builds Docker image for cross-compilation (~800MB download)
@@ -50,9 +50,9 @@ tasks:
   docker:build:server:
     summary: Builds the server version Docker image
     cmds:
-      - docker build -f Dockerfile.server -t mrrss-server:latest .
+      - docker build -f Dockerfile.server -t mrss-server:latest .
 
   docker:run:server:
     summary: Runs the server version in Docker
     cmds:
-      - docker run -p 1234:1234 -v {{.PWD}}/data:/app/data mrrss-server:latest
+      - docker run -p 1234:1234 -v {{.PWD}}/data:/app/data mrss-server:latest

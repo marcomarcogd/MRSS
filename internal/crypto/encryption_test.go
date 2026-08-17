@@ -88,6 +88,29 @@ func TestEncryptDeterministic(t *testing.T) {
 	}
 }
 
+func TestDecryptAndDetectLegacyVersionMarker(t *testing.T) {
+	plaintext := "legacy-secret"
+	encrypted, err := Encrypt(plaintext)
+	if err != nil {
+		t.Fatalf("Encrypt() error = %v", err)
+	}
+	if !strings.HasPrefix(encrypted, versionMarker) {
+		t.Fatalf("new encrypted value should use %q", versionMarker)
+	}
+
+	legacyEncrypted := legacyVersionMarker + strings.TrimPrefix(encrypted, versionMarker)
+	if !IsEncrypted(legacyEncrypted) {
+		t.Fatalf("legacy encrypted value should be detected")
+	}
+	decrypted, err := Decrypt(legacyEncrypted)
+	if err != nil {
+		t.Fatalf("Decrypt() should accept legacy marker: %v", err)
+	}
+	if decrypted != plaintext {
+		t.Fatalf("Decrypt() = %q, want %q", decrypted, plaintext)
+	}
+}
+
 func TestDecryptInvalidInput(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -129,6 +152,7 @@ func TestIsEncrypted(t *testing.T) {
 		{"plain text", "hello", false},
 		{"api key format", "sk-1234567890", false},
 		{"encrypted value", encrypted, true},
+		{"legacy encrypted value", legacyVersionMarker + strings.TrimPrefix(encrypted, versionMarker), true},
 		{"short base64", "YWJj", false},
 		{"not base64", "not-base64!", false},
 		{"long base64 api key", longBase64APIKey, false}, // Should NOT be detected as encrypted (no version marker)

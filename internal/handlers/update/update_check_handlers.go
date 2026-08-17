@@ -11,18 +11,23 @@ import (
 	"syscall"
 	"time"
 
-	"MrRSS/internal/handlers/core"
-	"MrRSS/internal/handlers/response"
-	"MrRSS/internal/utils/fileutil"
-	"MrRSS/internal/utils/httputil"
-	"MrRSS/internal/version"
+	"MRSS/internal/handlers/core"
+	"MRSS/internal/handlers/response"
+	"MRSS/internal/utils/fileutil"
+	"MRSS/internal/utils/httputil"
+	"MRSS/internal/version"
 )
 
 const (
-	releaseRepository              = "marcomarcogd/MrRSSM"
+	releaseRepository              = "marcomarcogd/MRSS"
 	githubReleasesAPI              = "https://api.github.com/repos/" + releaseRepository + "/releases"
 	githubReleaseDownloadURLPrefix = "https://github.com/" + releaseRepository + "/releases/download/"
+	releaseAssetPrefix             = "MRSS-"
 )
+
+func isMRSSReleaseAsset(name string) bool {
+	return strings.HasPrefix(strings.ToLower(name), strings.ToLower(releaseAssetPrefix))
+}
 
 // isNetworkError checks if the error is related to network connectivity issues
 // (e.g., timeout, connection refused, DNS failure) which often indicates firewall/blocking
@@ -208,11 +213,14 @@ func HandleCheckUpdates(h *core.Handler, w http.ResponseWriter, r *http.Request)
 
 	for _, asset := range release.Assets {
 		name := strings.ToLower(asset.Name)
+		if !isMRSSReleaseAsset(asset.Name) {
+			continue
+		}
 
 		// Match platform-specific installer/package with architecture
 		// Asset naming convention:
-		//   Installer: MrRSS-{version}-{platform}-{arch}-installer.{ext}
-		//   Portable: MrRSS-{version}-{platform}-{arch}-portable.{ext}
+		//   Installer: MRSS-{version}-{platform}-{arch}-installer.{ext}
+		//   Portable: MRSS-{version}-{platform}-{arch}-portable.{ext}
 		platformArch := platform + "-" + arch
 
 		if platform == "windows" {

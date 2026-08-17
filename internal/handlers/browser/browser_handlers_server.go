@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"net/url"
 
-	handlers "MrRSS/internal/handlers/core"
-	"MrRSS/internal/handlers/response"
+	handlers "MRSS/internal/handlers/core"
+	"MRSS/internal/handlers/response"
 )
 
 // HandleOpenURL handles URL opening requests in server mode.
