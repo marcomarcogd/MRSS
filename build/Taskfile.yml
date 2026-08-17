@@ -65,6 +65,8 @@ tasks:
   generate:icons:
     summary: Generates platform application and tray icons
     dir: build
+    deps:
+      - task: install:frontend:deps
     sources:
       - "appicon.png"
       - "../frontend/public/assets/logo.svg"
