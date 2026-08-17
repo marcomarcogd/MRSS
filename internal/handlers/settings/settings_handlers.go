@@ -2,6 +2,8 @@ package settings
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -10,6 +12,18 @@ import (
 	"MRSS/internal/handlers/response"
 	appUtils "MRSS/internal/utils"
 )
+
+var (
+	errInvalidStartupValue     = errors.New("startup_on_boot must be true or false")
+	enableStartupRegistration  = appUtils.EnableStartup
+	disableStartupRegistration = appUtils.DisableStartup
+)
+
+type startupSettingChange struct {
+	previous  bool
+	requested bool
+	changed   bool
+}
 
 // safeGetEncryptedSetting safely retrieves an encrypted setting, returning empty string on error.
 // This prevents JSON encoding errors when encrypted data is corrupted or cannot be decrypted.
@@ -60,6 +74,34 @@ func HandleSettings(h *core.Handler, w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		startupChange, err := prepareStartupSettingChange(h, req)
+		if err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, errInvalidStartupValue) {
+				status = http.StatusBadRequest
+			}
+			log.Printf("Failed to prepare startup setting change: %v", err)
+			response.Error(w, err, status)
+			return
+		}
+		delete(req, "startup_on_boot")
+
+		if mode, ok := req["translation_mode"]; ok {
+			mode = strings.ToLower(strings.TrimSpace(mode))
+			if mode != "manual" && mode != "auto" && mode != "off" {
+				log.Printf("Warning: invalid translation_mode %q; falling back to manual", req["translation_mode"])
+				mode = "manual"
+			}
+			req["translation_mode"] = mode
+			// Keep the legacy toggle as a downgrade-compatible mirror. Manual mode
+			// must stay disabled so an older build never starts translating on open.
+			if mode == "auto" {
+				req["translation_enabled"] = "true"
+			} else {
+				req["translation_enabled"] = "false"
+			}
+		}
+
 		wasFreshRSSEnabled := false
 		if _, ok := req["freshrss_enabled"]; ok {
 			currentValue, err := h.DB.GetSetting("freshrss_enabled")
@@ -83,18 +125,10 @@ func HandleSettings(h *core.Handler, w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		if startupOnBoot, ok := req["startup_on_boot"]; ok {
-			var err error
-			if strings.EqualFold(strings.TrimSpace(startupOnBoot), "true") {
-				err = appUtils.EnableStartup()
-			} else {
-				err = appUtils.DisableStartup()
-			}
-			if err != nil {
-				log.Printf("Failed to update startup registration: %v", err)
-				response.Error(w, err, http.StatusInternalServerError)
-				return
-			}
+		if err := persistStartupSettingChange(h, startupChange); err != nil {
+			log.Printf("Failed to update startup registration: %v", err)
+			response.Error(w, err, http.StatusInternalServerError)
+			return
 		}
 
 		// Re-fetch all settings after save to return updated values
@@ -104,6 +138,72 @@ func HandleSettings(h *core.Handler, w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func prepareStartupSettingChange(h *core.Handler, req map[string]string) (*startupSettingChange, error) {
+	requestedValue, ok := req["startup_on_boot"]
+	if !ok {
+		return nil, nil
+	}
+
+	requested, err := parseStartupSetting(requestedValue)
+	if err != nil {
+		return nil, err
+	}
+
+	currentValue, err := h.DB.GetSetting("startup_on_boot")
+	if err != nil {
+		return nil, fmt.Errorf("failed to read current startup setting: %w", err)
+	}
+	previous := strings.EqualFold(strings.TrimSpace(currentValue), "true")
+
+	return &startupSettingChange{
+		previous:  previous,
+		requested: requested,
+		changed:   previous != requested,
+	}, nil
+}
+
+func parseStartupSetting(value string) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
+	default:
+		return false, errInvalidStartupValue
+	}
+}
+
+func persistStartupSettingChange(h *core.Handler, change *startupSettingChange) error {
+	if change == nil || !change.changed {
+		return nil
+	}
+
+	if err := setStartupRegistration(change.requested); err != nil {
+		return fmt.Errorf("failed to apply startup registration: %w", err)
+	}
+
+	value := "false"
+	if change.requested {
+		value = "true"
+	}
+	if err := h.DB.SetSetting("startup_on_boot", value); err != nil {
+		rollbackErr := setStartupRegistration(change.previous)
+		if rollbackErr != nil {
+			return fmt.Errorf("failed to persist startup setting: %w; failed to roll back startup registration: %v", err, rollbackErr)
+		}
+		return fmt.Errorf("failed to persist startup setting: %w", err)
+	}
+
+	return nil
+}
+
+func setStartupRegistration(enabled bool) error {
+	if enabled {
+		return enableStartupRegistration()
+	}
+	return disableStartupRegistration()
 }
 
 func shouldCleanupFreshRSSData(wasEnabled bool, newValue string) bool {

@@ -18,8 +18,15 @@ import (
 
 	"MRSS/internal/handlers/core"
 	"MRSS/internal/handlers/response"
+	appUtils "MRSS/internal/utils"
 	"MRSS/internal/utils/fileutil"
 )
+
+func windowsInstallerCommand(path string) *exec.Cmd {
+	cmd := exec.Command(path)
+	appUtils.ConfigureBackgroundCommand(cmd)
+	return cmd
+}
 
 // HandleInstallUpdate triggers the installation of the downloaded update.
 // @Summary      Install update
@@ -109,10 +116,9 @@ func HandleInstallUpdate(h *core.Handler, w http.ResponseWriter, r *http.Request
 				response.Error(w, fmt.Errorf("invalid file type for Windows"), http.StatusBadRequest)
 				return
 			}
-			// Use start command with /B flag to launch in background
-			// Format: start /B <executable_path>
-			// The /B flag prevents creating a new window
-			cmd = exec.Command("cmd.exe", "/C", "start", "/B", cleanPath)
+			// Launch the GUI installer directly. Routing through cmd.exe would create
+			// a visible console window in production builds.
+			cmd = windowsInstallerCommand(cleanPath)
 			scheduleCleanup(cleanPath, 10*time.Second)
 		case "linux":
 			// Make AppImage executable and run it - validate file extension

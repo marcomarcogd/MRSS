@@ -24,7 +24,6 @@ import {
 } from '@phosphor-icons/vue';
 import ShortcutItem from './ShortcutItem.vue';
 import type { SettingsData } from '@/types/settings';
-import { useSettingsAutoSave } from '@/composables/core/useSettingsAutoSave';
 import { ButtonControl, SettingWithToggle, TipBox } from '@/components/settings';
 
 const { t } = useI18n();
@@ -38,12 +37,6 @@ const props = defineProps<Props>();
 const emit = defineEmits<{
   'update:settings': [settings: SettingsData];
 }>();
-
-// Create a computed ref that returns the settings object for auto-save
-const settingsRef = computed(() => props.settings);
-
-// Use composable for auto-save with reactivity
-useSettingsAutoSave(settingsRef);
 
 // Update settings and dispatch events
 function updateSetting(key: keyof SettingsData, value: any) {

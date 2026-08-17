@@ -3,6 +3,7 @@ package settings
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -10,6 +11,31 @@ import (
 	"MRSS/internal/database"
 	"MRSS/internal/handlers/core"
 )
+
+func stubStartupOperations(t *testing.T, enable, disable func() error) {
+	t.Helper()
+	previousEnable := enableStartupRegistration
+	previousDisable := disableStartupRegistration
+	enableStartupRegistration = enable
+	disableStartupRegistration = disable
+	t.Cleanup(func() {
+		enableStartupRegistration = previousEnable
+		disableStartupRegistration = previousDisable
+	})
+}
+
+func postSettings(t *testing.T, h *core.Handler, payload map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal settings payload: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/settings", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	HandleSettings(h, w, req)
+	return w
+}
 
 func setupHandlerWithDB(t *testing.T) *core.Handler {
 	t.Helper()
@@ -158,5 +184,155 @@ func TestHandleSettings_POSTDisablingFreshRSSCleansSyncedData(t *testing.T) {
 	}
 	if enabled != "false" {
 		t.Fatalf("expected freshrss_enabled false, got %q", enabled)
+	}
+}
+
+func TestHandleSettings_POSTUnchangedStartupSkipsSystemOperation(t *testing.T) {
+	h := setupHandlerWithDB(t)
+	if err := h.DB.SetSetting("startup_on_boot", "true"); err != nil {
+		t.Fatalf("SetSetting startup_on_boot: %v", err)
+	}
+
+	enableCalls := 0
+	disableCalls := 0
+	stubStartupOperations(t, func() error {
+		enableCalls++
+		return nil
+	}, func() error {
+		disableCalls++
+		return nil
+	})
+
+	w := postSettings(t, h, map[string]string{"startup_on_boot": "true"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", w.Code, w.Body.String())
+	}
+	if enableCalls != 0 || disableCalls != 0 {
+		t.Fatalf("startup operations called for unchanged value: enable=%d disable=%d", enableCalls, disableCalls)
+	}
+}
+
+func TestHandleSettings_POSTChangedStartupAppliesOnce(t *testing.T) {
+	h := setupHandlerWithDB(t)
+	if err := h.DB.SetSetting("startup_on_boot", "false"); err != nil {
+		t.Fatalf("SetSetting startup_on_boot: %v", err)
+	}
+
+	enableCalls := 0
+	disableCalls := 0
+	stubStartupOperations(t, func() error {
+		enableCalls++
+		return nil
+	}, func() error {
+		disableCalls++
+		return nil
+	})
+
+	w := postSettings(t, h, map[string]string{"startup_on_boot": "true"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", w.Code, w.Body.String())
+	}
+	if enableCalls != 1 || disableCalls != 0 {
+		t.Fatalf("unexpected startup operations: enable=%d disable=%d", enableCalls, disableCalls)
+	}
+	value, err := h.DB.GetSetting("startup_on_boot")
+	if err != nil {
+		t.Fatalf("GetSetting startup_on_boot: %v", err)
+	}
+	if value != "true" {
+		t.Fatalf("startup_on_boot = %q, want true", value)
+	}
+}
+
+func TestHandleSettings_POSTStartupOperationFailureDoesNotPersist(t *testing.T) {
+	h := setupHandlerWithDB(t)
+	if err := h.DB.SetSetting("startup_on_boot", "false"); err != nil {
+		t.Fatalf("SetSetting startup_on_boot: %v", err)
+	}
+
+	operationErr := errors.New("forced startup failure")
+	stubStartupOperations(t, func() error { return operationErr }, func() error { return nil })
+
+	w := postSettings(t, h, map[string]string{"startup_on_boot": "true"})
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", w.Code, w.Body.String())
+	}
+	value, err := h.DB.GetSetting("startup_on_boot")
+	if err != nil {
+		t.Fatalf("GetSetting startup_on_boot: %v", err)
+	}
+	if value != "false" {
+		t.Fatalf("startup_on_boot = %q after operation failure, want false", value)
+	}
+}
+
+func TestHandleSettings_POSTPersistenceFailureReturnsError(t *testing.T) {
+	h := setupHandlerWithDB(t)
+	if err := h.DB.SetSetting("update_interval", "30"); err != nil {
+		t.Fatalf("SetSetting update_interval: %v", err)
+	}
+	if _, err := h.DB.Exec(`
+		CREATE TRIGGER fail_update_interval_insert
+		BEFORE INSERT ON settings
+		WHEN NEW.key = 'update_interval'
+		BEGIN
+			SELECT RAISE(ABORT, 'forced settings failure');
+		END;
+	`); err != nil {
+		t.Fatalf("create failure trigger: %v", err)
+	}
+
+	w := postSettings(t, h, map[string]string{"update_interval": "31"})
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", w.Code, w.Body.String())
+	}
+	value, err := h.DB.GetSetting("update_interval")
+	if err != nil {
+		t.Fatalf("GetSetting update_interval: %v", err)
+	}
+	if value != "30" {
+		t.Fatalf("update_interval = %q after persistence failure, want 30", value)
+	}
+}
+
+func TestHandleSettings_POSTStartupPersistenceFailureRollsBackSystemOperation(t *testing.T) {
+	h := setupHandlerWithDB(t)
+	if err := h.DB.SetSetting("startup_on_boot", "false"); err != nil {
+		t.Fatalf("SetSetting startup_on_boot: %v", err)
+	}
+	if _, err := h.DB.Exec(`
+		CREATE TRIGGER fail_startup_setting_insert
+		BEFORE INSERT ON settings
+		WHEN NEW.key = 'startup_on_boot'
+		BEGIN
+			SELECT RAISE(ABORT, 'forced startup setting failure');
+		END;
+	`); err != nil {
+		t.Fatalf("create failure trigger: %v", err)
+	}
+
+	enableCalls := 0
+	disableCalls := 0
+	stubStartupOperations(t, func() error {
+		enableCalls++
+		return nil
+	}, func() error {
+		disableCalls++
+		return nil
+	})
+
+	w := postSettings(t, h, map[string]string{"startup_on_boot": "true"})
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", w.Code, w.Body.String())
+	}
+	if enableCalls != 1 || disableCalls != 1 {
+		t.Fatalf("expected apply and rollback once, got enable=%d disable=%d", enableCalls, disableCalls)
+	}
+	value, err := h.DB.GetSetting("startup_on_boot")
+	if err != nil {
+		t.Fatalf("GetSetting startup_on_boot: %v", err)
+	}
+	if value != "false" {
+		t.Fatalf("startup_on_boot = %q after persistence failure, want false", value)
 	}
 }

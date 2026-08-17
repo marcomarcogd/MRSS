@@ -112,6 +112,31 @@ print("This should not print")
 	}
 }
 
+func TestScriptExecutor_ExecuteScript_CapturesStderr(t *testing.T) {
+	tempDir := t.TempDir()
+	scriptContent := `#!/usr/bin/env python3
+import sys
+sys.stderr.write("intentional script failure")
+sys.exit(1)
+`
+	scriptPath := filepath.Join(tempDir, "failing_script.py")
+	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0755); err != nil {
+		t.Fatalf("Failed to create test script: %v", err)
+	}
+
+	executor := NewScriptExecutor(tempDir)
+	_, err := executor.ExecuteScript(context.Background(), "failing_script.py")
+	if err == nil {
+		t.Fatal("ExecuteScript() should return an error")
+	}
+	if strings.Contains(err.Error(), "no Python executable found") {
+		t.Skipf("Skipping test - Python is unavailable: %v", err)
+	}
+	if !strings.Contains(err.Error(), "intentional script failure") {
+		t.Fatalf("ExecuteScript() error did not preserve stderr: %v", err)
+	}
+}
+
 func TestFindPythonExecutable(t *testing.T) {
 	ctx := context.Background()
 

@@ -2,15 +2,35 @@
 
 describe('Settings Persistence', () => {
   beforeEach(() => {
-    // Set up intercepts before visiting the page
-    cy.intercept('GET', '/api/settings').as('getSettings');
-    cy.intercept('POST', '/api/settings').as('saveSettings');
-    cy.intercept('GET', '/api/feeds').as('getFeeds');
+    cy.fixture('settings').then((fixtureSettings) => {
+      let settingsState: Record<string, string> = {
+        ...fixtureSettings,
+        language: 'en-US',
+        theme: 'light',
+        translation_mode: 'manual',
+        update_check_enabled: 'false',
+      };
 
-    cy.visit('/');
+      // Keep these persistence tests independent from a running desktop backend.
+      cy.intercept('/api/**', { statusCode: 200, body: {} });
+      cy.intercept('GET', '/api/settings', (req) => {
+        req.reply({ statusCode: 200, body: settingsState });
+      }).as('getSettings');
+      cy.intercept('POST', '/api/settings', (req) => {
+        settingsState = { ...settingsState, ...req.body };
+        req.reply({ statusCode: 200, body: settingsState });
+      }).as('saveSettings');
+      cy.intercept('GET', '/api/feeds', { statusCode: 200, body: [] }).as('getFeeds');
+      cy.intercept('GET', '/api/tags', { statusCode: 200, body: [] });
+      cy.intercept('GET', '/api/saved-filters', { statusCode: 200, body: [] });
+      cy.intercept({ method: 'GET', pathname: '/api/articles' }, { statusCode: 200, body: [] });
+      cy.intercept('GET', '/api/articles/unread-counts', { statusCode: 200, body: {} });
+      cy.intercept('GET', '/api/articles/filter-counts', { statusCode: 200, body: {} });
+      cy.intercept('GET', '/api/progress', { statusCode: 200, body: { is_running: false } });
 
-    // Wait for the app to be fully loaded
-    cy.get('body').should('be.visible');
+      cy.visit('/');
+      cy.get('body').should('be.visible');
+    });
   });
 
   it('should persist theme changes after closing and reopening settings', () => {
@@ -377,6 +397,7 @@ describe('Settings Persistence', () => {
       content_font_family: 'system',
       content_font_size: '16',
       content_line_height: '1.6',
+      default_view_mode: 'rendered',
       update_check_enabled: 'false',
       update_interval: '10',
       last_global_refresh: new Date().toISOString(),
@@ -533,5 +554,105 @@ describe('Settings Persistence', () => {
       expect(doc.documentElement.style.getPropertyValue('--ui-font-size')).to.equal('20px');
       expect(doc.documentElement.style.getPropertyValue('--ui-font-family')).to.contain('Georgia');
     });
+  });
+
+  it('should not save on open, tab switches, or clean close and should flush only dirty fields', () => {
+    let settingsState: Record<string, string> = {
+      language: 'en-US',
+      theme: 'light',
+      translation_mode: 'manual',
+      update_check_enabled: 'false',
+      update_interval: '30',
+    };
+    const savedBodies: Record<string, string>[] = [];
+
+    cy.intercept('/api/**', { statusCode: 200, body: {} });
+    cy.intercept('GET', '/api/settings', (req) => {
+      req.reply({ statusCode: 200, body: settingsState });
+    }).as('baselineSettings');
+    cy.intercept('POST', '/api/settings', (req) => {
+      savedBodies.push(req.body);
+      settingsState = { ...settingsState, ...req.body };
+      req.reply({ statusCode: 200, body: settingsState });
+    }).as('saveDirtySettings');
+    cy.intercept('GET', '/api/feeds', { statusCode: 200, body: [] }).as('baselineFeeds');
+    cy.intercept('GET', '/api/tags', { statusCode: 200, body: [] });
+    cy.intercept('GET', '/api/saved-filters', { statusCode: 200, body: [] });
+    cy.intercept({ method: 'GET', pathname: '/api/articles' }, { statusCode: 200, body: [] });
+    cy.intercept('GET', '/api/articles/unread-counts', { statusCode: 200, body: {} });
+    cy.intercept('GET', '/api/articles/filter-counts', { statusCode: 200, body: {} });
+    cy.intercept('GET', '/api/progress', { statusCode: 200, body: { is_running: false } });
+
+    cy.reload();
+    cy.wait('@baselineFeeds');
+    cy.get('button[title="Settings"]').click();
+    cy.wait('@baselineSettings');
+    cy.wait(700);
+    cy.contains('button', /^Feeds$/).click();
+    cy.contains('button', /^Reading$/).click();
+    cy.contains('button', /^General$/).click();
+    cy.get('body').type('{esc}');
+    cy.wait(700);
+    cy.then(() => expect(savedBodies).to.have.length(0));
+
+    cy.get('button[title="Settings"]').click();
+    cy.wait('@baselineSettings');
+    cy.contains('.setting-item', 'Theme').find('button.select-trigger').click();
+    cy.contains('.select-option', 'Dark').click({ force: true });
+    // Close before the debounce expires: unmount must flush the one dirty key.
+    cy.get('body').type('{esc}');
+    cy.wait('@saveDirtySettings').then(({ request }) => {
+      expect(request.body).to.deep.equal({ theme: 'dark' });
+    });
+    cy.then(() => expect(savedBodies).to.have.length(1));
+  });
+
+  it('should persist manual, automatic, and off translation modes', () => {
+    let settingsState: Record<string, string> = {
+      language: 'en-US',
+      theme: 'light',
+      translation_mode: 'manual',
+      translation_only_mode: 'false',
+      translation_provider: 'google',
+      target_language: 'zh',
+      update_check_enabled: 'false',
+      update_interval: '30',
+    };
+
+    cy.intercept('/api/**', { statusCode: 200, body: {} });
+    cy.intercept('GET', '/api/settings', (req) => {
+      req.reply({ statusCode: 200, body: settingsState });
+    }).as('translationModeSettings');
+    cy.intercept('POST', '/api/settings', (req) => {
+      settingsState = { ...settingsState, ...req.body };
+      req.reply({ statusCode: 200, body: settingsState });
+    }).as('saveTranslationMode');
+    cy.intercept('GET', '/api/feeds', { statusCode: 200, body: [] }).as('translationModeFeeds');
+    cy.intercept('GET', '/api/tags', { statusCode: 200, body: [] });
+    cy.intercept('GET', '/api/saved-filters', { statusCode: 200, body: [] });
+    cy.intercept({ method: 'GET', pathname: '/api/articles' }, { statusCode: 200, body: [] });
+    cy.intercept('GET', '/api/articles/unread-counts', { statusCode: 200, body: {} });
+    cy.intercept('GET', '/api/articles/filter-counts', { statusCode: 200, body: {} });
+    cy.intercept('GET', '/api/progress', { statusCode: 200, body: { is_running: false } });
+
+    cy.reload();
+    cy.wait('@translationModeFeeds');
+    cy.get('button[title="Settings"]').click();
+    cy.contains('button', /^Content$/).click();
+
+    cy.contains('label', 'Manual translation').find('input[type="radio"]').should('be.checked');
+    cy.contains('label', 'Automatic translation').click();
+    cy.wait('@saveTranslationMode').its('request.body.translation_mode').should('eq', 'auto');
+
+    cy.get('body').type('{esc}');
+    cy.get('[data-settings-modal="true"]').should('not.exist');
+    cy.get('button[title="Settings"]').click();
+    cy.wait('@translationModeSettings');
+    cy.contains('button', /^Content$/).click();
+    cy.contains('label', 'Automatic translation').find('input[type="radio"]').should('be.checked');
+
+    cy.contains('label', 'Translation off').click();
+    cy.wait('@saveTranslationMode').its('request.body.translation_mode').should('eq', 'off');
+    cy.contains('.sub-setting-item', 'Translation Provider').should('not.exist');
   });
 });

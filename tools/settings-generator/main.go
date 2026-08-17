@@ -352,7 +352,9 @@ func SaveSettings(h *core.Handler, settings map[string]string) error {
 				return err
 			}
 		} else if value != "" {
-			h.DB.SetSetting(key, value)
+			if err := h.DB.SetSetting(key, value); err != nil {
+				return err
+			}
 		}
 	}
 

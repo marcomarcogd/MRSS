@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	appUtils "MRSS/internal/utils"
+
 	"github.com/mmcdole/gofeed"
 )
 
@@ -77,6 +79,7 @@ func (s *ScriptSource) Fetch(ctx context.Context, config *Config) (*gofeed.Feed,
 	if err != nil {
 		return nil, err
 	}
+	appUtils.ConfigureBackgroundCommand(cmd)
 
 	// Set working directory
 	cmd.Dir = s.scriptsDir
@@ -146,6 +149,7 @@ func findPython(ctx context.Context) (string, error) {
 
 	for _, candidate := range candidates {
 		cmd := exec.CommandContext(ctx, candidate, "--version")
+		appUtils.ConfigureBackgroundCommand(cmd)
 		if err := cmd.Run(); err == nil {
 			return candidate, nil
 		}

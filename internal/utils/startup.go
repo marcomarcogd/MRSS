@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 )
@@ -64,51 +63,6 @@ func CleanupLegacyStartupRegistration() error {
 	default:
 		return nil
 	}
-}
-
-// Windows implementation using registry
-func enableStartupWindows(executable string) error {
-	// Use reg.exe to add registry entry
-	cmd := exec.Command("reg", "add",
-		"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
-		"/v", "MRSS",
-		"/t", "REG_SZ",
-		"/d", fmt.Sprintf("\"%s\"", executable),
-		"/f")
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to add registry entry: %v, output: %s", err, output)
-	}
-
-	log.Printf("Startup enabled for Windows: %s", executable)
-	return nil
-}
-
-func disableStartupWindows() error {
-	return deleteStartupWindowsValue("MRSS")
-}
-
-func deleteStartupWindowsValue(valueName string) error {
-	// Use reg.exe to remove registry entry
-	cmd := exec.Command("reg", "delete",
-		"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
-		"/v", valueName,
-		"/f")
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		// Check if the error is because the key doesn't exist (exit code 1)
-		// If so, we can ignore it since our goal is to have the key not present
-		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
-			log.Println("Startup registry key was not present (already disabled)")
-			return nil
-		}
-		return fmt.Errorf("failed to remove registry entry: %v, output: %s", err, output)
-	}
-
-	log.Printf("Startup registry value removed for Windows: %s", valueName)
-	return nil
 }
 
 // Linux implementation using .desktop file in autostart

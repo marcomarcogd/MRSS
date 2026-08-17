@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	appUtils "MRSS/internal/utils"
+
 	"github.com/mmcdole/gofeed"
 )
 
@@ -30,6 +32,7 @@ func findPythonExecutable(ctx context.Context) (string, error) {
 
 	for _, candidate := range candidates {
 		cmd := exec.CommandContext(ctx, candidate, "--version")
+		appUtils.ConfigureBackgroundCommand(cmd)
 		if err := cmd.Run(); err == nil {
 			return candidate, nil
 		}
@@ -94,6 +97,7 @@ func (e *ScriptExecutor) ExecuteScript(ctx context.Context, scriptPath string) (
 		// Try to execute directly (for compiled binaries)
 		cmd = exec.CommandContext(execCtx, fullPath)
 	}
+	appUtils.ConfigureBackgroundCommand(cmd)
 
 	// Set working directory to the scripts directory
 	cmd.Dir = e.scriptsDir

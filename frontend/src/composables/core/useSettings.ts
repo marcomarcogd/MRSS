@@ -13,6 +13,10 @@ export function setSettingsFromRawData(data: Record<string, string>) {
   sharedSettings.value = parseSettingsData(data);
 }
 
+export function mergeSharedSettings(data: Partial<SettingsData>) {
+  sharedSettings.value = { ...sharedSettings.value, ...data };
+}
+
 export function useSettings() {
   const { locale } = useI18n();
 
@@ -21,15 +25,21 @@ export function useSettings() {
   /**
    * Fetch settings from backend
    */
-  async function fetchSettings(): Promise<SettingsData> {
+  async function fetchSettings(updateShared: boolean = true): Promise<SettingsData> {
     try {
       const res = await fetch('/api/settings');
+      if (!res.ok) {
+        throw new Error(`Failed to fetch settings: HTTP ${res.status}`);
+      }
       const data = await res.json();
 
       // Use generated helper to parse settings (alphabetically sorted)
-      setSettingsFromRawData(data);
+      const parsedSettings = parseSettingsData(data);
+      if (updateShared) {
+        sharedSettings.value = parsedSettings;
+      }
 
-      return settings.value;
+      return parsedSettings;
     } catch (e) {
       console.error('Error fetching settings:', e);
       throw e;

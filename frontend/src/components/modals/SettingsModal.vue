@@ -28,9 +28,10 @@ import {
   PhChartBar,
   PhInfo,
 } from '@phosphor-icons/vue';
-import type { TabName } from '@/types/settings';
+import type { SettingsData, TabName } from '@/types/settings';
 import type { ThemePreference } from '@/stores/app';
 import { useSettings } from '@/composables/core/useSettings';
+import { useSettingsAutoSave } from '@/composables/core/useSettingsAutoSave';
 import { useAppUpdates } from '@/composables/core/useAppUpdates';
 import { useFeedManagement } from '@/composables/feed/useFeedManagement';
 import { useModalClose, LARGE_MODAL_Z_INDEX } from '@/composables/ui/useModalClose';
@@ -42,7 +43,8 @@ const { t } = useI18n();
 const { zIndex: modalZIndex } = useModalClose(() => emit('close'), LARGE_MODAL_Z_INDEX);
 
 // Use composables
-const { settings, fetchSettings, applySettings } = useSettings();
+const { settings: sharedSettings, fetchSettings, applySettings } = useSettings();
+const settings = ref<SettingsData>({ ...sharedSettings.value });
 const {
   updateInfo,
   checkingUpdates,
@@ -72,15 +74,29 @@ const emit = defineEmits<{
 
 const activeTab: Ref<TabName> = ref('general');
 const showDiscoverAllModal = ref(false);
+const settingsReady = ref(false);
+const settingsLoadError = ref(false);
 
-onMounted(async () => {
+// Keep one watcher alive for the entire modal. Tabs only edit the shared
+// settings object, so opening or switching tabs never creates duplicate saves.
+useSettingsAutoSave(settings, settingsReady);
+
+async function loadModalSettings() {
+  settingsReady.value = false;
+  settingsLoadError.value = false;
   try {
-    const data = await fetchSettings();
+    const data = await fetchSettings(false);
+    settings.value = { ...data };
     applySettings(data, (theme: string) => store.setTheme(theme as ThemePreference));
+    settingsReady.value = true;
   } catch (e) {
     console.error('Error loading settings:', e);
+    settingsLoadError.value = true;
+    window.showToast(t('common.errors.loadingSettings'), 'error');
   }
-});
+}
+
+onMounted(loadModalSettings);
 
 function handleDiscoverAll() {
   showDiscoverAllModal.value = true;
@@ -195,85 +211,106 @@ function handleDiscoverAll() {
 
         <!-- Content Area -->
         <div class="flex-1 overflow-y-scroll p-3 sm:p-6 min-h-0 scroll-smooth">
-          <GeneralTab
-            v-if="activeTab === 'general'"
-            :settings="settings"
-            @update:settings="settings = $event"
-          />
+          <div
+            v-if="!settingsReady && !settingsLoadError"
+            class="space-y-4 animate-pulse"
+            data-settings-loading="true"
+          >
+            <div class="h-7 w-40 rounded bg-bg-tertiary"></div>
+            <div v-for="index in 5" :key="index" class="h-16 rounded-lg bg-bg-tertiary"></div>
+          </div>
 
-          <ReadingDisplayTab
-            v-if="activeTab === 'reading'"
-            :settings="settings"
-            @update:settings="settings = $event"
-          />
+          <div
+            v-else-if="settingsLoadError"
+            class="flex h-full flex-col items-center justify-center gap-3 text-center text-text-secondary"
+          >
+            <p>{{ t('common.errors.loadingSettings') }}</p>
+            <button class="btn-secondary-compact" @click="loadModalSettings">
+              {{ t('common.retry') }}
+            </button>
+          </div>
 
-          <FeedsTab
-            v-if="activeTab === 'feeds'"
-            :settings="settings"
-            @import-opml="handleImportOPML"
-            @export-opml="handleExportOPML"
-            @cleanup-database="handleCleanupDatabase"
-            @add-feed="handleAddFeed"
-            @edit-feed="handleEditFeed"
-            @delete-feed="handleDeleteFeed"
-            @batch-delete="handleBatchDelete"
-            @batch-move="handleBatchMove"
-            @batch-add-tags="handleBatchAddTags"
-            @batch-set-image-mode="handleBatchSetImageMode"
-            @batch-unset-image-mode="handleBatchUnsetImageMode"
-            @discover-all="handleDiscoverAll"
-            @select-feed="emit('close')"
-            @update:settings="settings = $event"
-          />
+          <template v-else>
+            <GeneralTab
+              v-if="activeTab === 'general'"
+              :settings="settings"
+              @update:settings="settings = $event"
+            />
 
-          <ContentTab
-            v-if="activeTab === 'content'"
-            :settings="settings"
-            @update:settings="settings = $event"
-          />
+            <ReadingDisplayTab
+              v-if="activeTab === 'reading'"
+              :settings="settings"
+              @update:settings="settings = $event"
+            />
 
-          <AITab
-            v-if="activeTab === 'ai'"
-            :settings="settings"
-            @update:settings="settings = $event"
-          />
+            <FeedsTab
+              v-if="activeTab === 'feeds'"
+              :settings="settings"
+              @import-opml="handleImportOPML"
+              @export-opml="handleExportOPML"
+              @cleanup-database="handleCleanupDatabase"
+              @add-feed="handleAddFeed"
+              @edit-feed="handleEditFeed"
+              @delete-feed="handleDeleteFeed"
+              @batch-delete="handleBatchDelete"
+              @batch-move="handleBatchMove"
+              @batch-add-tags="handleBatchAddTags"
+              @batch-set-image-mode="handleBatchSetImageMode"
+              @batch-unset-image-mode="handleBatchUnsetImageMode"
+              @discover-all="handleDiscoverAll"
+              @select-feed="emit('close')"
+              @update:settings="settings = $event"
+            />
 
-          <NetworkTab
-            v-if="activeTab === 'network'"
-            :settings="settings"
-            @update:settings="settings = $event"
-          />
+            <ContentTab
+              v-if="activeTab === 'content'"
+              :settings="settings"
+              @update:settings="settings = $event"
+            />
 
-          <PluginsTab
-            v-if="activeTab === 'plugins'"
-            :settings="settings"
-            @update:settings="settings = $event"
-          />
+            <AITab
+              v-if="activeTab === 'ai'"
+              :settings="settings"
+              @update:settings="settings = $event"
+            />
 
-          <RulesTab
-            v-if="activeTab === 'rules'"
-            :settings="settings"
-            @update:settings="settings = $event"
-          />
+            <NetworkTab
+              v-if="activeTab === 'network'"
+              :settings="settings"
+              @update:settings="settings = $event"
+            />
 
-          <ShortcutsTab
-            v-if="activeTab === 'shortcuts'"
-            :settings="settings"
-            @update:settings="settings = $event"
-          />
+            <PluginsTab
+              v-if="activeTab === 'plugins'"
+              :settings="settings"
+              @update:settings="settings = $event"
+            />
 
-          <StatisticsTab v-if="activeTab === 'statistics'" />
+            <RulesTab
+              v-if="activeTab === 'rules'"
+              :settings="settings"
+              @update:settings="settings = $event"
+            />
 
-          <AboutTab
-            v-if="activeTab === 'about'"
-            :update-info="updateInfo"
-            :checking-updates="checkingUpdates"
-            :downloading-update="downloadingUpdate"
-            :installing-update="installingUpdate"
-            :download-progress="downloadProgress"
-            @check-updates="handleCheckUpdates"
-            @download-install-update="handleDownloadInstallUpdate"
-          />
+            <ShortcutsTab
+              v-if="activeTab === 'shortcuts'"
+              :settings="settings"
+              @update:settings="settings = $event"
+            />
+
+            <StatisticsTab v-if="activeTab === 'statistics'" />
+
+            <AboutTab
+              v-if="activeTab === 'about'"
+              :update-info="updateInfo"
+              :checking-updates="checkingUpdates"
+              :downloading-update="downloadingUpdate"
+              :installing-update="installingUpdate"
+              :download-progress="downloadProgress"
+              @check-updates="handleCheckUpdates"
+              @download-install-update="handleDownloadInstallUpdate"
+            />
+          </template>
         </div>
       </div>
     </div>
