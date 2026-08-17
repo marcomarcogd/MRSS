@@ -164,8 +164,8 @@ async function saveProfile() {
 // Open documentation
 function openDocumentation() {
   const docUrl = locale.value.startsWith('zh')
-    ? 'https://github.com/WCY-dt/MrRSS/blob/main/docs/AI_CONFIGURATION.zh.md'
-    : 'https://github.com/WCY-dt/MrRSS/blob/main/docs/AI_CONFIGURATION.md';
+    ? 'https://github.com/DevXDojo/MrRSS/blob/main/docs/AI_CONFIGURATION.zh.md'
+    : 'https://github.com/DevXDojo/MrRSS/blob/main/docs/AI_CONFIGURATION.md';
   openInBrowser(docUrl);
 }
 
@@ -379,6 +379,7 @@ function handleClose() {
 </template>
 
 <style scoped>
+@reference "../../../../style.css";
 .input-field {
   @apply p-1.5 sm:p-2.5 border border-border rounded-md bg-bg-secondary text-text-primary focus:border-accent focus:outline-none transition-colors;
 }
