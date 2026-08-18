@@ -68,17 +68,11 @@ Keywords=RSS;Atom;Feed;News;Reader;
 X-GNOME-UsesNotifications=true
 EOF
 
-# Create AppRun script
-echo "Creating AppRun script..."
-cat > "${APPDIR}/AppRun" << 'EOF'
-#!/bin/bash
-SELF=$(readlink -f "$0")
-HERE=${SELF%/*}
-export PATH="${HERE}/usr/bin:${PATH}"
-export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
-exec "${HERE}/usr/bin/MRSS" "$@"
-EOF
-chmod +x "${APPDIR}/AppRun"
+# Use the application binary as AppRun. Besides being the standard layout for
+# a self-contained executable, this prevents older appimagetool builds from
+# misclassifying a shell AppRun as armhf in an otherwise aarch64 AppDir.
+echo "Creating AppRun symlink..."
+ln -s "usr/bin/${APP_NAME}" "${APPDIR}/AppRun"
 
 # Copy icon (if exists, otherwise create placeholder)
 # Icon handling is non-critical - continue even if it fails
@@ -184,16 +178,7 @@ if [ -n "${CI}" ] || ! [ -e /dev/fuse ]; then
         echo "Checking AppDir contents..."
         find "${APPDIR}" -type f -exec file {} \; | grep -E 'ELF|shared object' || true
 
-        # Fallback: create tar.gz instead
-        echo "Falling back to tar.gz archive..."
-        if [ -f "${APPDIR}/usr/bin/${APP_NAME}" ]; then
-            tar czf "${BUILD_DIR}/${APP_NAME}-${VERSION}-linux-${ARCH}.tar.gz" -C "${APPDIR}/usr/bin" "${APP_NAME}"
-            echo "Created fallback archive: ${BUILD_DIR}/${APP_NAME}-${VERSION}-linux-${ARCH}.tar.gz"
-        else
-            echo "Error: Binary not found at ${APPDIR}/usr/bin/${APP_NAME}"
-            exit 1
-        fi
-        exit 0
+        exit 1
     fi
 else
     echo "Running: ARCH=${APPIMAGE_ARCH} ${APPIMAGETOOL} --verbose ${APPDIR} ${BUILD_DIR}/${APPIMAGE_NAME}"
@@ -202,16 +187,7 @@ else
         echo "Checking AppDir contents..."
         find "${APPDIR}" -type f -exec file {} \; | grep -E 'ELF|shared object' || true
 
-        # Fallback: create tar.gz instead
-        echo "Falling back to tar.gz archive..."
-        if [ -f "${APPDIR}/usr/bin/${APP_NAME}" ]; then
-            tar czf "${BUILD_DIR}/${APP_NAME}-${VERSION}-linux-${ARCH}.tar.gz" -C "${APPDIR}/usr/bin" "${APP_NAME}"
-            echo "Created fallback archive: ${BUILD_DIR}/${APP_NAME}-${VERSION}-linux-${ARCH}.tar.gz"
-        else
-            echo "Error: Binary not found at ${APPDIR}/usr/bin/${APP_NAME}"
-            exit 1
-        fi
-        exit 0
+        exit 1
     fi
 fi
 

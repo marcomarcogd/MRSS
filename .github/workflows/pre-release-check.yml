@@ -279,8 +279,7 @@ jobs:
           file build/bin/MRSS || true
 
           chmod +x build/linux/create-appimage.sh
-          ARCH=${{ matrix.arch }} ./build/linux/create-appimage.sh || echo "AppImage creation failed, will use tar.gz"
-        continue-on-error: true
+          ARCH=${{ matrix.arch }} ./build/linux/create-appimage.sh
 
       - name: Create installer (macOS)
         if: matrix.platform == 'darwin'
@@ -306,6 +305,16 @@ jobs:
             echo "Error: MRSS binary not found"
             exit 1
           fi
+
+      - name: Upload Linux test artifacts
+        if: matrix.platform == 'linux'
+        uses: actions/upload-artifact@v7
+        with:
+          name: MRSS-${{ matrix.arch }}-linux-test
+          if-no-files-found: error
+          path: |
+            build/bin/MRSS-*-linux-${{ matrix.arch }}.AppImage
+            build/bin/MRSS-*-linux-${{ matrix.arch }}.tar.gz
 
       - name: Verify build artifacts
         shell: bash

@@ -219,19 +219,24 @@ jobs:
           # Determine expected artifact names for this platform/arch
           if [ "${{ matrix.platform }}" = "windows" ]; then
             INSTALLER="MRSS-${VERSION}-windows-${{ matrix.arch }}-installer.exe"
-            PACKAGE=""  # No package for Windows
+            PACKAGE=""
+            PORTABLE="MRSS-${VERSION}-windows-${{ matrix.arch }}-portable.zip"
           elif [ "${{ matrix.platform }}" = "linux" ]; then
             INSTALLER="MRSS-${VERSION}-linux-${{ matrix.arch }}.AppImage"
             PACKAGE="MRSS-${VERSION}-linux-${{ matrix.arch }}.tar.gz"
+            PORTABLE="MRSS-${VERSION}-linux-${{ matrix.arch }}-portable.tar.gz"
           elif [ "${{ matrix.platform }}" = "darwin" ]; then
             INSTALLER="MRSS-${VERSION}-darwin-${{ matrix.arch }}.dmg"
-            PACKAGE=""  # No package for macOS
+            PACKAGE=""
+            PORTABLE="MRSS-${VERSION}-darwin-${{ matrix.arch }}-portable.zip"
           elif [ "${{ matrix.platform }}" = "ios" ]; then
             INSTALLER="MRSS-${VERSION}-ios-${{ matrix.arch }}.ipa"
-            PACKAGE=""  # No package for iOS
+            PACKAGE=""
+            PORTABLE=""
           elif [ "${{ matrix.platform }}" = "android" ]; then
             INSTALLER="MRSS-${VERSION}-android-${{ matrix.arch }}.apk"
-            PACKAGE=""  # No package for Android
+            PACKAGE=""
+            PORTABLE=""
           fi
 
           # Check if release has these assets
@@ -245,17 +250,23 @@ jobs:
           if [ -n "$PACKAGE" ]; then
             echo "Expected package: $PACKAGE"
           fi
+          if [ -n "$PORTABLE" ]; then
+            echo "Expected portable package: $PORTABLE"
+          fi
           echo "Found assets:"
           echo "$ASSETS"
 
-          # Check if any of our artifacts exist
-          SKIP_BUILD="false"
-          if echo "$ASSETS" | grep -q "$INSTALLER"; then
-            echo "Installer for ${{ matrix.platform }}-${{ matrix.arch }} already exists in release"
-            SKIP_BUILD="true"
-          elif [ -n "$PACKAGE" ] && echo "$ASSETS" | grep -q "$PACKAGE"; then
-            echo "Package for ${{ matrix.platform }}-${{ matrix.arch }} already exists in release"
-            SKIP_BUILD="true"
+          # Skip only when every expected artifact exists. This keeps reruns
+          # able to repair a partially uploaded platform release.
+          SKIP_BUILD="true"
+          for artifact in "$INSTALLER" "$PACKAGE" "$PORTABLE"; do
+            if [ -n "$artifact" ] && ! echo "$ASSETS" | grep -Fxq "$artifact"; then
+              echo "Missing artifact: $artifact"
+              SKIP_BUILD="false"
+            fi
+          done
+          if [ "$SKIP_BUILD" = "true" ]; then
+            echo "All required artifacts for ${{ matrix.platform }}-${{ matrix.arch }} already exist in release"
           fi
 
           echo "skip_build=$SKIP_BUILD" >> $GITHUB_OUTPUT
@@ -497,8 +508,7 @@ jobs:
           file build/bin/MRSS || true
 
           chmod +x build/linux/create-appimage.sh
-          ARCH=${{ matrix.arch }} ./build/linux/create-appimage.sh || echo "AppImage creation failed, will use tar.gz"
-        continue-on-error: true
+          ARCH=${{ matrix.arch }} ./build/linux/create-appimage.sh
 
       - name: Create installer (macOS)
         if: steps.check_artifacts.outputs.skip_build == 'false' && matrix.platform == 'darwin'
@@ -643,6 +653,12 @@ jobs:
           echo "artifacts=$artifacts" >> $GITHUB_OUTPUT
           echo "Found artifacts: $artifacts"
 
+          if [ "${{ matrix.platform }}" = "linux" ]; then
+            test -f "MRSS-${{ needs.create-release.outputs.version }}-linux-${{ matrix.arch }}.AppImage"
+            test -f "MRSS-${{ needs.create-release.outputs.version }}-linux-${{ matrix.arch }}.tar.gz"
+            test -f "MRSS-${{ needs.create-release.outputs.version }}-linux-${{ matrix.arch }}-portable.tar.gz"
+          fi
+
       - name: Upload Release Assets
         if: steps.check_artifacts.outputs.skip_build == 'false'
         uses: softprops/action-gh-release@v3
@@ -651,4 +667,4 @@ jobs:
           files: |
             build/bin/MRSS-${{ needs.create-release.outputs.version }}-*
           token: ${{ secrets.GITHUB_TOKEN }}
-          fail_on_unmatched_files: false
+          fail_on_unmatched_files: true
