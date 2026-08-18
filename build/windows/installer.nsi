@@ -9,8 +9,8 @@
 ; All paths in this script are relative to the script directory.
 
 !define APP_NAME "MRSS"
-!define APP_VERSION "1.6.1"
-!define APP_VERSION_NUMERIC "1.6.1.0"  ; NSIS requires X.X.X.X format
+!define APP_VERSION "1.6.2"
+!define APP_VERSION_NUMERIC "1.6.2.0"  ; NSIS requires X.X.X.X format
 !define APP_PUBLISHER "marcomarcogd"
 !define APP_URL "https://github.com/marcomarcogd/MRSS"
 !define APP_DESCRIPTION "A Modern, Cross-Platform Desktop RSS Reader"

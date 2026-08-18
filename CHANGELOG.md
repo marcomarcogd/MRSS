@@ -5,6 +5,34 @@ All notable changes to MRSS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.2] - 2026-08-18
+
+### 中文
+
+#### Windows 自动更新修复
+
+- 修复 v1.6.0–v1.6.1 点击更新后 MRSS 退出、安装界面被隐藏且无法完成升级的问题。安装版现在由独立辅助进程等待主程序退出，通过 Windows 提权接口静默运行 NSIS 安装包，并在安装成功后自动重启 MRSS。
+- Windows 便携版改为由同一辅助进程在主程序退出后替换可执行文件并自动重启，避免运行中的 EXE 无法安全覆盖自身。
+- 每次下载使用独立临时目录；即使上一次安装器仍占用文件，重新下载也不会因同名临时文件被锁定而失败。失败和恢复过程写入 MRSS 数据目录下的 `update.log`。
+- v1.6.1 及更早版本自身仍包含旧更新器，因此升级到 v1.6.2 需要一次性手动下载安装包或便携包；安装 v1.6.2 后，后续版本可继续使用应用内自动更新。
+
+#### Windows 签名说明
+
+- v1.6.2 的 Windows 文件仍未使用 Authenticode 证书签名。静默更新需要写入现有 Program Files 安装目录时，Windows 会显示 UAC 提权确认，发布者仍可能显示为未知；本版本不会绕过 UAC、Defender 或 SmartScreen。
+
+### English
+
+#### Windows auto-update fixes
+
+- Fixed the v1.6.0–v1.6.1 regression where MRSS closed after Update was clicked while the installer UI was hidden and the upgrade could not finish. Installed builds now use a detached helper that waits for MRSS to exit, runs the NSIS installer silently through the Windows elevation API, and restarts MRSS after a successful installation.
+- Windows portable builds now use the same helper to replace the executable only after the running process exits, then restart automatically.
+- Every download uses a unique temporary directory, so a locked installer from an earlier attempt cannot make a retry fail at the same path. Update and recovery details are recorded in `update.log` beside the existing MRSS application log.
+- Because v1.6.1 and earlier still contain the old updater, upgrading to v1.6.2 requires a one-time manual installer or portable-package download. In-app automatic updates work again after v1.6.2 is installed.
+
+#### Windows signing notice
+
+- Windows artifacts for v1.6.2 remain unsigned with Authenticode. Updating an existing Program Files installation may show a UAC elevation prompt with an unknown publisher. This release does not bypass UAC, Defender, or SmartScreen.
+
 ## [1.6.1] - 2026-08-18
 
 ### 中文

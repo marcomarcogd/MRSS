@@ -1,10 +1,10 @@
 {
 	"fixed": {
-		"file_version": "1.6.1"
+		"file_version": "1.6.2"
 	},
 	"info": {
 		"0000": {
-			"ProductVersion": "1.6.1",
+			"ProductVersion": "1.6.2",
 			"CompanyName": "marcomarcogd",
 			"FileDescription": "MRSS",
 			"LegalCopyright": "Copyright © 2026 marcomarcogd and contributors",
