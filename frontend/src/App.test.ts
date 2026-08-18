@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { nextTick } from 'vue';
 import { mount } from '@vue/test-utils';
 import { createPinia } from 'pinia';
@@ -6,7 +7,12 @@ import { createI18n } from 'vue-i18n';
 import en from './i18n/locales/en';
 import App from './App.vue';
 import { setSettingsFromRawData } from './composables/core/useSettings';
-import { getRecommendedFonts } from './utils/fontDetector';
+import {
+  getRecommendedFonts,
+  resolveFontFamily,
+  SYSTEM_FONT_STACK,
+  WINDOWS_SYSTEM_FONT_STACK,
+} from './utils/fontDetector';
 
 // Create stub components for complex child components
 const createStub = (name: string) => ({
@@ -19,6 +25,29 @@ describe('App', () => {
     expect(en.appName).toBe('MRSS');
     expect(en.setting.about.forkNotice).toContain('DevXDojo/MrRSS');
     expect(en.setting.about.licenseNotice).toContain('GPL-3.0');
+  });
+
+  it('uses bundled fonts only for the Windows system default', () => {
+    expect(resolveFontFamily('system', 'windows')).toBe(WINDOWS_SYSTEM_FONT_STACK);
+    expect(resolveFontFamily('system', 'darwin')).toBe(SYSTEM_FONT_STACK);
+    expect(resolveFontFamily('system', 'linux')).toBe(SYSTEM_FONT_STACK);
+    expect(resolveFontFamily('system', 'other')).toBe(SYSTEM_FONT_STACK);
+
+    const windowsCustomFont = resolveFontFamily('Noto Serif SC', 'windows');
+    expect(windowsCustomFont).toMatch(/^"Noto Serif SC",/);
+    expect(windowsCustomFont).toContain('"Inter Variable"');
+    expect(windowsCustomFont).toContain('"Noto Sans SC Variable"');
+    expect(windowsCustomFont.indexOf('"Inter Variable"')).toBeLessThan(
+      windowsCustomFont.indexOf('"Noto Sans SC Variable"')
+    );
+
+    expect(resolveFontFamily('serif', 'windows')).toBe('Georgia, "Times New Roman", Times, serif');
+  });
+
+  it('does not load fonts from remote services', () => {
+    const indexHtml = readFileSync('index.html', 'utf8');
+    expect(indexHtml).not.toContain('fonts.googleapis.com');
+    expect(indexHtml).not.toContain('fonts.gstatic.com');
   });
 
   it('renders and reacts to interface typography settings', async () => {

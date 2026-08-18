@@ -2,6 +2,8 @@
  * Font detection utility to check which fonts are available on the system
  */
 
+import { System } from '@wailsio/runtime';
+
 // Common fonts to check for different platforms and languages
 const COMMON_FONTS = {
   // Chinese fonts
@@ -123,6 +125,11 @@ const COMMON_FONTS = {
 export const SYSTEM_FONT_STACK =
   'Inter, "Noto Sans CJK SC", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 
+export const WINDOWS_SYSTEM_FONT_STACK =
+  '"Inter Variable", "Noto Sans SC Variable", "Segoe UI", "Microsoft YaHei", system-ui, sans-serif';
+
+export type FontPlatform = 'windows' | 'darwin' | 'linux' | 'other';
+
 export interface RecommendedFonts {
   serif: string[];
   sansSerif: string[];
@@ -136,8 +143,28 @@ let cachedRecommendedFonts: RecommendedFonts | null = null;
  * Returning an explicit stack for "system" prevents article content from
  * inheriting a separately configured interface font.
  */
-export function resolveFontFamily(fontFamily: unknown): string {
+function detectFontPlatform(): FontPlatform {
+  if (System.IsWindows()) return 'windows';
+  if (System.IsMac()) return 'darwin';
+  if (System.IsLinux()) return 'linux';
+
+  // Keep browser previews useful when Wails runtime metadata is unavailable.
+  if (typeof navigator !== 'undefined') {
+    const platform = `${navigator.platform || ''} ${navigator.userAgent || ''}`;
+    if (/Windows/i.test(platform)) return 'windows';
+    if (/Mac/i.test(platform)) return 'darwin';
+    if (/Linux/i.test(platform)) return 'linux';
+  }
+
+  return 'other';
+}
+
+export function resolveFontFamily(
+  fontFamily: unknown,
+  platform: FontPlatform = detectFontPlatform()
+): string {
   const value = typeof fontFamily === 'string' ? fontFamily.trim() : '';
+  const systemFontStack = platform === 'windows' ? WINDOWS_SYSTEM_FONT_STACK : SYSTEM_FONT_STACK;
 
   switch (value) {
     case 'serif':
@@ -148,10 +175,10 @@ export function resolveFontFamily(fontFamily: unknown): string {
       return '"Courier New", Courier, monospace';
     case 'system':
     case '':
-      return SYSTEM_FONT_STACK;
+      return systemFontStack;
     default: {
       const escapedValue = value.replace(/["\\]/g, '\\$&');
-      return `"${escapedValue}", ${SYSTEM_FONT_STACK}`;
+      return `"${escapedValue}", ${systemFontStack}`;
     }
   }
 }

@@ -2,6 +2,8 @@ import { createApp } from 'vue';
 import { createPinia } from 'pinia';
 import PhosphorIcons from '@phosphor-icons/vue';
 import i18n, { locale } from './i18n';
+import '@fontsource-variable/inter/wght.css';
+import '@fontsource-variable/noto-sans-sc/wght.css';
 import './style.css';
 import App from './App.vue';
 import { setSettingsFromRawData } from './composables/core/useSettings';

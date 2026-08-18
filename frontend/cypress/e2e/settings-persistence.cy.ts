@@ -524,6 +524,7 @@ describe('Settings Persistence', () => {
     cy.get('.prose-content').should(($content) => {
       const style = getComputedStyle($content[0]);
       expect(style.fontSize).to.equal('16px');
+      expect(style.fontFamily).to.contain('Inter');
       expect(style.fontFamily).not.to.contain('Georgia');
     });
     cy.get('button[title="Settings"]').click();

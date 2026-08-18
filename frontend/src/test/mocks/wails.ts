@@ -4,6 +4,12 @@ export const Clipboard = {
   GetText: async () => '',
 };
 
+export const System = {
+  IsWindows: () => false,
+  IsMac: () => false,
+  IsLinux: () => false,
+};
+
 export const EventsOn = () => {};
 export const EventsOff = () => {};
 export const EventsEmit = () => {};
