@@ -2,20 +2,45 @@ package update
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"MRSS/internal/updatehelper"
+	appUtils "MRSS/internal/utils"
 )
 
-func TestWindowsInstallerCommandLaunchesExecutableDirectly(t *testing.T) {
-	path := `C:\Users\Example User\Downloads\MRSS-Setup.exe`
-	cmd := windowsInstallerCommand(path)
-
-	if cmd.Path != path {
-		t.Fatalf("command path = %q, want %q", cmd.Path, path)
+func TestUpdaterHelperInvocationDetection(t *testing.T) {
+	args := []string{"MRSS-update-helper.exe", "--mrss-apply-update", "installer", `C:\Temp\MRSS-Setup.exe`, "1234", `C:\Program Files\MRSS\MRSS.exe`}
+	if !updatehelper.IsHelperInvocation(args) {
+		t.Fatal("valid updater helper invocation was not detected")
 	}
-	if want := []string{path}; !reflect.DeepEqual(cmd.Args, want) {
-		t.Fatalf("command args = %#v, want %#v", cmd.Args, want)
+	if updatehelper.IsHelperInvocation(args[:5]) {
+		t.Fatal("incomplete updater helper invocation must be rejected")
+	}
+}
+
+func TestWindowsGUICommandKeepsInstallerVisible(t *testing.T) {
+	cmd := exec.Command(`C:\Temp\MRSS-Setup.exe`)
+	appUtils.ConfigureGUICommand(cmd)
+
+	// On Windows, the GUI installer must not inherit the background-process
+	// flags used for scripts, otherwise NSIS starts with its window hidden.
+	if cmd.SysProcAttr != nil {
+		attr := reflect.ValueOf(cmd.SysProcAttr).Elem()
+		if hideWindow := attr.FieldByName("HideWindow"); hideWindow.IsValid() && hideWindow.Bool() {
+			t.Fatal("Windows installer command must keep its GUI window visible")
+		}
+		if creationFlags := attr.FieldByName("CreationFlags"); creationFlags.IsValid() {
+			const createNoWindow = uint64(0x08000000)
+			if creationFlags.Uint()&createNoWindow != 0 {
+				t.Fatal("Windows installer command must not use CREATE_NO_WINDOW")
+			}
+		}
+	}
+	if !reflect.DeepEqual(cmd.Args, []string{`C:\Temp\MRSS-Setup.exe`}) {
+		t.Fatalf("GUI command unexpectedly uses a shell: %#v", cmd.Args)
 	}
 }
 

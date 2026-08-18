@@ -55,15 +55,28 @@ func HandleDownloadUpdate(h *core.Handler, w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Create temp directory for download
-	tempDir := os.TempDir()
-	filePath := filepath.Join(tempDir, req.AssetName)
+	// Use a unique directory for every attempt. A previously launched Windows
+	// installer may still hold its executable open, so reusing the same temp
+	// path would make a retry fail before the new download can start.
+	downloadDir, err := os.MkdirTemp("", "mrss-update-")
+	if err != nil {
+		log.Printf("Error creating update download directory: %v", err)
+		response.Error(w, fmt.Errorf("failed to create download directory: %w", err), http.StatusInternalServerError)
+		return
+	}
+	filePath := filepath.Join(downloadDir, req.AssetName)
+	cleanupDownload := func() {
+		if cleanupErr := os.RemoveAll(downloadDir); cleanupErr != nil {
+			log.Printf("Failed to clean update download directory: %v", cleanupErr)
+		}
+	}
 
 	// Download the file
 	log.Printf("Downloading update from: %s", req.DownloadURL)
 	resp, err := http.Get(req.DownloadURL)
 	if err != nil {
 		log.Printf("Error downloading update: %v", err)
+		cleanupDownload()
 		response.Error(w, fmt.Errorf("failed to download update: %w", err), http.StatusInternalServerError)
 		return
 	}
@@ -71,6 +84,7 @@ func HandleDownloadUpdate(h *core.Handler, w http.ResponseWriter, r *http.Reques
 
 	if resp.StatusCode != http.StatusOK {
 		log.Printf("Download failed with status: %d", resp.StatusCode)
+		cleanupDownload()
 		response.Error(w, fmt.Errorf("failed to download update"), http.StatusInternalServerError)
 		return
 	}
@@ -79,6 +93,7 @@ func HandleDownloadUpdate(h *core.Handler, w http.ResponseWriter, r *http.Reques
 	out, err := os.Create(filePath)
 	if err != nil {
 		log.Printf("Error creating file: %v", err)
+		cleanupDownload()
 		response.Error(w, fmt.Errorf("failed to create download file: %w", err), http.StatusInternalServerError)
 		return
 	}
@@ -117,7 +132,8 @@ func HandleDownloadUpdate(h *core.Handler, w http.ResponseWriter, r *http.Reques
 
 	if err != nil {
 		log.Printf("Error writing file: %v", err)
-		os.Remove(filePath) // Clean up partial file
+		_ = out.Close()
+		cleanupDownload()
 		response.Error(w, fmt.Errorf("failed to write download file: %w", err), http.StatusInternalServerError)
 		return
 	}
@@ -125,7 +141,8 @@ func HandleDownloadUpdate(h *core.Handler, w http.ResponseWriter, r *http.Reques
 	// Ensure all data is flushed to disk
 	if err := out.Sync(); err != nil {
 		log.Printf("Error syncing file: %v", err)
-		os.Remove(filePath) // Clean up
+		_ = out.Close()
+		cleanupDownload()
 		response.Error(w, fmt.Errorf("failed to save download file: %w", err), http.StatusInternalServerError)
 		return
 	}
@@ -133,7 +150,8 @@ func HandleDownloadUpdate(h *core.Handler, w http.ResponseWriter, r *http.Reques
 	// Verify the file size matches expected size
 	if totalSize > 0 && bytesWritten != totalSize {
 		log.Printf("Download incomplete: expected %d bytes, got %d bytes", totalSize, bytesWritten)
-		os.Remove(filePath) // Clean up incomplete file
+		_ = out.Close()
+		cleanupDownload()
 		response.Error(w, fmt.Errorf("download incomplete"), http.StatusInternalServerError)
 		return
 	}

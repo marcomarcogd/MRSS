@@ -27,6 +27,7 @@ import (
 	"MRSS/internal/network"
 	"MRSS/internal/routes"
 	"MRSS/internal/translation"
+	"MRSS/internal/updatehelper"
 	appUtils "MRSS/internal/utils"
 	"MRSS/internal/utils/fileutil"
 	"MRSS/internal/utils/httputil"
@@ -93,6 +94,10 @@ func APIMiddleware(combinedHandler *CombinedHandler) application.Middleware {
 }
 
 func main() {
+	if updatehelper.RunIfRequested(os.Args) {
+		return
+	}
+
 	// Get proper paths for data files
 	logPath, err := fileutil.GetLogPath()
 	if err != nil {

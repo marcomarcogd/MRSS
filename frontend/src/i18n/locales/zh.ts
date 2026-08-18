@@ -1133,7 +1133,7 @@ const zh: TranslationMessages = {
       updateNow: '立即更新',
       updates: '更新',
       updateSuccess: '上次更新成功',
-      updateWillRestart: '应用程序将重启以安装更新',
+      updateWillRestart: '应用程序将退出，安装完成后自动重启',
       upToDate: '您正在使用最新版本',
     },
   },

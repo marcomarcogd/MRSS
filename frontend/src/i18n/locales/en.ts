@@ -1156,7 +1156,7 @@ const en: TranslationMessages = {
       updateNow: 'Update Now',
       updates: 'Updates',
       updateSuccess: 'Last update successful',
-      updateWillRestart: 'The application will restart to install the update',
+      updateWillRestart: 'The application will close and restart automatically after installation',
       upToDate: 'You are using the latest version',
     },
   },

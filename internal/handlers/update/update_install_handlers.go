@@ -18,15 +18,9 @@ import (
 
 	"MRSS/internal/handlers/core"
 	"MRSS/internal/handlers/response"
-	appUtils "MRSS/internal/utils"
+	"MRSS/internal/updatehelper"
 	"MRSS/internal/utils/fileutil"
 )
-
-func windowsInstallerCommand(path string) *exec.Cmd {
-	cmd := exec.Command(path)
-	appUtils.ConfigureBackgroundCommand(cmd)
-	return cmd
-}
 
 // HandleInstallUpdate triggers the installation of the downloaded update.
 // @Summary      Install update
@@ -99,14 +93,23 @@ func HandleInstallUpdate(h *core.Handler, w http.ResponseWriter, r *http.Request
 	var cmd *exec.Cmd
 
 	if isPortable {
-		// Portable mode: extract and replace executable
-		if err := installPortableUpdate(cleanPath, platform); err != nil {
+		// Windows needs a detached helper because the running executable cannot
+		// replace itself. The helper waits for MRSS to exit, applies the ZIP, and
+		// starts the updated executable again.
+		if platform == "windows" {
+			if err := updatehelper.LaunchPortable(cleanPath); err != nil {
+				log.Printf("Error starting portable update helper: %v", err)
+				response.Error(w, err, http.StatusInternalServerError)
+				return
+			}
+		} else if err := installPortableUpdate(cleanPath, platform); err != nil {
 			log.Printf("Error installing portable update: %v", err)
 			response.Error(w, err, http.StatusInternalServerError)
 			return
 		}
-		scheduleCleanup(cleanPath, 5*time.Second)
-		// No need to launch installer, just need to restart the app
+		if platform != "windows" {
+			scheduleCleanup(cleanPath, 5*time.Second)
+		}
 	} else {
 		// Regular installer mode
 		switch platform {
@@ -116,10 +119,14 @@ func HandleInstallUpdate(h *core.Handler, w http.ResponseWriter, r *http.Request
 				response.Error(w, fmt.Errorf("invalid file type for Windows"), http.StatusBadRequest)
 				return
 			}
-			// Launch the GUI installer directly. Routing through cmd.exe would create
-			// a visible console window in production builds.
-			cmd = windowsInstallerCommand(cleanPath)
-			scheduleCleanup(cleanPath, 10*time.Second)
+			// A copied MRSS helper waits for this process to exit, invokes NSIS with
+			// /S through the Windows elevation API, then restarts MRSS. This avoids
+			// both a console flash and a hidden/interactive installer deadlock.
+			if err := updatehelper.LaunchInstaller(cleanPath); err != nil {
+				log.Printf("Error starting installer update helper: %v", err)
+				response.Error(w, fmt.Errorf("failed to start update helper: %w", err), http.StatusInternalServerError)
+				return
+			}
 		case "linux":
 			// Make AppImage executable and run it - validate file extension
 			if !strings.HasSuffix(strings.ToLower(cleanPath), ".appimage") {
@@ -146,14 +153,17 @@ func HandleInstallUpdate(h *core.Handler, w http.ResponseWriter, r *http.Request
 			return
 		}
 
-		// Start the installer in the background
-		if err := cmd.Start(); err != nil {
-			log.Printf("Error starting installer: %v", err)
-			response.Error(w, fmt.Errorf("failed to start installer: %w", err), http.StatusInternalServerError)
-			return
+		if cmd != nil {
+			if err := cmd.Start(); err != nil {
+				log.Printf("Error starting installer: %v", err)
+				response.Error(w, fmt.Errorf("failed to start installer: %w", err), http.StatusInternalServerError)
+				return
+			}
+			log.Printf("Installer started successfully, PID: %d", cmd.Process.Pid)
+			if err := cmd.Process.Release(); err != nil {
+				log.Printf("Warning: failed to release installer process handle: %v", err)
+			}
 		}
-
-		log.Printf("Installer started successfully, PID: %d", cmd.Process.Pid)
 	}
 
 	response.JSON(w, map[string]interface{}{
