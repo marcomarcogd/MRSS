@@ -5,6 +5,46 @@ All notable changes to MRSS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.1] - 2026-08-18
+
+### 中文
+
+#### 修复
+
+- 修复上游 Issue [#1006](https://github.com/DevXDojo/MrRSS/issues/1006)：手动清理数据库时不再清空全部文章与正文缓存，只删除同时满足“未读、未收藏、未加入稍后阅读”的文章。
+- 已读、收藏、稍后阅读文章及其正文缓存现在会完整保留；被删除文章的关联数据仍通过现有外键级联清理，重复清理保持幂等。
+- 移除手动清理操作对七天前翻译缓存和正文缓存的全局清理副作用，避免重要文章内容被误清除。
+
+#### Windows 字体改进
+
+- 内置 Inter Variable 与 Noto Sans SC Variable，并将 Windows 的“系统默认”界面与正文字体调整为 `Inter Variable → Noto Sans SC Variable → Segoe UI/微软雅黑` 回退组合。
+- 字体通过锁定版本的本地前端依赖离线加载，不请求 Google Fonts 或其他字体 CDN；用户已选择的界面字体和正文字体继续分别优先，不修改现有设置或数据库。
+- macOS 与 Linux 继续使用原有系统字体栈。内置 WOFF2 字体资源合计约 5 MB，因此各平台安装包体积会相应增加，最终大小以 Release 资产为准。
+
+#### 许可与 Windows 签名说明
+
+- Inter 与 Noto Sans SC 均按 SIL Open Font License 1.1 分发，版权声明与完整许可文本已加入 `NOTICE`。
+- v1.6.1 的 Windows 可执行文件和安装包仍未使用 Authenticode 证书签名，Publisher 会显示为未知，Microsoft Defender SmartScreen 仍可能提示。本版本不通过关闭 Defender、修改注册表或安全策略规避提示。
+
+### English
+
+#### Fixed
+
+- Fixed upstream Issue [#1006](https://github.com/DevXDojo/MrRSS/issues/1006): manual database cleanup no longer removes every article and cached body. It now deletes only articles that are simultaneously unread, not favorited, and not in Read Later.
+- Read, favorite, and Read Later articles now retain their cached bodies. Related data for deleted articles still follows the existing foreign-key cascade, and repeated cleanup remains idempotent.
+- Removed the manual cleanup side effects that globally deleted translation and article-body caches older than seven days, preventing protected offline content from being discarded.
+
+#### Windows typography
+
+- Bundled Inter Variable and Noto Sans SC Variable and changed the Windows system-default UI and article stack to `Inter Variable → Noto Sans SC Variable → Segoe UI/Microsoft YaHei`.
+- Fonts load offline from exact-version frontend dependencies without Google Fonts or another font CDN. Existing custom UI and content font choices remain independently preferred, with no settings or database migration.
+- macOS and Linux retain their existing system stacks. The bundled WOFF2 resources total about 5 MB, so platform packages will grow accordingly; final sizes depend on the Release artifacts.
+
+#### Licensing and Windows signing notice
+
+- Inter and Noto Sans SC are distributed under the SIL Open Font License 1.1. Copyright notices and the complete license text are included in `NOTICE`.
+- The v1.6.1 Windows executable and installer remain unsigned with Authenticode. Publisher is therefore shown as unknown and Microsoft Defender SmartScreen may still warn. This release does not bypass Defender or modify Windows security policy.
+
 ## [1.6.0] - 2026-08-17
 
 ### 中文

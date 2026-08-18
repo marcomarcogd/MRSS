@@ -247,7 +247,7 @@ jobs:
             Write-Host "$($artifact.Name): ProductVersion=$expectedVersion (verified from VERSIONINFO resource)"
           }
 
-          # Authenticode is intentionally deferred for v1.6.0. Report the
+          # Authenticode is intentionally deferred. Report the
           # status so unsigned artifacts cannot be mistaken for signed ones.
           foreach ($artifact in @($executable, $installer)) {
             $signature = Get-AuthenticodeSignature $artifact.FullName
