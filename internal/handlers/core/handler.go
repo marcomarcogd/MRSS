@@ -15,6 +15,7 @@ import (
 
 	"MRSS/internal/ai"
 	"MRSS/internal/cache"
+	"MRSS/internal/dailyreport"
 	"MRSS/internal/database"
 	"MRSS/internal/discovery"
 	"MRSS/internal/feed"
@@ -55,15 +56,17 @@ type Handler struct {
 	Services *svc.Registry
 
 	// Direct access to core dependencies (for backward compatibility)
-	DB                *database.DB
-	Fetcher           *feed.Fetcher
-	Translator        translation.Translator
-	AIProfileProvider *ai.ProfileProvider // AI profile provider for feature-specific configurations
-	AITracker         *ai.UsageTracker
-	DiscoveryService  *discovery.Service
-	App               interface{}         // Wails app instance for browser integration (interface{} to avoid import in server mode)
-	ContentCache      *cache.ContentCache // Cache for article content
-	Stats             *statistics.Service // Statistics tracking service
+	DB                   *database.DB
+	Fetcher              *feed.Fetcher
+	Translator           translation.Translator
+	AIProfileProvider    *ai.ProfileProvider // AI profile provider for feature-specific configurations
+	AITracker            *ai.UsageTracker
+	DiscoveryService     *discovery.Service
+	App                  interface{}         // Wails app instance for browser integration (interface{} to avoid import in server mode)
+	ContentCache         *cache.ContentCache // Cache for article content
+	Stats                *statistics.Service // Statistics tracking service
+	DailyReportService   *dailyreport.Service
+	DailyReportScheduler *dailyreport.Scheduler
 
 	// Discovery state tracking for polling-based progress
 	DiscoveryMu          sync.RWMutex
@@ -87,8 +90,46 @@ func NewHandler(db *database.DB, fetcher *feed.Fetcher, translator translation.T
 		ContentCache:      registry.ContentCache(),
 		Stats:             registry.Stats(),
 	}
+	dailyReportClock := dailyreport.RealClock()
+	dailyReportGenerator := dailyreport.NewAIGenerator(db, h.AITracker, h.Stats)
+	dailyReportService := dailyreport.NewService(
+		db,
+		dailyreport.NewFeedRefresher(db, fetcher),
+		dailyReportGenerator,
+		dailyreport.NoopNotifier{},
+		dailyReportClock,
+		time.Local,
+	)
+	dailyReportGenerator.SetConsentVerifier(dailyReportService.EnsureCloudProcessingConsent)
+	h.DailyReportService = dailyReportService
+	h.DailyReportScheduler = dailyreport.NewScheduler(dailyReportService, db, dailyReportClock)
 
 	return h
+}
+
+func (h *Handler) SetDailyReportNotifier(notifier dailyreport.Notifier) {
+	if h.DailyReportService != nil {
+		h.DailyReportService.SetNotifier(notifier)
+	}
+}
+
+func (h *Handler) StartDailyReportScheduler(ctx context.Context, startup bool) {
+	if h.DailyReportScheduler != nil {
+		h.DailyReportScheduler.Start(ctx, startup)
+	}
+}
+
+func (h *Handler) StopDailyReportScheduler() {
+	if h.DailyReportScheduler != nil {
+		h.DailyReportScheduler.Stop()
+	}
+}
+
+func (h *Handler) MarkDailyReportsInterrupted() error {
+	if h.DailyReportScheduler == nil {
+		return nil
+	}
+	return h.DailyReportScheduler.MarkInterrupted()
 }
 
 // CallAppMethod calls a method on the Wails app instance if available

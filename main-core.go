@@ -32,7 +32,7 @@ import (
 )
 
 // @title           MRSS API
-// @version         1.6.2
+// @version         1.7.0
 // @description     MRSS is a modern, cross-platform desktop RSS reader with auto-translation, smart feed discovery, and AI-powered summarization.
 
 // @contact.name   API Support
@@ -185,6 +185,7 @@ func main() {
 	bgCtx, bgCancel := context.WithCancel(context.Background())
 
 	log.Println("Starting background scheduler...")
+	h.StartDailyReportScheduler(bgCtx, true)
 	go h.StartBackgroundScheduler(bgCtx)
 
 	// Start Network Speed Detection (optional but good to have)
@@ -220,6 +221,7 @@ func main() {
 	<-quit
 
 	log.Println("Shutting down server...")
+	h.StopDailyReportScheduler()
 	bgCancel()
 
 	// Shutdown HTTP server

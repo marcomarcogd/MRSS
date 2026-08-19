@@ -54,6 +54,7 @@ func RegisterAPIRoutesWithConfig(mux *http.ServeMux, h *core.Handler, cfg Config
 	registerArticleRoutes(mux, h)
 	registerAIRoutes(mux, h)
 	registerSettingsRoutes(mux, h)
+	registerDailyReportRoutes(mux, h)
 	registerOtherRoutes(mux, h)
 }
 

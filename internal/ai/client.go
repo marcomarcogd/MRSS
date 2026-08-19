@@ -3,7 +3,9 @@ package ai
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -22,12 +24,37 @@ type ClientConfig struct {
 	SystemPrompt  string
 	CustomHeaders string
 	Timeout       time.Duration
+	// DisableFormatFallback limits a logical request to the format inferred
+	// from Endpoint. Callers that meter every network attempt should enable it.
+	DisableFormatFallback bool
 }
 
 // Client represents a universal AI client that supports multiple API formats
 type Client struct {
 	config ClientConfig
 	client *http.Client
+}
+
+// HTTPStatusError preserves the response status for callers that need a
+// deliberate retry policy. The response body remains inside Err for existing
+// diagnostics, while Error avoids exposing any request credentials.
+type HTTPStatusError struct {
+	StatusCode int
+	Err        error
+}
+
+func (e *HTTPStatusError) Error() string {
+	if e == nil {
+		return ""
+	}
+	return e.Err.Error()
+}
+
+func (e *HTTPStatusError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
 }
 
 // NewClient creates a new universal AI client
@@ -91,66 +118,119 @@ func (c *Client) RequestWithMessages(messages []map[string]string) (ResponseResu
 
 // RequestWithConfig makes an AI request with full configuration
 func (c *Client) RequestWithConfig(config RequestConfig) (ResponseResult, error) {
+	return c.RequestWithConfigContext(context.Background(), config)
+}
+
+// RequestWithConfigContext makes an AI request that can be cancelled by the
+// caller. Existing callers keep the background-context behaviour through
+// RequestWithConfig.
+func (c *Client) RequestWithConfigContext(ctx context.Context, config RequestConfig) (ResponseResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	provider := DetectAPIProvider(c.config.Endpoint)
+	var primaryErr error
 
 	// Try provider-specific format first based on endpoint detection
 	switch provider {
 	case "gemini":
-		result, err := c.tryFormat(NewGeminiHandler(), config)
+		result, err := c.tryFormat(ctx, NewGeminiHandler(), config)
 		if err == nil {
 			return result, nil
+		}
+		primaryErr = err
+		if shouldStopFormatFallback(ctx, err) {
+			return ResponseResult{}, err
 		}
 		// Fall through to other formats
 
 	case "anthropic":
-		result, err := c.tryFormat(&AnthropicHandler{}, config)
+		result, err := c.tryFormat(ctx, &AnthropicHandler{}, config)
 		if err == nil {
 			return result, nil
+		}
+		primaryErr = err
+		if shouldStopFormatFallback(ctx, err) {
+			return ResponseResult{}, err
 		}
 		// Fall through to other formats
 
 	case "deepseek":
-		result, err := c.tryFormat(&DeepSeekHandler{}, config)
+		result, err := c.tryFormat(ctx, &DeepSeekHandler{}, config)
 		if err == nil {
 			return result, nil
+		}
+		primaryErr = err
+		if shouldStopFormatFallback(ctx, err) {
+			return ResponseResult{}, err
 		}
 		// Fall through to other formats
 
 	case "ollama":
-		result, err := c.tryFormat(NewOllamaHandler(), config)
+		result, err := c.tryFormat(ctx, NewOllamaHandler(), config)
 		if err == nil {
 			return result, nil
 		}
+		primaryErr = err
+		if shouldStopFormatFallback(ctx, err) {
+			return ResponseResult{}, err
+		}
 		// Fall through to other formats
+	}
+	if c.config.DisableFormatFallback && primaryErr != nil {
+		return ResponseResult{}, primaryErr
 	}
 
 	// Try OpenAI format (most common, good fallback)
-	result, err := c.tryFormat(NewOpenAIHandler(), config)
+	result, err := c.tryFormat(ctx, NewOpenAIHandler(), config)
 	if err == nil {
 		return result, nil
+	}
+	if primaryErr == nil {
+		primaryErr = err
+	}
+	if shouldStopFormatFallback(ctx, err) {
+		return ResponseResult{}, err
+	}
+	if c.config.DisableFormatFallback {
+		return ResponseResult{}, err
 	}
 
 	// Try other formats as fallback
 	if provider != "gemini" {
-		result, err = c.tryFormat(NewGeminiHandler(), config)
+		result, err = c.tryFormat(ctx, NewGeminiHandler(), config)
 		if err == nil {
 			return result, nil
 		}
 	}
 
 	if provider != "ollama" {
-		result, err = c.tryFormat(NewOllamaHandler(), config)
+		result, err = c.tryFormat(ctx, NewOllamaHandler(), config)
 		if err == nil {
 			return result, nil
 		}
 	}
 
 	// All formats failed
+	if primaryErr != nil {
+		return ResponseResult{}, fmt.Errorf("all API formats failed: %w", primaryErr)
+	}
 	return ResponseResult{}, fmt.Errorf("all API formats failed")
 }
 
+func shouldStopFormatFallback(ctx context.Context, err error) bool {
+	if err == nil {
+		return false
+	}
+	if ctx != nil && ctx.Err() != nil {
+		return true
+	}
+	var statusErr *HTTPStatusError
+	return errors.As(err, &statusErr)
+}
+
 // tryFormat attempts to make a request using a specific format handler
-func (c *Client) tryFormat(handler FormatHandler, config RequestConfig) (ResponseResult, error) {
+func (c *Client) tryFormat(ctx context.Context, handler FormatHandler, config RequestConfig) (ResponseResult, error) {
 	// Build request body
 	requestBody, err := handler.BuildRequest(config)
 	if err != nil {
@@ -172,7 +252,7 @@ func (c *Client) tryFormat(handler FormatHandler, config RequestConfig) (Respons
 	}
 
 	// Send request with formatted endpoint and handler
-	resp, err := c.sendRequestToEndpointWithHandler(jsonBody, formattedEndpoint, handler)
+	resp, err := c.sendRequestToEndpointWithHandler(ctx, jsonBody, formattedEndpoint, handler)
 	if err != nil {
 		return ResponseResult{}, fmt.Errorf("request failed: %w", err)
 	}
@@ -184,7 +264,7 @@ func (c *Client) tryFormat(handler FormatHandler, config RequestConfig) (Respons
 		return ResponseResult{}, fmt.Errorf("failed to read response body: %w", err)
 	}
 	if err := handler.ValidateResponse(resp.StatusCode, bodyBytes); err != nil {
-		return ResponseResult{}, err
+		return ResponseResult{}, &HTTPStatusError{StatusCode: resp.StatusCode, Err: err}
 	}
 
 	// Parse response
@@ -197,7 +277,7 @@ func (c *Client) tryFormat(handler FormatHandler, config RequestConfig) (Respons
 }
 
 // sendRequestToEndpointWithHandler sends the HTTP request to a specific endpoint with handler-specific headers
-func (c *Client) sendRequestToEndpointWithHandler(jsonBody []byte, apiURL string, handler FormatHandler) (*http.Response, error) {
+func (c *Client) sendRequestToEndpointWithHandler(ctx context.Context, jsonBody []byte, apiURL string, handler FormatHandler) (*http.Response, error) {
 	// Validate endpoint URL to prevent SSRF attacks
 	parsedURL, err := url.Parse(apiURL)
 	if err != nil {
@@ -221,7 +301,7 @@ func (c *Client) sendRequestToEndpointWithHandler(jsonBody []byte, apiURL string
 		apiURL = parsedURL.String()
 	}
 
-	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(jsonBody))
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

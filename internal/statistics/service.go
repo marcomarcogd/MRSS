@@ -81,6 +81,13 @@ func (s *Service) TrackAISummary() {
 	}
 }
 
+// TrackAIDailyReport tracks a daily report that actually used an AI provider.
+func (s *Service) TrackAIDailyReport() {
+	if err := s.db.IncrementStat("ai_daily_report"); err != nil {
+		log.Printf("Error tracking AI daily report: %v", err)
+	}
+}
+
 // GetStatistics retrieves statistics for a specific period with optional offset
 // offset allows navigating to previous/next periods (e.g., -1 for previous week, +1 for next week)
 func (s *Service) GetStatistics(period StatPeriod, offset int) (*StatSummary, error) {
