@@ -15,11 +15,14 @@ import (
 // SaveArticle saves a single article to the database.
 func (db *DB) SaveArticle(article *models.Article) error {
 	db.WaitForReady()
+	if article.FirstSeenAt.IsZero() {
+		article.FirstSeenAt = time.Now().UTC()
+	}
 
 	// Generate unique_id for deduplication
 	uniqueID := urlutil.GenerateArticleUniqueID(article.Title, article.FeedID, article.PublishedAt, article.HasValidPublishedTime)
-	query := `INSERT OR IGNORE INTO articles (feed_id, title, url, image_url, audio_url, video_url, published_at, translated_title, is_read, is_favorite, is_hidden, is_read_later, summary, original_summary, unique_id, author) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	_, err := db.Exec(query, article.FeedID, article.Title, article.URL, article.ImageURL, article.AudioURL, article.VideoURL, article.PublishedAt, article.TranslatedTitle, article.IsRead, article.IsFavorite, article.IsHidden, article.IsReadLater, article.Summary, article.OriginalSummary, uniqueID, article.Author)
+	query := `INSERT OR IGNORE INTO articles (feed_id, title, url, image_url, audio_url, video_url, published_at, first_seen_at, has_valid_published_time, translated_title, is_read, is_favorite, is_hidden, is_read_later, summary, original_summary, unique_id, author) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	_, err := db.Exec(query, article.FeedID, article.Title, article.URL, article.ImageURL, article.AudioURL, article.VideoURL, article.PublishedAt, article.FirstSeenAt, article.HasValidPublishedTime, article.TranslatedTitle, article.IsRead, article.IsFavorite, article.IsHidden, article.IsReadLater, article.Summary, article.OriginalSummary, uniqueID, article.Author)
 	return err
 }
 
@@ -56,10 +59,10 @@ func (db *DB) SaveArticles(ctx context.Context, articles []*models.Article) erro
 	// implicit delete would cascade to article contents and chat history.
 	stmt, err := tx.PrepareContext(ctx, `
 		INSERT INTO articles (
-			feed_id, title, url, image_url, audio_url, video_url, published_at,
+			feed_id, title, url, image_url, audio_url, video_url, published_at, first_seen_at, has_valid_published_time,
 			translated_title, is_read, is_favorite, is_hidden, is_read_later,
 			summary, original_summary, unique_id, author
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(unique_id) DO UPDATE SET
 			feed_id = excluded.feed_id,
 			title = excluded.title,
@@ -91,6 +94,9 @@ func (db *DB) SaveArticles(ctx context.Context, articles []*models.Article) erro
 
 		// Generate unique_id for deduplication
 		uniqueID := urlutil.GenerateArticleUniqueID(article.Title, article.FeedID, article.PublishedAt, article.HasValidPublishedTime)
+		if article.FirstSeenAt.IsZero() {
+			article.FirstSeenAt = time.Now().UTC()
+		}
 
 		// Fetch the existing row to preserve user-controlled status fields and to
 		// detect whether the article actually changed (for no-pubDate feeds).
@@ -134,7 +140,7 @@ func (db *DB) SaveArticles(ctx context.Context, articles []*models.Article) erro
 		if updatePublishedAt {
 			updateTime = 1
 		}
-		_, err = stmt.ExecContext(ctx, article.FeedID, article.Title, article.URL, article.ImageURL, article.AudioURL, article.VideoURL, article.PublishedAt, article.TranslatedTitle, isRead, isFavorite, isHidden, isReadLater, article.Summary, article.OriginalSummary, uniqueID, article.Author, updateTime)
+		_, err = stmt.ExecContext(ctx, article.FeedID, article.Title, article.URL, article.ImageURL, article.AudioURL, article.VideoURL, article.PublishedAt, article.FirstSeenAt, article.HasValidPublishedTime, article.TranslatedTitle, isRead, isFavorite, isHidden, isReadLater, article.Summary, article.OriginalSummary, uniqueID, article.Author, updateTime)
 		if err != nil {
 			log.Println("Error saving article in batch:", err)
 			// Continue even if one fails
@@ -197,7 +203,7 @@ func (db *DB) GetArticlesWithUnreadFilter(filter string, feedID int64, category 
 
 	// Build the main query
 	baseQuery := `
-		SELECT a.id, a.feed_id, a.title, a.url, a.image_url, a.audio_url, a.video_url, a.published_at, a.is_read, a.is_favorite, a.is_hidden, a.is_read_later, a.translated_title, a.summary, a.freshrss_item_id, f.title, a.author
+		SELECT a.id, a.feed_id, a.title, a.url, a.image_url, a.audio_url, a.video_url, a.published_at, a.first_seen_at, a.is_read, a.is_favorite, a.is_hidden, a.is_read_later, a.translated_title, a.summary, a.freshrss_item_id, f.title, a.author
 		FROM articles a
 		JOIN feeds f ON a.feed_id = f.id
 	`
@@ -265,8 +271,8 @@ func (db *DB) GetArticlesWithUnreadFilter(filter string, feedID int64, category 
 	for rows.Next() {
 		var a models.Article
 		var imageURL, audioURL, videoURL, translatedTitle, summary, freshrssItemID, author sql.NullString
-		var publishedAt sql.NullTime
-		if err := rows.Scan(&a.ID, &a.FeedID, &a.Title, &a.URL, &imageURL, &audioURL, &videoURL, &publishedAt, &a.IsRead, &a.IsFavorite, &a.IsHidden, &a.IsReadLater, &translatedTitle, &summary, &freshrssItemID, &a.FeedTitle, &author); err != nil {
+		var publishedAt, firstSeenAt sql.NullTime
+		if err := rows.Scan(&a.ID, &a.FeedID, &a.Title, &a.URL, &imageURL, &audioURL, &videoURL, &publishedAt, &firstSeenAt, &a.IsRead, &a.IsFavorite, &a.IsHidden, &a.IsReadLater, &translatedTitle, &summary, &freshrssItemID, &a.FeedTitle, &author); err != nil {
 			log.Println("Error scanning article:", err)
 			continue
 		}
@@ -277,6 +283,9 @@ func (db *DB) GetArticlesWithUnreadFilter(filter string, feedID int64, category 
 			a.PublishedAt = publishedAt.Time
 		} else {
 			a.PublishedAt = time.Time{}
+		}
+		if firstSeenAt.Valid {
+			a.FirstSeenAt = firstSeenAt.Time
 		}
 		a.TranslatedTitle = translatedTitle.String
 		a.Summary = summary.String
@@ -292,7 +301,7 @@ func (db *DB) GetArticlesWithUnreadFilter(filter string, feedID int64, category 
 func (db *DB) GetArticleByID(id int64) (*models.Article, error) {
 	db.WaitForReady()
 	query := `
-		SELECT a.id, a.feed_id, a.title, a.url, a.image_url, a.audio_url, a.video_url, a.published_at, a.is_read, a.is_favorite, a.is_hidden, a.is_read_later, a.translated_title, a.summary, a.freshrss_item_id, f.title, a.author
+		SELECT a.id, a.feed_id, a.title, a.url, a.image_url, a.audio_url, a.video_url, a.published_at, a.first_seen_at, a.is_read, a.is_favorite, a.is_hidden, a.is_read_later, a.translated_title, a.summary, a.freshrss_item_id, f.title, a.author
 		FROM articles a
 		JOIN feeds f ON a.feed_id = f.id
 		WHERE a.id = ?
@@ -301,8 +310,8 @@ func (db *DB) GetArticleByID(id int64) (*models.Article, error) {
 
 	var a models.Article
 	var imageURL, audioURL, videoURL, translatedTitle, summary, freshrssItemID, author sql.NullString
-	var publishedAt sql.NullTime
-	if err := row.Scan(&a.ID, &a.FeedID, &a.Title, &a.URL, &imageURL, &audioURL, &videoURL, &publishedAt, &a.IsRead, &a.IsFavorite, &a.IsHidden, &a.IsReadLater, &translatedTitle, &summary, &freshrssItemID, &a.FeedTitle, &author); err != nil {
+	var publishedAt, firstSeenAt sql.NullTime
+	if err := row.Scan(&a.ID, &a.FeedID, &a.Title, &a.URL, &imageURL, &audioURL, &videoURL, &publishedAt, &firstSeenAt, &a.IsRead, &a.IsFavorite, &a.IsHidden, &a.IsReadLater, &translatedTitle, &summary, &freshrssItemID, &a.FeedTitle, &author); err != nil {
 		return nil, err
 	}
 	a.ImageURL = imageURL.String
@@ -312,6 +321,9 @@ func (db *DB) GetArticleByID(id int64) (*models.Article, error) {
 		a.PublishedAt = publishedAt.Time
 	} else {
 		a.PublishedAt = time.Time{}
+	}
+	if firstSeenAt.Valid {
+		a.FirstSeenAt = firstSeenAt.Time
 	}
 	a.TranslatedTitle = translatedTitle.String
 	a.Summary = summary.String
@@ -336,7 +348,7 @@ func (db *DB) GetArticlesByIDs(ids []int64) ([]models.Article, error) {
 	}
 
 	query := `
-		SELECT a.id, a.feed_id, a.title, a.url, a.image_url, a.audio_url, a.video_url, a.published_at, a.is_read, a.is_favorite, a.is_hidden, a.is_read_later, a.translated_title, a.summary, a.freshrss_item_id, f.title, a.author
+		SELECT a.id, a.feed_id, a.title, a.url, a.image_url, a.audio_url, a.video_url, a.published_at, a.first_seen_at, a.is_read, a.is_favorite, a.is_hidden, a.is_read_later, a.translated_title, a.summary, a.freshrss_item_id, f.title, a.author
 		FROM articles a
 		JOIN feeds f ON a.feed_id = f.id
 		WHERE a.id IN (` + strings.Join(placeholders, ",") + `)
@@ -352,9 +364,9 @@ func (db *DB) GetArticlesByIDs(ids []int64) ([]models.Article, error) {
 	for rows.Next() {
 		var a models.Article
 		var imageURL, audioURL, videoURL, translatedTitle, summary, freshrssItemID, author sql.NullString
-		var publishedAt sql.NullTime
+		var publishedAt, firstSeenAt sql.NullTime
 
-		err := rows.Scan(&a.ID, &a.FeedID, &a.Title, &a.URL, &imageURL, &audioURL, &videoURL, &publishedAt, &a.IsRead, &a.IsFavorite, &a.IsHidden, &a.IsReadLater, &translatedTitle, &summary, &freshrssItemID, &a.FeedTitle, &author)
+		err := rows.Scan(&a.ID, &a.FeedID, &a.Title, &a.URL, &imageURL, &audioURL, &videoURL, &publishedAt, &firstSeenAt, &a.IsRead, &a.IsFavorite, &a.IsHidden, &a.IsReadLater, &translatedTitle, &summary, &freshrssItemID, &a.FeedTitle, &author)
 		if err != nil {
 			return nil, err
 		}
@@ -366,6 +378,9 @@ func (db *DB) GetArticlesByIDs(ids []int64) ([]models.Article, error) {
 			a.PublishedAt = publishedAt.Time
 		} else {
 			a.PublishedAt = time.Time{}
+		}
+		if firstSeenAt.Valid {
+			a.FirstSeenAt = firstSeenAt.Time
 		}
 		a.TranslatedTitle = translatedTitle.String
 		a.Summary = summary.String

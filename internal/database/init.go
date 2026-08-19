@@ -230,5 +230,17 @@ func applyAdditionalMigrations(db *DB) error {
 		return err
 	}
 
+	if err := migrateFirstSeenAt(db.DB); err != nil {
+		return err
+	}
+
+	if err := migrateDailyReportArticleMetadata(db.DB); err != nil {
+		return err
+	}
+
+	if err := migrateDailyReportConfig(db.DB); err != nil {
+		return err
+	}
+
 	return nil
 }

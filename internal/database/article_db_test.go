@@ -2,6 +2,7 @@ package database_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -255,6 +256,285 @@ func TestSaveAndGetArticle(t *testing.T) {
 	}
 	if got.URL != a.URL || got.Title != a.Title {
 		t.Fatalf("retrieved article mismatch: %+v vs %+v", got, a)
+	}
+	if got.FirstSeenAt.IsZero() {
+		t.Fatal("expected SaveArticle to set first_seen_at")
+	}
+}
+
+func TestSaveArticlesPreservesFirstSeenAt(t *testing.T) {
+	db := setupDBWithFeed(t)
+	var feedID int64
+	if err := db.QueryRow(`SELECT id FROM feeds WHERE url = ?`, "https://example.com/feed").Scan(&feedID); err != nil {
+		t.Fatalf("scan feed id: %v", err)
+	}
+
+	firstSeenAt := time.Date(2026, time.August, 10, 8, 0, 0, 0, time.UTC)
+	article := &models.Article{
+		FeedID:                feedID,
+		Title:                 "immutable first seen",
+		URL:                   "https://example.com/first-seen",
+		PublishedAt:           firstSeenAt.Add(-time.Hour),
+		FirstSeenAt:           firstSeenAt,
+		HasValidPublishedTime: true,
+	}
+	if err := db.SaveArticles(context.Background(), []*models.Article{article}); err != nil {
+		t.Fatalf("first SaveArticles: %v", err)
+	}
+	article.FirstSeenAt = firstSeenAt.Add(24 * time.Hour)
+	article.URL += "?updated=1"
+	if err := db.SaveArticles(context.Background(), []*models.Article{article}); err != nil {
+		t.Fatalf("second SaveArticles: %v", err)
+	}
+	var stored time.Time
+	if err := db.QueryRow(`SELECT first_seen_at FROM articles WHERE feed_id = ?`, feedID).Scan(&stored); err != nil {
+		t.Fatalf("scan first_seen_at: %v", err)
+	}
+	if !stored.Equal(firstSeenAt) {
+		t.Fatalf("first_seen_at changed on refresh: got %v, want %v", stored, firstSeenAt)
+	}
+	got, err := db.GetArticles("all", feedID, "", false, 10, 0)
+	if err != nil {
+		t.Fatalf("GetArticles: %v", err)
+	}
+	if len(got) != 1 || !got[0].FirstSeenAt.Equal(firstSeenAt) {
+		t.Fatalf("GetArticles did not return first_seen_at: %+v", got)
+	}
+}
+
+func TestDailyReportDataLifecycleAndCandidates(t *testing.T) {
+	db := setupDBWithFeed(t)
+	var feedID int64
+	if err := db.QueryRow(`SELECT id FROM feeds WHERE url = ?`, "https://example.com/feed").Scan(&feedID); err != nil {
+		t.Fatalf("scan feed id: %v", err)
+	}
+	periodStart := time.Date(2026, time.August, 18, 8, 0, 0, 0, time.UTC)
+	periodEnd := periodStart.Add(24 * time.Hour)
+	articles := []*models.Article{
+		{FeedID: feedID, Title: "normal", URL: "https://example.com/normal", PublishedAt: periodStart.Add(time.Hour), FirstSeenAt: periodStart.Add(2 * time.Hour), HasValidPublishedTime: true, OriginalSummary: "normal summary"},
+		{FeedID: feedID, Title: "late", URL: "https://example.com/late", PublishedAt: periodStart.Add(-48 * time.Hour), FirstSeenAt: periodStart.Add(3 * time.Hour), HasValidPublishedTime: true, OriginalSummary: "late summary"},
+		{FeedID: feedID, Title: "future", URL: "https://example.com/future", PublishedAt: periodEnd.Add(48 * time.Hour), FirstSeenAt: periodStart.Add(4 * time.Hour), HasValidPublishedTime: true},
+		{FeedID: feedID, Title: "no-date-in-window", URL: "https://example.com/no-date-in-window", PublishedAt: periodStart.Add(-96 * time.Hour), FirstSeenAt: periodStart.Add(6 * time.Hour), HasValidPublishedTime: false},
+		{FeedID: feedID, Title: "no-date-outside", URL: "https://example.com/no-date-outside", PublishedAt: periodStart.Add(6 * time.Hour), FirstSeenAt: periodEnd.Add(time.Hour), HasValidPublishedTime: false},
+		{FeedID: feedID, Title: "hidden", URL: "https://example.com/hidden", PublishedAt: periodStart.Add(5 * time.Hour), FirstSeenAt: periodStart.Add(5 * time.Hour), HasValidPublishedTime: true, IsHidden: true},
+		{FeedID: feedID, Title: "old", URL: "https://example.com/old", PublishedAt: periodStart.Add(-72 * time.Hour), FirstSeenAt: periodStart.Add(-72 * time.Hour), HasValidPublishedTime: true},
+	}
+	if err := db.SaveArticles(context.Background(), articles); err != nil {
+		t.Fatalf("SaveArticles: %v", err)
+	}
+	var normalID int64
+	if err := db.QueryRow(`SELECT id FROM articles WHERE title = 'normal'`).Scan(&normalID); err != nil {
+		t.Fatalf("scan normal article id: %v", err)
+	}
+	if err := db.SetArticleContent(normalID, "cached full content"); err != nil {
+		t.Fatalf("SetArticleContent: %v", err)
+	}
+
+	config, err := db.GetDailyReportConfig()
+	if err != nil {
+		t.Fatalf("GetDailyReportConfig: %v", err)
+	}
+	config.Enabled = true
+	config.FeedScope = "selected"
+	config.IncludeHidden = false
+	config.LastHandledBoundary = &periodStart
+	if err := db.SaveDailyReportConfig(config, []int64{feedID, feedID}); err != nil {
+		t.Fatalf("SaveDailyReportConfig: %v", err)
+	}
+	selected, err := db.GetDailyReportSelectedFeedIDs()
+	if err != nil || len(selected) != 1 || selected[0] != feedID {
+		t.Fatalf("selected feeds = %v, err=%v", selected, err)
+	}
+
+	candidates, err := db.ListDailyReportCandidates(models.DailyReportCandidateFilter{
+		PeriodStart: periodStart,
+		PeriodEnd:   periodEnd,
+		FeedIDs:     selected,
+	})
+	if err != nil {
+		t.Fatalf("ListDailyReportCandidates: %v", err)
+	}
+	if len(candidates) != 4 {
+		t.Fatalf("candidate count = %d, want 4: %+v", len(candidates), candidates)
+	}
+	lateByTitle := make(map[string]bool, len(candidates))
+	for _, candidate := range candidates {
+		lateByTitle[candidate.Title] = candidate.LateArrival
+		if candidate.Title == "normal" && candidate.Content != "cached full content" {
+			t.Fatalf("normal candidate content = %q", candidate.Content)
+		}
+	}
+	if !lateByTitle["late"] || lateByTitle["normal"] || lateByTitle["future"] || lateByTitle["no-date-in-window"] {
+		t.Fatalf("unexpected late arrival flags: %v", lateByTitle)
+	}
+	if _, exists := lateByTitle["no-date-outside"]; exists {
+		t.Fatal("article without pubDate was selected by fallback published_at instead of first_seen_at")
+	}
+
+	run := &models.DailyReportRun{
+		Kind:           "auto",
+		Status:         "completed",
+		PeriodStart:    periodStart,
+		PeriodEnd:      periodEnd,
+		Title:          "Daily report",
+		ConfigSnapshot: `{"feed_scope":"selected"}`,
+		ArticleCount:   len(candidates),
+	}
+	runID, err := db.CreateDailyReportRun(run)
+	if err != nil {
+		t.Fatalf("CreateDailyReportRun: %v", err)
+	}
+	if _, err := db.CreateDailyReportRun(&models.DailyReportRun{Kind: "backfill", Status: "queued", PeriodStart: periodStart, PeriodEnd: periodEnd}); !errors.Is(err, dbpkg.ErrDailyReportRunExists) {
+		t.Fatalf("duplicate automatic period error = %v", err)
+	}
+	manualID, err := db.CreateDailyReportRun(&models.DailyReportRun{Kind: "manual", Status: "queued", PeriodStart: periodStart, PeriodEnd: periodEnd})
+	if err != nil || manualID == 0 {
+		t.Fatalf("manual duplicate period: id=%d err=%v", manualID, err)
+	}
+
+	referenced := candidates[0]
+	articleID := referenced.ArticleID
+	sourceFeedID := referenced.FeedID
+	if err := db.ReplaceDailyReportSources(runID, []models.DailyReportSource{{
+		ArticleID:       &articleID,
+		FeedID:          &sourceFeedID,
+		ArticleUniqueID: referenced.UniqueID,
+		ArticleTitle:    referenced.Title,
+		FeedTitle:       referenced.FeedTitle,
+		URL:             referenced.URL,
+		ContentKind:     "content",
+	}}); err != nil {
+		t.Fatalf("ReplaceDailyReportSources: %v", err)
+	}
+	sources, err := db.GetDailyReportSources(runID)
+	if err != nil || len(sources) != 1 || sources[0].SourceIndex != 1 {
+		t.Fatalf("sources = %+v, err=%v", sources, err)
+	}
+	autoCandidates, err := db.ListDailyReportCandidates(models.DailyReportCandidateFilter{PeriodStart: periodStart, PeriodEnd: periodEnd})
+	if err != nil {
+		t.Fatalf("list deduplicated candidates: %v", err)
+	}
+	for _, candidate := range autoCandidates {
+		if candidate.ArticleID == articleID {
+			t.Fatalf("previously referenced article %d returned for auto report", articleID)
+		}
+	}
+	manualCandidates, err := db.ListDailyReportCandidates(models.DailyReportCandidateFilter{PeriodStart: periodStart, PeriodEnd: periodEnd, Manual: true})
+	if err != nil || len(manualCandidates) != 4 {
+		t.Fatalf("manual candidates = %+v, err=%v", manualCandidates, err)
+	}
+
+	if unread, err := db.CountUnreadDailyReportRuns(); err != nil || unread != 1 {
+		t.Fatalf("unread reports = %d, err=%v", unread, err)
+	}
+	if err := db.SetDailyReportRunRead(runID, true); err != nil {
+		t.Fatalf("SetDailyReportRunRead: %v", err)
+	}
+	runs, total, err := db.ListDailyReportRuns(models.DailyReportRunFilter{Limit: 20})
+	if err != nil || total != 2 || len(runs) != 2 {
+		t.Fatalf("runs total=%d list=%d err=%v", total, len(runs), err)
+	}
+	if _, err := db.CreateDailyReportRun(&models.DailyReportRun{Kind: "manual", Status: "queued", PeriodStart: periodStart, PeriodEnd: periodEnd, ConfigSnapshot: `{"api_key":"secret"}`}); err == nil {
+		t.Fatal("expected sensitive config snapshot to be rejected")
+	}
+	if err := db.MarkRunningDailyReportsInterrupted(periodEnd); err != nil {
+		t.Fatalf("MarkRunningDailyReportsInterrupted: %v", err)
+	}
+	manualRun, err := db.GetDailyReportRun(manualID)
+	if err != nil || manualRun == nil || manualRun.Status != "interrupted" {
+		t.Fatalf("manual run after interruption = %+v, err=%v", manualRun, err)
+	}
+	failedStart := periodEnd.Add(24 * time.Hour)
+	failedEnd := failedStart.Add(24 * time.Hour)
+	if _, err := db.CreateDailyReportRun(&models.DailyReportRun{Kind: "auto", Status: "failed", PeriodStart: failedStart, PeriodEnd: failedEnd}); err != nil {
+		t.Fatalf("create failed automatic run: %v", err)
+	}
+	if has, err := db.HasDailyReportRun(failedStart, failedEnd, "auto"); err != nil || has {
+		t.Fatalf("failed run should release period: has=%v err=%v", has, err)
+	}
+	if _, err := db.CreateDailyReportRun(&models.DailyReportRun{Kind: "backfill", Status: "queued", PeriodStart: failedStart, PeriodEnd: failedEnd}); err != nil {
+		t.Fatalf("failed period should be retryable: %v", err)
+	}
+	interruptedStart := failedEnd
+	interruptedEnd := interruptedStart.Add(24 * time.Hour)
+	if _, err := db.CreateDailyReportRun(&models.DailyReportRun{Kind: "auto", Status: "interrupted", PeriodStart: interruptedStart, PeriodEnd: interruptedEnd}); err != nil {
+		t.Fatalf("create interrupted automatic run: %v", err)
+	}
+	if has, err := db.HasDailyReportRun(interruptedStart, interruptedEnd, "auto"); err != nil || has {
+		t.Fatalf("interrupted run should release period: has=%v err=%v", has, err)
+	}
+	if _, err := db.CreateDailyReportRun(&models.DailyReportRun{Kind: "backfill", Status: "queued", PeriodStart: interruptedStart, PeriodEnd: interruptedEnd}); err != nil {
+		t.Fatalf("interrupted period should be retryable: %v", err)
+	}
+	if err := db.SetDailyReportLastHandledBoundary(periodEnd); err != nil {
+		t.Fatalf("SetDailyReportLastHandledBoundary: %v", err)
+	}
+	boundary, err := db.GetDailyReportLastHandledBoundary()
+	if err != nil || boundary == nil || !boundary.Equal(periodEnd) {
+		t.Fatalf("last handled boundary = %v, err=%v", boundary, err)
+	}
+
+	if _, err := db.Exec(`DELETE FROM articles WHERE id = ?`, articleID); err != nil {
+		t.Fatalf("delete source article: %v", err)
+	}
+	sources, err = db.GetDailyReportSources(runID)
+	if err != nil || len(sources) != 1 || sources[0].ArticleID != nil || sources[0].FeedID == nil {
+		t.Fatalf("source snapshot after article delete = %+v, err=%v", sources, err)
+	}
+	var original *models.Article
+	for _, article := range articles {
+		if article.Title == referenced.Title {
+			copy := *article
+			original = &copy
+			break
+		}
+	}
+	if original == nil {
+		t.Fatalf("original article %q not found", referenced.Title)
+	}
+	if err := db.SaveArticle(original); err != nil {
+		t.Fatalf("reinsert cleaned source article: %v", err)
+	}
+	autoCandidates, err = db.ListDailyReportCandidates(models.DailyReportCandidateFilter{PeriodStart: periodStart, PeriodEnd: periodEnd})
+	if err != nil {
+		t.Fatalf("list candidates after source reinsert: %v", err)
+	}
+	for _, candidate := range autoCandidates {
+		if candidate.UniqueID == referenced.UniqueID {
+			t.Fatalf("reinserted source %q was duplicated in an automatic report", candidate.UniqueID)
+		}
+	}
+	manualCandidates, err = db.ListDailyReportCandidates(models.DailyReportCandidateFilter{PeriodStart: periodStart, PeriodEnd: periodEnd, Manual: true})
+	if err != nil {
+		t.Fatalf("list manual candidates after source reinsert: %v", err)
+	}
+	foundReinserted := false
+	for _, candidate := range manualCandidates {
+		foundReinserted = foundReinserted || candidate.UniqueID == referenced.UniqueID
+	}
+	if !foundReinserted {
+		t.Fatal("manual report should allow a previously referenced reinserted article")
+	}
+	if _, err := db.Exec(`DELETE FROM articles WHERE feed_id = ?`, feedID); err != nil {
+		t.Fatalf("delete remaining feed articles: %v", err)
+	}
+	if _, err := db.Exec(`DELETE FROM feeds WHERE id = ?`, feedID); err != nil {
+		t.Fatalf("delete source feed: %v", err)
+	}
+	selected, err = db.GetDailyReportSelectedFeedIDs()
+	if err != nil || len(selected) != 0 {
+		t.Fatalf("selected feeds after feed delete = %v, err=%v", selected, err)
+	}
+	sources, err = db.GetDailyReportSources(runID)
+	if err != nil || len(sources) != 1 || sources[0].FeedID != nil || sources[0].ArticleTitle == "" {
+		t.Fatalf("source snapshot after feed delete = %+v, err=%v", sources, err)
+	}
+	if err := db.DeleteDailyReportRun(runID); err != nil {
+		t.Fatalf("DeleteDailyReportRun: %v", err)
+	}
+	sources, err = db.GetDailyReportSources(runID)
+	if err != nil || len(sources) != 0 {
+		t.Fatalf("sources after run delete = %+v, err=%v", sources, err)
 	}
 }
 
@@ -584,6 +864,29 @@ func TestArticleDifferentTitlesNotDeduplicated(t *testing.T) {
 
 	if len(articles) != 2 {
 		t.Fatalf("expected 2 articles with different titles, got %d", len(articles))
+	}
+}
+
+func TestSaveArticlesKeepsRepeatedTitlesWithDifferentValidDates(t *testing.T) {
+	db := setupDBWithFeed(t)
+	var feedID int64
+	if err := db.QueryRow(`SELECT id FROM feeds WHERE url = ?`, "https://example.com/feed").Scan(&feedID); err != nil {
+		t.Fatalf("scan feed id: %v", err)
+	}
+	firstPublished := time.Date(2026, time.August, 18, 8, 0, 0, 0, time.UTC)
+	articles := []*models.Article{
+		{FeedID: feedID, Title: "Daily bulletin", URL: "https://example.com/18", PublishedAt: firstPublished, HasValidPublishedTime: true},
+		{FeedID: feedID, Title: "Daily bulletin", URL: "https://example.com/19", PublishedAt: firstPublished.Add(24 * time.Hour), HasValidPublishedTime: true},
+	}
+	if err := db.SaveArticles(context.Background(), articles); err != nil {
+		t.Fatalf("SaveArticles failed: %v", err)
+	}
+	stored, err := db.GetArticles("all", feedID, "", false, 10, 0)
+	if err != nil {
+		t.Fatalf("GetArticles failed: %v", err)
+	}
+	if len(stored) != 2 {
+		t.Fatalf("same-title entries on different valid dates were merged: %+v", stored)
 	}
 }
 

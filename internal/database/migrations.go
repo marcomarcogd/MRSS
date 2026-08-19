@@ -2,6 +2,7 @@ package database
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 	"strings"
 )
@@ -199,6 +200,8 @@ func migrateDropUniqueConstraintOnArticles(db *sql.DB) error {
 				video_url TEXT DEFAULT '',
 				translated_title TEXT,
 				published_at DATETIME,
+				first_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+				has_valid_published_time BOOLEAN NOT NULL DEFAULT 1,
 				is_read BOOLEAN DEFAULT 0,
 				is_favorite BOOLEAN DEFAULT 0,
 				is_hidden BOOLEAN DEFAULT 0,
@@ -206,17 +209,21 @@ func migrateDropUniqueConstraintOnArticles(db *sql.DB) error {
 				summary TEXT DEFAULT '',
 				original_summary TEXT DEFAULT '',
 				unique_id TEXT UNIQUE,
+				content TEXT DEFAULT '',
+				freshrss_item_id TEXT DEFAULT '',
+				author TEXT DEFAULT '',
 				FOREIGN KEY(feed_id) REFERENCES feeds(id)
 			)
 		`)
 		if err == nil {
 			// Copy data from old table to new table
 			_, _ = db.Exec(`
-				INSERT INTO articles_new (id, feed_id, title, url, image_url, audio_url, video_url, translated_title, published_at, is_read, is_favorite, is_hidden, is_read_later, summary, original_summary, unique_id)
-				SELECT id, feed_id, title, url, image_url, audio_url, video_url, translated_title, published_at, is_read, is_favorite, is_hidden, is_read_later,
+				INSERT INTO articles_new (id, feed_id, title, url, image_url, audio_url, video_url, translated_title, published_at, first_seen_at, has_valid_published_time, is_read, is_favorite, is_hidden, is_read_later, summary, original_summary, unique_id, content, freshrss_item_id, author)
+				SELECT id, feed_id, title, url, image_url, audio_url, video_url, translated_title, published_at, COALESCE(published_at, CURRENT_TIMESTAMP), 1, is_read, is_favorite, is_hidden, is_read_later,
 					COALESCE(summary, '') as summary,
 					COALESCE(original_summary, '') as original_summary,
-					LOWER(HEX(MD5(title || '|' || feed_id || '|' || COALESCE(strftime('%Y-%m-%d', published_at), '')))) as unique_id
+					LOWER(HEX(MD5(title || '|' || feed_id || '|' || COALESCE(strftime('%Y-%m-%d', published_at), '')))) as unique_id,
+					COALESCE(content, ''), COALESCE(freshrss_item_id, ''), COALESCE(author, '')
 				FROM articles
 			`)
 			// Drop old table and rename new table
@@ -234,6 +241,7 @@ func migrateDropUniqueConstraintOnArticles(db *sql.DB) error {
 			_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_articles_fav_published ON articles(is_favorite, published_at DESC)`)
 			_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_articles_readlater_published ON articles(is_read_later, published_at DESC)`)
 			_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_articles_hidden_published ON articles(is_hidden, published_at DESC)`)
+			_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_articles_feed_first_seen ON articles(feed_id, first_seen_at DESC)`)
 		}
 	}
 	return nil
@@ -349,6 +357,106 @@ func migrateDropUniqueConstraintOnFeeds(db *sql.DB) error {
 		} else {
 			log.Printf("Error creating feeds_new table: %v", err)
 		}
+	}
+	return nil
+}
+
+// migrateFirstSeenAt adds the immutable ingestion timestamp used by daily
+// reports. Existing articles use their publication time where available;
+// otherwise the migration time is the best truthful fallback.
+func migrateFirstSeenAt(db *sql.DB) error {
+	_, _ = db.Exec(`ALTER TABLE articles ADD COLUMN first_seen_at DATETIME`)
+	if _, err := db.Exec(`
+		UPDATE articles
+		SET first_seen_at = COALESCE(NULLIF(published_at, ''), CURRENT_TIMESTAMP)
+		WHERE first_seen_at IS NULL OR first_seen_at = ''
+	`); err != nil {
+		return err
+	}
+	_, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_articles_feed_first_seen ON articles(feed_id, first_seen_at DESC)`)
+	return err
+}
+
+// migrateDailyReportArticleMetadata persists the feed timestamp validity and a
+// stable source identity used after the original article row is cleaned up.
+func migrateDailyReportArticleMetadata(db *sql.DB) error {
+	if err := addColumnIfMissing(db, "articles", "has_valid_published_time", "BOOLEAN NOT NULL DEFAULT 1"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(db, "daily_report_sources", "article_unique_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_daily_report_sources_unique ON daily_report_sources(article_unique_id)`); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`DROP INDEX IF EXISTS idx_daily_report_runs_period_unique`); err != nil {
+		return err
+	}
+	_, err := db.Exec(`
+		CREATE UNIQUE INDEX idx_daily_report_runs_period_unique
+		ON daily_report_runs(period_start, period_end)
+		WHERE kind != 'manual' AND status NOT IN ('failed', 'interrupted')
+	`)
+	return err
+}
+
+// migrateDailyReportConfig ensures development databases created by earlier
+// v1.7 builds receive newly added fields and the singleton default row.
+func migrateDailyReportConfig(db *sql.DB) error {
+	columns := []struct {
+		name       string
+		definition string
+	}{
+		{"include_hidden", "BOOLEAN NOT NULL DEFAULT 0"},
+		{"cloud_consent_version", "INTEGER NOT NULL DEFAULT 0"},
+		{"cloud_consent_at", "DATETIME"},
+		{"cloud_consent_destination_fingerprint", "TEXT NOT NULL DEFAULT ''"},
+	}
+	for _, column := range columns {
+		if err := addColumnIfMissing(db, "daily_report_config", column.name, column.definition); err != nil {
+			return err
+		}
+	}
+	_, err := db.Exec(`
+		INSERT OR IGNORE INTO daily_report_config (
+			id, enabled, schedule_time, feed_scope, include_hidden, focus,
+			outline_json, language, title_template, in_app_notification,
+			system_notification, notify_on_empty
+		) VALUES (1, 0, '08:00', 'all', 0, '', '[]', 'auto', '', 1, 1, 0)
+	`)
+	return err
+}
+
+func addColumnIfMissing(db *sql.DB, table, column, definition string) error {
+	rows, err := db.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return fmt.Errorf("inspect %s columns: %w", table, err)
+	}
+	found := false
+	for rows.Next() {
+		var cid, notNull, primaryKey int
+		var name, columnType string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan %s columns: %w", table, err)
+		}
+		if name == column {
+			found = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("iterate %s columns: %w", table, err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close %s column inspection: %w", table, err)
+	}
+	if found {
+		return nil
+	}
+	if _, err := db.Exec(`ALTER TABLE ` + table + ` ADD COLUMN ` + column + ` ` + definition); err != nil {
+		return fmt.Errorf("add %s.%s: %w", table, column, err)
 	}
 	return nil
 }

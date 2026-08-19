@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -58,7 +59,147 @@ func TestDatabaseInitialization(t *testing.T) {
 		t.Fatalf("Expected new database translation mode manual, got %q", translationMode)
 	}
 
+	var dailyReportTableCount int
+	if err := db.QueryRow(`
+		SELECT COUNT(*) FROM sqlite_master
+		WHERE type = 'table' AND name IN (
+			'daily_report_config', 'daily_report_config_feeds',
+			'daily_report_runs', 'daily_report_sources'
+		)
+	`).Scan(&dailyReportTableCount); err != nil {
+		t.Fatalf("Failed to query daily report tables: %v", err)
+	}
+	if dailyReportTableCount != 4 {
+		t.Fatalf("Expected 4 daily report tables, got %d", dailyReportTableCount)
+	}
+
+	config, err := db.GetDailyReportConfig()
+	if err != nil {
+		t.Fatalf("Failed to get default daily report config: %v", err)
+	}
+	if config.Enabled || config.ScheduleTime != "08:00" || config.FeedScope != "all" || config.IncludeHidden {
+		t.Fatalf("Unexpected default daily report config: %+v", config)
+	}
+	if !config.InAppNotification || !config.SystemNotification || config.NotifyOnEmpty {
+		t.Fatalf("Unexpected default notification config: %+v", config)
+	}
+	if config.CloudConsentVersion != 0 || config.CloudConsentAt != nil || config.CloudConsentFingerprint != "" {
+		t.Fatalf("Unexpected default cloud consent: %+v", config)
+	}
+	consentedAt := time.Date(2026, time.August, 19, 7, 30, 0, 0, time.UTC)
+	config.CloudConsentVersion = 1
+	config.CloudConsentAt = &consentedAt
+	config.CloudConsentFingerprint = "test-destination-fingerprint"
+	if err := db.SaveDailyReportConfig(config, nil); err != nil {
+		t.Fatalf("Failed to persist cloud consent: %v", err)
+	}
+	persistedConfig, err := db.GetDailyReportConfig()
+	if err != nil {
+		t.Fatalf("Failed to reload cloud consent: %v", err)
+	}
+	if persistedConfig.CloudConsentVersion != 1 || persistedConfig.CloudConsentAt == nil ||
+		!persistedConfig.CloudConsentAt.Equal(consentedAt) ||
+		persistedConfig.CloudConsentFingerprint != "test-destination-fingerprint" {
+		t.Fatalf("Cloud consent did not round-trip: %+v", persistedConfig)
+	}
+
+	var firstSeenIndexCount int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_articles_feed_first_seen'`).Scan(&firstSeenIndexCount); err != nil {
+		t.Fatalf("Failed to query first-seen index: %v", err)
+	}
+	if firstSeenIndexCount != 1 {
+		t.Fatalf("Expected first-seen index to exist")
+	}
+
 	// Schema version table removed in development - skip version check
+}
+
+func TestFirstSeenMigrationBackfillIsIdempotent(t *testing.T) {
+	db, err := NewDB(":memory:")
+	if err != nil {
+		t.Fatalf("NewDB error: %v", err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`
+		CREATE TABLE articles (
+			id INTEGER PRIMARY KEY,
+			feed_id INTEGER,
+			published_at DATETIME
+		)
+	`); err != nil {
+		t.Fatalf("create legacy article table: %v", err)
+	}
+	publishedAt := time.Date(2026, time.August, 1, 9, 30, 0, 0, time.UTC)
+	if _, err := db.Exec(`INSERT INTO articles (id, feed_id, published_at) VALUES (1, 7, ?), (2, 7, NULL)`, publishedAt); err != nil {
+		t.Fatalf("insert legacy articles: %v", err)
+	}
+	if err := migrateFirstSeenAt(db.DB); err != nil {
+		t.Fatalf("first migration: %v", err)
+	}
+	if err := migrateFirstSeenAt(db.DB); err != nil {
+		t.Fatalf("second migration: %v", err)
+	}
+
+	var publishedFirstSeen time.Time
+	if err := db.QueryRow(`SELECT first_seen_at FROM articles WHERE id = 1`).Scan(&publishedFirstSeen); err != nil {
+		t.Fatalf("scan published article first-seen time: %v", err)
+	}
+	if !publishedFirstSeen.Equal(publishedAt) {
+		t.Fatalf("published article first_seen_at = %v, want %v", publishedFirstSeen, publishedAt)
+	}
+	var fallbackFirstSeen time.Time
+	if err := db.QueryRow(`SELECT first_seen_at FROM articles WHERE id = 2`).Scan(&fallbackFirstSeen); err != nil {
+		t.Fatalf("scan fallback first-seen time: %v", err)
+	}
+	if fallbackFirstSeen.IsZero() {
+		t.Fatal("missing migration-time first_seen_at fallback")
+	}
+}
+
+func TestDailyReportDevelopmentMigrationIsIdempotent(t *testing.T) {
+	db, err := NewDB(":memory:")
+	if err != nil {
+		t.Fatalf("NewDB error: %v", err)
+	}
+	defer db.Close()
+	statements := []string{
+		`CREATE TABLE articles (id INTEGER PRIMARY KEY, feed_id INTEGER, published_at DATETIME, first_seen_at DATETIME)`,
+		`CREATE TABLE daily_report_sources (id INTEGER PRIMARY KEY, article_id INTEGER)`,
+		`CREATE TABLE daily_report_runs (id INTEGER PRIMARY KEY, kind TEXT, status TEXT, period_start DATETIME, period_end DATETIME)`,
+		`CREATE UNIQUE INDEX idx_daily_report_runs_period_unique ON daily_report_runs(period_start, period_end) WHERE kind != 'manual'`,
+	}
+	for _, statement := range statements {
+		if _, err := db.Exec(statement); err != nil {
+			t.Fatalf("prepare early development schema: %v", err)
+		}
+	}
+	if err := migrateDailyReportArticleMetadata(db.DB); err != nil {
+		t.Fatalf("first metadata migration: %v", err)
+	}
+	if err := migrateDailyReportArticleMetadata(db.DB); err != nil {
+		t.Fatalf("second metadata migration: %v", err)
+	}
+	for table, column := range map[string]string{
+		"articles":             "has_valid_published_time",
+		"daily_report_sources": "article_unique_id",
+	} {
+		var count int
+		if err := db.QueryRow(
+			`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`, table, column,
+		).Scan(&count); err != nil {
+			t.Fatalf("inspect %s.%s: %v", table, column, err)
+		}
+		if count != 1 {
+			t.Fatalf("expected exactly one %s.%s column, got %d", table, column, count)
+		}
+	}
+	var indexSQL string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_daily_report_runs_period_unique'`).Scan(&indexSQL); err != nil {
+		t.Fatalf("inspect period unique index: %v", err)
+	}
+	if !strings.Contains(indexSQL, "status NOT IN ('failed', 'interrupted')") {
+		t.Fatalf("period index was not upgraded: %s", indexSQL)
+	}
 }
 
 func TestTranslationModeMigration(t *testing.T) {

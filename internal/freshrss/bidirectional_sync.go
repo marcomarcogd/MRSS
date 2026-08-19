@@ -766,15 +766,16 @@ func (s *BidirectionalSyncService) saveArticlesFromServer(ctx context.Context, a
 
 		// Create new article
 		mrssArticle := &models.Article{
-			FeedID:         feedID,
-			Title:          article.Title,
-			URL:            article.URL,
-			ImageURL:       imageURL,
-			Summary:        "",
-			PublishedAt:    article.Published,
-			IsRead:         isRead,
-			IsFavorite:     isStarred,
-			FreshRSSItemID: article.ID, // Save FreshRSS/Google Reader item ID
+			FeedID:                feedID,
+			Title:                 article.Title,
+			URL:                   article.URL,
+			ImageURL:              imageURL,
+			Summary:               "",
+			PublishedAt:           article.Published,
+			HasValidPublishedTime: !article.Published.IsZero(),
+			IsRead:                isRead,
+			IsFavorite:            isStarred,
+			FreshRSSItemID:        article.ID, // Save FreshRSS/Google Reader item ID
 		}
 
 		mrssArticles = append(mrssArticles, mrssArticle)

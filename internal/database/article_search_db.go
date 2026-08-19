@@ -17,7 +17,7 @@ import (
 func (db *DB) GetImageGalleryArticles(feedID int64, category string, showHidden bool, onlyUnread bool, limit, offset int) ([]models.Article, error) {
 	db.WaitForReady()
 	baseQuery := `
-		SELECT a.id, a.feed_id, a.title, a.url, a.image_url, a.audio_url, a.video_url, a.published_at, a.is_read, a.is_favorite, a.is_hidden, a.is_read_later, a.translated_title, a.summary, f.title, a.author
+		SELECT a.id, a.feed_id, a.title, a.url, a.image_url, a.audio_url, a.video_url, a.published_at, a.first_seen_at, a.is_read, a.is_favorite, a.is_hidden, a.is_read_later, a.translated_title, a.summary, f.title, a.author
 		FROM articles a
 		JOIN feeds f ON a.feed_id = f.id
 		WHERE COALESCE(f.is_image_mode, 0) = 1
@@ -64,8 +64,8 @@ func (db *DB) GetImageGalleryArticles(feedID int64, category string, showHidden 
 	for rows.Next() {
 		var a models.Article
 		var imageURL, audioURL, videoURL, translatedTitle, summary, author sql.NullString
-		var publishedAt sql.NullTime
-		if err := rows.Scan(&a.ID, &a.FeedID, &a.Title, &a.URL, &imageURL, &audioURL, &videoURL, &publishedAt, &a.IsRead, &a.IsFavorite, &a.IsHidden, &a.IsReadLater, &translatedTitle, &summary, &a.FeedTitle, &author); err != nil {
+		var publishedAt, firstSeenAt sql.NullTime
+		if err := rows.Scan(&a.ID, &a.FeedID, &a.Title, &a.URL, &imageURL, &audioURL, &videoURL, &publishedAt, &firstSeenAt, &a.IsRead, &a.IsFavorite, &a.IsHidden, &a.IsReadLater, &translatedTitle, &summary, &a.FeedTitle, &author); err != nil {
 			log.Println("Error scanning article:", err)
 			continue
 		}
@@ -76,6 +76,9 @@ func (db *DB) GetImageGalleryArticles(feedID int64, category string, showHidden 
 			a.PublishedAt = publishedAt.Time
 		} else {
 			a.PublishedAt = time.Time{}
+		}
+		if firstSeenAt.Valid {
+			a.FirstSeenAt = firstSeenAt.Time
 		}
 		a.TranslatedTitle = translatedTitle.String
 		a.Summary = summary.String
@@ -100,7 +103,7 @@ func (db *DB) SearchArticlesWithAI(whereClause string, limit int) ([]models.Arti
 	// Build the complete query with the AI-generated WHERE clause
 	query := fmt.Sprintf(`
 		SELECT a.id, a.feed_id, a.title, a.url, a.image_url, a.audio_url, a.video_url,
-			   a.published_at, a.is_read, a.is_favorite, a.is_hidden, a.is_read_later,
+			   a.published_at, a.first_seen_at, a.is_read, a.is_favorite, a.is_hidden, a.is_read_later,
 			   a.translated_title, a.summary, a.freshrss_item_id, f.title, a.author
 		FROM articles a
 		JOIN feeds f ON a.feed_id = f.id
@@ -119,8 +122,8 @@ func (db *DB) SearchArticlesWithAI(whereClause string, limit int) ([]models.Arti
 	for rows.Next() {
 		var a models.Article
 		var imageURL, audioURL, videoURL, translatedTitle, summary, freshrssItemID, author sql.NullString
-		var publishedAt sql.NullTime
-		if err := rows.Scan(&a.ID, &a.FeedID, &a.Title, &a.URL, &imageURL, &audioURL, &videoURL, &publishedAt, &a.IsRead, &a.IsFavorite, &a.IsHidden, &a.IsReadLater, &translatedTitle, &summary, &freshrssItemID, &a.FeedTitle, &author); err != nil {
+		var publishedAt, firstSeenAt sql.NullTime
+		if err := rows.Scan(&a.ID, &a.FeedID, &a.Title, &a.URL, &imageURL, &audioURL, &videoURL, &publishedAt, &firstSeenAt, &a.IsRead, &a.IsFavorite, &a.IsHidden, &a.IsReadLater, &translatedTitle, &summary, &freshrssItemID, &a.FeedTitle, &author); err != nil {
 			log.Println("Error scanning article in AI search:", err)
 			continue
 		}
@@ -131,6 +134,9 @@ func (db *DB) SearchArticlesWithAI(whereClause string, limit int) ([]models.Arti
 			a.PublishedAt = publishedAt.Time
 		} else {
 			a.PublishedAt = time.Time{}
+		}
+		if firstSeenAt.Valid {
+			a.FirstSeenAt = firstSeenAt.Time
 		}
 		a.TranslatedTitle = translatedTitle.String
 		a.Summary = summary.String

@@ -62,6 +62,7 @@ type Article struct {
 	AudioURL              string    `json:"audio_url"`
 	VideoURL              string    `json:"video_url"` // YouTube video URL for embedded player
 	PublishedAt           time.Time `json:"published_at"`
+	FirstSeenAt           time.Time `json:"first_seen_at"`
 	HasValidPublishedTime bool      `json:"-"` // Internal field, not serialized
 	IsRead                bool      `json:"is_read"`
 	IsFavorite            bool      `json:"is_favorite"`
@@ -74,6 +75,113 @@ type Article struct {
 	OriginalSummary       string    `json:"original_summary"` // Summary/description provided by the RSS item
 	UniqueID              string    `json:"unique_id"`        // Unique identifier for deduplication (title+feed_id+published_date)
 	FreshRSSItemID        string    `json:"freshrss_item_id"` // FreshRSS/Google Reader item ID for API operations
+}
+
+// DailyReportConfig stores the singleton configuration for scheduled reports.
+// AI credentials and custom headers are deliberately not copied into this
+// structure so it is safe to serialize as a report configuration snapshot.
+type DailyReportConfig struct {
+	ID                      int64      `json:"id"`
+	Enabled                 bool       `json:"enabled"`
+	ScheduleTime            string     `json:"schedule_time"`
+	FeedScope               string     `json:"feed_scope"`
+	IncludeHidden           bool       `json:"include_hidden"`
+	AIProfileID             *int64     `json:"ai_profile_id"`
+	Focus                   string     `json:"focus"`
+	OutlineJSON             string     `json:"outline_json"`
+	Language                string     `json:"language"`
+	TitleTemplate           string     `json:"title_template"`
+	InAppNotification       bool       `json:"in_app_notification"`
+	SystemNotification      bool       `json:"system_notification"`
+	NotifyOnEmpty           bool       `json:"notify_on_empty"`
+	LastHandledBoundary     *time.Time `json:"last_handled_boundary"`
+	CloudConsentVersion     int        `json:"-"`
+	CloudConsentAt          *time.Time `json:"-"`
+	CloudConsentFingerprint string     `json:"-"`
+	CreatedAt               time.Time  `json:"created_at"`
+	UpdatedAt               time.Time  `json:"updated_at"`
+	FeedIDs                 []int64    `json:"feed_ids,omitempty"`
+}
+
+// DailyReportCandidateFilter defines the article window used for a report.
+type DailyReportCandidateFilter struct {
+	PeriodStart       time.Time
+	PeriodEnd         time.Time
+	FeedIDs           []int64
+	ExcludeArticleIDs []int64
+	Manual            bool
+	IncludeHidden     bool
+}
+
+// DailyReportCandidate contains the local article data available to the report
+// generator. Content comes only from MRSS caches; no remote page is fetched.
+type DailyReportCandidate struct {
+	ArticleID             int64     `json:"article_id"`
+	FeedID                int64     `json:"feed_id"`
+	Title                 string    `json:"title"`
+	Author                string    `json:"author"`
+	URL                   string    `json:"url"`
+	FeedTitle             string    `json:"feed_title"`
+	Summary               string    `json:"summary"`
+	Content               string    `json:"content"`
+	UniqueID              string    `json:"unique_id"`
+	PublishedAt           time.Time `json:"published_at"`
+	FirstSeenAt           time.Time `json:"first_seen_at"`
+	HasValidPublishedTime bool      `json:"has_valid_published_time"`
+	LateArrival           bool      `json:"late_arrival"`
+}
+
+// DailyReportRun is one scheduled, backfilled, or manually requested report.
+type DailyReportRun struct {
+	ID             int64      `json:"id"`
+	Kind           string     `json:"kind"`
+	Status         string     `json:"status"`
+	PeriodStart    time.Time  `json:"period_start"`
+	PeriodEnd      time.Time  `json:"period_end"`
+	Progress       int        `json:"progress"`
+	CurrentStep    string     `json:"current_step"`
+	Title          string     `json:"title"`
+	ContentJSON    string     `json:"content_json"`
+	Markdown       string     `json:"markdown"`
+	ConfigSnapshot string     `json:"config_snapshot"`
+	InputTokens    int64      `json:"input_tokens"`
+	OutputTokens   int64      `json:"output_tokens"`
+	TotalTokens    int64      `json:"total_tokens"`
+	ArticleCount   int        `json:"article_count"`
+	AIUsed         bool       `json:"ai_used"`
+	IsRead         bool       `json:"is_read"`
+	Error          string     `json:"error"`
+	RetryOfID      *int64     `json:"retry_of_id"`
+	CreatedAt      time.Time  `json:"created_at"`
+	StartedAt      *time.Time `json:"started_at"`
+	CompletedAt    *time.Time `json:"completed_at"`
+}
+
+// DailyReportRunFilter controls history pagination.
+type DailyReportRunFilter struct {
+	Status string
+	Limit  int
+	Offset int
+}
+
+// DailyReportSource is an immutable source snapshot for a generated report.
+// ArticleID and FeedID become nil when the original records are deleted.
+type DailyReportSource struct {
+	ID              int64      `json:"id"`
+	RunID           int64      `json:"run_id"`
+	SourceIndex     int        `json:"source_index"`
+	ArticleID       *int64     `json:"article_id"`
+	FeedID          *int64     `json:"feed_id"`
+	ArticleTitle    string     `json:"article_title"`
+	FeedTitle       string     `json:"feed_title"`
+	Author          string     `json:"author"`
+	URL             string     `json:"url"`
+	ArticleUniqueID string     `json:"-"`
+	PublishedAt     *time.Time `json:"published_at"`
+	FirstSeenAt     *time.Time `json:"first_seen_at"`
+	LateArrival     bool       `json:"late_arrival"`
+	ContentKind     string     `json:"content_kind"`
+	CreatedAt       time.Time  `json:"created_at"`
 }
 
 // SavedFilter represents a user-saved article filter
