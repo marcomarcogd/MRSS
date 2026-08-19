@@ -130,7 +130,7 @@ tasks:
         tar -C "$PACKAGE_DIR" -czf "{{.BIN_DIR}}/{{.APP_NAME}}-{{.VERSION}}-linux-{{.ARCH}}.tar.gz" "{{.APP_NAME}}" LICENSE NOTICE
         rm -rf "$PACKAGE_DIR"
     vars:
-      VERSION: '1.6.2'
+      VERSION: '1.7.0'
       ARCH: '{{.ARCH | default "amd64"}}'
 
   generate:dotdesktop:

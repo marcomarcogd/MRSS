@@ -6,7 +6,7 @@ Generated from `docs/SERVER_MODE/swagger.json`. Regenerate with:
 python skills/mrss-assistant/scripts/generate_api_reference.py docs/SERVER_MODE/swagger.json skills/mrss-assistant/references/api.md
 ```
 
-- API version: `1.6.2`
+- API version: `1.7.0`
 - API root: `{base_url}/api`
 - Endpoint paths below are relative to the API root unless they already start with `/api/`.
 
@@ -118,12 +118,13 @@ Parameters:
   - `filter` (query, optional): Filter: 'all', 'unread', 'favorite', 'read_later'
   - `feed_id` (query, optional): Filter by feed ID
   - `category` (query, optional): Filter by category name
+  - `only_unread` (query, optional): Filter for only unread articles
   - `page` (query, optional): Page number (default: 1)
   - `limit` (query, optional): Items per page (default: 50, max: 500)
 
 ### `POST /articles/cleanup`
 
-Cleanup all articles
+Cleanup unimportant articles
 
 ### `POST /articles/cleanup-content`
 
@@ -238,6 +239,13 @@ Parameters:
 ### `POST /articles/refresh`
 
 Refresh all feeds
+
+### `POST /articles/reload-content`
+
+Reload article content
+
+Parameters:
+  - `id` (query, required): Article ID
 
 ### `POST /articles/toggle-favorite-sync`
 
@@ -609,6 +617,64 @@ Upload custom CSS file
 
 Parameters:
   - `file` (formData, required): CSS file to upload
+
+## Daily Report
+
+### `GET /daily-report/config`
+
+Get or update daily report configuration
+
+### `PUT /daily-report/config`
+
+Get or update daily report configuration
+
+### `GET /daily-report/consent`
+
+Manage daily report cloud-processing consent
+
+### `POST /daily-report/consent`
+
+Manage daily report cloud-processing consent
+
+### `POST /daily-report/generate`
+
+Preview or start a daily report
+
+### `GET /daily-report/history`
+
+Manage daily report history
+
+### `DELETE /daily-report/history/{id}`
+
+Manage daily report history
+
+### `GET /daily-report/history/{id}`
+
+Manage daily report history
+
+### `PUT /daily-report/history/{id}/read`
+
+Manage daily report history
+
+### `POST /daily-report/history/{id}/retry`
+
+Manage daily report history
+
+### `POST /daily-report/missed-runs`
+
+Handle missed daily reports
+
+### `POST /daily-report/notifications/authorize`
+
+Authorize daily report notifications
+
+### `POST /daily-report/outline/optimize`
+
+Optimize daily report outline
+
+### `GET /daily-report/status`
+
+Get daily report status
 
 ## Email
 

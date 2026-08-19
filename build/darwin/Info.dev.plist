@@ -10,11 +10,11 @@
         <key>CFBundleIdentifier</key>
             <string>io.github.marcomarcogd.mrss</string>
         <key>CFBundleVersion</key>
-            <string>1.6.2</string>
+            <string>1.7.0</string>
         <key>CFBundleGetInfoString</key>
             <string>Built with Wails</string>
         <key>CFBundleShortVersionString</key>
-            <string>1.6.2-dev</string>
+            <string>1.7.0-dev</string>
         <key>CFBundleIconFile</key>
             <string>icons</string>
         <key>LSMinimumSystemVersion</key>

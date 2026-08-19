@@ -4,8 +4,8 @@ set -e
 # Build configuration
 APP_NAME="MRSS"
 BUNDLE_ID="io.github.marcomarcogd.mrss"
-VERSION="1.6.2"
-BUILD_NUMBER="1.6.2"
+VERSION="1.7.0"
+BUILD_NUMBER="1.7.0"
 BUILD_DIR="build/ios"
 TARGET="simulator"
 

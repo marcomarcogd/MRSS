@@ -5,6 +5,58 @@ All notable changes to MRSS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2026-08-19
+
+### 中文
+
+#### 24 小时 AI 日报
+
+- 新增独立的“日报”中心，可按本地时间每天汇总上一个计划边界至当前边界之间的订阅文章；首次启用后的首份定时日报覆盖完整 24 小时，并正确处理夏令时造成的 23/25 小时周期。
+- 支持全部订阅或指定订阅、关注重点、AI Profile、报告语言、标题模板和 1–12 个可编辑栏目；AI 目录草案必须由用户确认后才会保存。
+- 生成前会刷新所选订阅；单个订阅失败或超时不会丢弃本地数据，报告会以“部分完成”状态继续生成。无文章时不会调用 AI。
+- AI 生成采用分批提取、合并和后端校验来源引用。AI 不可用、临时网络错误重试后仍失败或达到限额时，会使用本地缓存内容生成确定性降级报告。
+- 云端内容处理默认关闭。每个用户首次启用定时日报、手动开始 AI 生成或使用 AI 优化目录前，都必须在授权弹窗中确认实际 AI Profile 和脱敏端点，并明确同意发送标题、RSS 摘要、本地正文缓存、关注重点和目录要求；未授权时不会发出任何 AI 网络请求。
+- 授权可随时撤销；切换 AI Profile 或端点会立即使旧授权失效并暂停定时日报，只有同一端点的模型变化无需重复授权。未配置可用 AI 服务时仅执行本地降级生成，不尝试默认远程地址。
+- 日报不会逐篇访问原网页。云端生成由客户端直接连接用户选择的 AI 服务，可能产生对应服务的 Token 费用并受第三方数据保留政策约束；MRSS 不运营中转服务器，API Key、自定义鉴权值和端点查询密钥不会写入日报历史、日志或配置快照。
+
+#### 历史、漏跑与通知
+
+- 新增日报历史列表与结构化详情，支持状态筛选、分页、已读状态、重试、删除、复制 Markdown 和下载 Markdown；来源引用可打开现存 MRSS 文章，文章已清理时仍保留标题、订阅、作者、时间和 URL 快照。
+- 新增独立调度器，不受订阅刷新模式影响；同一周期通过数据库约束和进程互斥防止重复生成，应用退出时会把未完成任务标记为已中断。
+- 应用关闭期间漏跑后，可选择补最近一期、补齐全部或全部跳过；跨过单期睡眠会自动补跑，跨过多期会保留提示直到用户明确处理。
+- 新增应用内提醒、系统通知和无内容提醒选项。系统通知只在用户主动启用时请求权限；拒绝授权或发送失败会写入日志并回退到应用内状态，不影响报告保存。服务器模式继续生成日报，但不发送桌面系统通知。
+
+#### 数据与兼容性
+
+- 新增独立日报配置、运行记录和来源快照，并为文章记录不可变的首次收录时间；旧文章优先按发布时间回填，缺少发布时间时使用迁移时间。
+- 默认排除隐藏文章，但包含已读和未读文章。自动日报不会重复引用已被成功定时报告收录的文章，手动日报允许再次选择同一周期。
+- Windows 安装包和便携包仍未使用 Authenticode 证书签名，Publisher 可能显示为未知，Microsoft Defender SmartScreen 仍可能提示。本版本不会绕过 UAC、Defender 或 SmartScreen。
+
+### English
+
+#### 24-hour AI daily reports
+
+- Added a dedicated Daily Reports center that summarizes feed entries between adjacent local-time schedule boundaries. The first scheduled report after enabling covers a complete prior 24-hour window, while daylight-saving transitions correctly produce 23- or 25-hour periods.
+- Reports can cover all feeds or selected feeds and support a focus prompt, AI Profile, report language, title template, and 1–12 editable outline sections. AI-generated outline drafts are never saved until the user confirms them.
+- Selected feeds are refreshed before generation. A feed failure or timeout does not discard locally available entries; the report continues with a partial status. Empty periods do not call an AI service.
+- AI generation uses batched extraction and merging with server-validated source references. When AI is unavailable, transient retries are exhausted, or usage limits are reached, MRSS creates a deterministic local fallback report from cached data.
+- Cloud processing is off by default. Before scheduled reports, manual AI generation, or AI outline optimization can contact a provider, every user must review the actual AI Profile and redacted endpoint and explicitly consent to sending titles, RSS summaries, locally cached bodies, focus instructions, and outline requirements. No AI network request is made without that consent.
+- Consent can be revoked at any time. Changing the AI Profile or endpoint invalidates the prior grant and pauses scheduling; changing only the model at the same endpoint does not require consent again. With no usable AI service configured, MRSS uses local fallback generation and never tries a default remote endpoint.
+- Reports do not fetch each original web page. The client connects directly to the user-selected AI service, which may charge tokens and apply its own data-retention policy; MRSS operates no relay server. API keys, custom authorization values, and endpoint query secrets are never written to report history, logs, or configuration snapshots.
+
+#### History, missed runs, and notifications
+
+- Added paginated report history and structured details with status filters, read state, retry, delete, Markdown copy, and Markdown download. Source references open existing MRSS articles and retain title, feed, author, timestamp, and URL snapshots after an article is removed.
+- Added an independent scheduler that is unaffected by feed refresh mode. Database uniqueness and process locking prevent duplicate periods, and unfinished work is marked interrupted on application shutdown.
+- After missed periods, users can backfill the latest period, backfill all periods, or skip all. A single period crossed during sleep is backfilled automatically; multiple periods keep prompting until explicitly handled.
+- Added in-app reminders, system notifications, and an optional empty-period notification. Permission is requested only when system notifications are enabled. Denied permissions or delivery failures are logged and fall back to in-app state without affecting the saved report. Server mode continues generating reports without desktop notifications.
+
+#### Data and compatibility
+
+- Added dedicated report configuration, run history, and source snapshot storage, plus an immutable first-seen timestamp for articles. Existing articles are backfilled from their publication time when available, otherwise from migration time.
+- Hidden articles are excluded by default, while both read and unread articles are included. Successful scheduled reports do not reuse already reported articles; manual reports may intentionally cover the same period again.
+- Windows installer and portable artifacts remain unsigned with Authenticode. Publisher may appear as unknown and Microsoft Defender SmartScreen may still warn. This release does not bypass UAC, Defender, or SmartScreen.
+
 ## [1.6.2] - 2026-08-18
 
 ### 中文
