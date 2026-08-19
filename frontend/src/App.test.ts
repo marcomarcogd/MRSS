@@ -5,7 +5,12 @@ import { mount } from '@vue/test-utils';
 import { createPinia } from 'pinia';
 import { createI18n } from 'vue-i18n';
 import en from './i18n/locales/en';
+import zh from './i18n/locales/zh';
 import App from './App.vue';
+import ActivityBar from './components/sidebar/ActivityBar.vue';
+import DailyReportCloudConsentModal from './components/dailyReport/DailyReportCloudConsentModal.vue';
+import { useAppStore } from './stores/app';
+import { DailyReportAPIError, useDailyReports } from './composables/dailyReport/useDailyReports';
 import { setSettingsFromRawData } from './composables/core/useSettings';
 import {
   getRecommendedFonts,
@@ -25,6 +30,200 @@ describe('App', () => {
     expect(en.appName).toBe('MRSS');
     expect(en.setting.about.forkNotice).toContain('DevXDojo/MrRSS');
     expect(en.setting.about.licenseNotice).toContain('GPL-3.0');
+  });
+
+  it('provides a safe, bilingual daily report interface', () => {
+    expect(en.dailyReport.title).toBe('24-Hour AI Digest');
+    expect(zh.dailyReport.title).toBe('24 小时 AI 日报');
+    expect(en.dailyReport.config.aiPrivacyNotice).toContain('Token');
+    expect(en.dailyReport.config.aiPrivacyNotice).toContain('API keys');
+
+    const dailyReportView = readFileSync('src/components/dailyReport/DailyReportView.vue', 'utf8');
+    expect(dailyReportView).not.toContain('v-html');
+    expect(dailyReportView).toContain('source.source_index');
+    expect(dailyReportView).toContain('downloadMarkdown');
+  });
+
+  it('switches to the daily report top-level view and caps its unread badge', async () => {
+    const pinia = createPinia();
+    const i18n = createI18n({ legacy: false, locale: 'en', messages: { en } });
+    const dailyReports = useDailyReports();
+    dailyReports.status.value.unread_count = 120;
+
+    const wrapper = mount(ActivityBar, {
+      global: { plugins: [pinia, i18n] },
+    });
+    await nextTick();
+    const store = useAppStore(pinia);
+
+    expect(wrapper.get('[data-testid="daily-report-unread-badge"]').text()).toBe('99+');
+    const button = wrapper
+      .findAll('button')
+      .find((candidate) => candidate.attributes('title') === en.dailyReport.title);
+    expect(button).toBeDefined();
+    await button!.trigger('click');
+    expect(store.currentView).toBe('dailyReports');
+
+    wrapper.unmount();
+    dailyReports.status.value.unread_count = 0;
+  });
+
+  it('requires an explicit checkbox before cloud processing consent can be granted', async () => {
+    const i18n = createI18n({ legacy: false, locale: 'en', messages: { en } });
+    const dailyReports = useDailyReports();
+    dailyReports.cloudProcessing.value = {
+      disclosure_version: 1,
+      required: true,
+      accepted: false,
+      accepted_version: null,
+      accepted_at: null,
+      destination: {
+        profile_id: 8,
+        profile_name: 'Private AI Profile',
+        endpoint: 'https://api.example.com',
+      },
+    };
+
+    const wrapper = mount(DailyReportCloudConsentModal, {
+      global: { plugins: [i18n] },
+    });
+    const grantButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes(en.dailyReport.consent.grantAndContinue));
+
+    expect(wrapper.text()).toContain('Private AI Profile');
+    expect(wrapper.text()).toContain('https://api.example.com');
+    expect(grantButton?.attributes('disabled')).toBeDefined();
+    await wrapper.get('[data-testid="daily-report-consent-checkbox"]').setValue(true);
+    expect(grantButton?.attributes('disabled')).toBeUndefined();
+    expect(wrapper.html()).not.toContain('v-html');
+
+    wrapper.unmount();
+    dailyReports.closeCloudConsentPrompt();
+  });
+
+  it('preserves consent error metadata and schedules the original action once', async () => {
+    const dailyReports = useDailyReports();
+    const retry = vi.fn();
+    const disclosure = {
+      disclosure_version: 1,
+      required: true,
+      accepted: false,
+      accepted_version: null,
+      accepted_at: null,
+      destination: {
+        profile_id: 9,
+        profile_name: 'Changed Profile',
+        endpoint: 'https://changed.example.com',
+      },
+    };
+    const error = new DailyReportAPIError(
+      'Consent required',
+      409,
+      'cloud_processing_consent_required',
+      { cloud_processing: disclosure }
+    );
+    const acceptedDisclosure = {
+      ...disclosure,
+      accepted: true,
+      accepted_version: 1,
+      accepted_at: '2026-08-19T08:00:00Z',
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/daily-report/consent' && init?.method === 'POST') {
+        expect(JSON.parse(String(init.body))).toEqual({ action: 'grant', version: 1 });
+        return new Response(JSON.stringify({ cloud_processing: acceptedDisclosure }), {
+          status: 200,
+        });
+      }
+      if (url === '/api/daily-report/config') {
+        return new Response(
+          JSON.stringify({
+            config: dailyReports.config.value,
+            cloud_processing: acceptedDisclosure,
+          }),
+          { status: 200 }
+        );
+      }
+      if (url === '/api/daily-report/status') {
+        return new Response(JSON.stringify(dailyReports.status.value), { status: 200 });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      expect(await dailyReports.promptCloudConsent(error, retry)).toBe(true);
+      expect(dailyReports.consentModalVisible.value).toBe(true);
+      expect(dailyReports.cloudProcessing.value.destination?.profile_name).toBe('Changed Profile');
+      expect(retry).not.toHaveBeenCalled();
+
+      await dailyReports.grantCloudConsentAndRetry();
+      expect(retry).toHaveBeenCalledTimes(1);
+      expect(dailyReports.consentModalVisible.value).toBe(false);
+      expect(dailyReports.cloudProcessing.value.accepted).toBe(true);
+    } finally {
+      dailyReports.closeCloudConsentPrompt();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('keeps the newest daily report detail when requests resolve out of order', async () => {
+    const dailyReports = useDailyReports();
+    let resolveFirst!: (response: Response) => void;
+    let resolveSecond!: (response: Response) => void;
+    const firstResponse = new Promise<Response>((resolve) => {
+      resolveFirst = resolve;
+    });
+    const secondResponse = new Promise<Response>((resolve) => {
+      resolveSecond = resolve;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith('/1')) return firstResponse;
+        if (url.endsWith('/2')) return secondResponse;
+        throw new Error(`Unexpected request: ${url}`);
+      })
+    );
+    const detail = (id: number, title: string) => ({
+      run: {
+        id,
+        kind: 'manual' as const,
+        status: 'completed' as const,
+        period_start: '2026-08-18T00:00:00Z',
+        period_end: '2026-08-19T00:00:00Z',
+        progress: 100,
+        title,
+        content: { sections: [] },
+        markdown: '',
+        input_tokens: 0,
+        output_tokens: 0,
+        article_count: 0,
+        is_read: false,
+        error: '',
+        created_at: '2026-08-19T00:00:00Z',
+      },
+      sources: [],
+    });
+
+    try {
+      const firstRequest = dailyReports.fetchDetail(1);
+      const secondRequest = dailyReports.fetchDetail(2);
+      resolveSecond(new Response(JSON.stringify(detail(2, 'Newest')), { status: 200 }));
+      await secondRequest;
+      resolveFirst(new Response(JSON.stringify(detail(1, 'Stale')), { status: 200 }));
+      await firstRequest;
+
+      expect(dailyReports.selectedRunId.value).toBe(2);
+      expect(dailyReports.selectedDetail.value?.run.title).toBe('Newest');
+      expect(dailyReports.loadingDetail.value).toBe(false);
+    } finally {
+      dailyReports.selectRun(null);
+      vi.unstubAllGlobals();
+    }
   });
 
   it('uses bundled fonts only for the Windows system default', () => {
@@ -72,6 +271,9 @@ describe('App', () => {
           ArticleList: createStub('ArticleList'),
           ArticleDetail: createStub('ArticleDetail'),
           ImageGalleryView: createStub('ImageGalleryView'),
+          DailyReportView: createStub('DailyReportView'),
+          DailyReportMissedRunsModal: createStub('DailyReportMissedRunsModal'),
+          DailyReportCloudConsentModal: createStub('DailyReportCloudConsentModal'),
           AddFeedModal: createStub('AddFeedModal'),
           EditFeedModal: createStub('EditFeedModal'),
           SettingsModal: createStub('SettingsModal'),

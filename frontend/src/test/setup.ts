@@ -1,6 +1,21 @@
 // src/test/setup.ts
 import { vi } from 'vitest';
 
+const localStorageValues = new Map<string, string>();
+Object.defineProperty(window, 'localStorage', {
+  configurable: true,
+  value: {
+    getItem: (key: string) => localStorageValues.get(key) ?? null,
+    setItem: (key: string, value: string) => localStorageValues.set(key, String(value)),
+    removeItem: (key: string) => localStorageValues.delete(key),
+    clear: () => localStorageValues.clear(),
+    key: (index: number) => [...localStorageValues.keys()][index] ?? null,
+    get length() {
+      return localStorageValues.size;
+    },
+  },
+});
+
 // Mock window.matchMedia
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
@@ -81,6 +96,68 @@ global.fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit): Promise<Res
         maximized: false,
       })
     );
+  }
+
+  if (url === '/api/daily-report/config') {
+    return Promise.resolve(
+      createMockResponse({
+        config: {
+          enabled: false,
+          schedule_time: '08:00',
+          feed_scope: 'all',
+          feed_ids: [],
+          include_hidden: false,
+          ai_profile_id: null,
+          focus: '',
+          outline: [{ id: 'overview', title: 'Highlights', instruction: 'Summarize.' }],
+          language: 'auto',
+          title_template: '24-Hour AI Digest · {{date}}',
+          in_app_notification: true,
+          system_notification: true,
+          notify_on_empty: false,
+        },
+        cloud_processing: {
+          disclosure_version: 1,
+          required: false,
+          accepted: true,
+          accepted_version: null,
+          accepted_at: null,
+          destination: null,
+        },
+      })
+    );
+  }
+
+  if (url === '/api/daily-report/consent') {
+    return Promise.resolve(
+      createMockResponse({
+        cloud_processing: {
+          disclosure_version: 1,
+          required: false,
+          accepted: true,
+          accepted_version: null,
+          accepted_at: null,
+          destination: null,
+        },
+      })
+    );
+  }
+
+  if (url === '/api/daily-report/status') {
+    return Promise.resolve(
+      createMockResponse({
+        enabled: false,
+        is_running: false,
+        progress: 0,
+        unread_count: 0,
+        missed_count: 0,
+        notification_authorization: 'not_determined',
+      })
+    );
+  }
+
+  if (url.startsWith('/api/daily-report/history')) {
+    return Promise.resolve(createMockResponse({ items: [], total: 0, page: 1, page_size: 20 }));
   }
 
   // For any other URLs, fall back to original fetch if available

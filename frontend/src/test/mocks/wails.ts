@@ -13,6 +13,11 @@ export const System = {
 export const EventsOn = () => {};
 export const EventsOff = () => {};
 export const EventsEmit = () => {};
+export const Events = {
+  On: () => () => {},
+  Off: () => {},
+  Emit: async () => false,
+};
 export const WindowGetCurrent = () => ({});
 export const WindowShow = () => {};
 export const WindowHide = () => {};

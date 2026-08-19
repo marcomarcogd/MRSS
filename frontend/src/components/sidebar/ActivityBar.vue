@@ -6,21 +6,24 @@ import {
   PhStar,
   PhClockCountdown,
   PhImages,
+  PhNewspaperClipping,
   PhPlus,
   PhGear,
   PhTextOutdent,
   PhSidebar,
 } from '@phosphor-icons/vue';
-import { ref, onMounted } from 'vue';
+import { computed, ref, onMounted } from 'vue';
 import { useAppStore } from '@/stores/app';
 import { useI18n } from 'vue-i18n';
 import { useArticleFilter } from '@/composables/article/useArticleFilter';
+import { useDailyReports } from '@/composables/dailyReport/useDailyReports';
 
 const LOGO_URL = '/assets/logo.svg';
 
 const store = useAppStore();
 const { t } = useI18n();
 const { clearAllFilters } = useArticleFilter();
+const { unreadCount: dailyReportUnreadCount, showMissedPrompt } = useDailyReports();
 
 interface Props {
   isCollapsed?: boolean;
@@ -42,42 +45,54 @@ interface NavItem {
   icon: any;
   label: string;
   activeIcon?: any;
-  filterType: 'all' | 'unread' | 'favorites' | 'readLater' | 'imageGallery';
+  filterType?: 'all' | 'unread' | 'favorites' | 'readLater' | 'imageGallery';
+  view: 'articles' | 'imageGallery' | 'dailyReports';
 }
 
-const navItems: NavItem[] = [
+const navItems = computed<NavItem[]>(() => [
   {
     id: 'all',
     icon: PhListDashes,
     activeIcon: PhSquaresFour,
     label: t('sidebar.activity.allArticles'),
     filterType: 'all',
+    view: 'articles',
   },
   {
     id: 'unread',
     icon: PhTray,
     label: t('sidebar.feedList.unread'),
     filterType: 'unread',
+    view: 'articles',
   },
   {
     id: 'favorites',
     icon: PhStar,
     label: t('sidebar.activity.favorites'),
     filterType: 'favorites',
+    view: 'articles',
   },
   {
     id: 'readLater',
     icon: PhClockCountdown,
     label: t('sidebar.activity.readLater'),
     filterType: 'readLater',
+    view: 'articles',
   },
   {
     id: 'imageGallery',
     icon: PhImages,
     label: t('sidebar.activity.imageGallery'),
     filterType: 'imageGallery',
+    view: 'imageGallery',
   },
-];
+  {
+    id: 'dailyReports',
+    icon: PhNewspaperClipping,
+    label: t('dailyReport.title'),
+    view: 'dailyReports',
+  },
+]);
 
 // Check if image gallery feature is enabled
 const imageGalleryEnabled = ref(false);
@@ -135,8 +150,13 @@ onMounted(async () => {
 function handleNavClick(item: NavItem) {
   // Clear any active saved filters when clicking main filter buttons
   clearAllFilters();
-  store.setFilter(item.filterType);
-  emit('select-filter', item.filterType);
+  if (item.view === 'dailyReports') {
+    store.setTopLevelView('dailyReports');
+    showMissedPrompt();
+  } else if (item.filterType) {
+    store.setFilter(item.filterType);
+    emit('select-filter', item.filterType);
+  }
 
   // Don't auto-expand feed panel when clicking nav items
   // Only expand when clicking the Feed button
@@ -216,7 +236,10 @@ defineExpose({
             :key="item.id"
             :class="[
               'relative flex items-center justify-center text-text-secondary flex-shrink-0 transition-all hover:text-accent',
-              store.currentFilter === item.filterType ? 'text-accent' : '',
+              store.currentView === item.view &&
+              (item.view === 'dailyReports' || store.currentFilter === item.filterType)
+                ? 'text-accent'
+                : '',
             ]"
             style="width: 44px; height: 44px"
             :title="item.label"
@@ -225,12 +248,23 @@ defineExpose({
             <!-- Icon -->
             <component
               :is="
-                store.currentFilter === item.filterType ? item.activeIcon || item.icon : item.icon
+                store.currentView === item.view &&
+                (item.view === 'dailyReports' || store.currentFilter === item.filterType)
+                  ? item.activeIcon || item.icon
+                  : item.icon
               "
               :size="24"
-              :weight="store.currentFilter === item.filterType ? 'fill' : 'regular'"
+              :weight="
+                store.currentView === item.view &&
+                (item.view === 'dailyReports' || store.currentFilter === item.filterType)
+                  ? 'fill'
+                  : 'regular'
+              "
               :class="[
-                store.currentFilter === item.filterType ? 'text-accent scale-105' : '',
+                store.currentView === item.view &&
+                (item.view === 'dailyReports' || store.currentFilter === item.filterType)
+                  ? 'text-accent scale-105'
+                  : '',
                 'transition-all',
               ]"
             />
@@ -242,6 +276,13 @@ defineExpose({
               style="background-color: #999999"
             >
               {{ store.unreadCounts?.total > 99 ? '99+' : store.unreadCounts?.total }}
+            </span>
+            <span
+              v-if="item.id === 'dailyReports' && dailyReportUnreadCount > 0"
+              class="absolute bottom-0.5 right-0.5 min-w-[14px] h-[14px] px-0.5 text-[9px] font-medium flex items-center justify-center rounded-full text-white bg-accent"
+              data-testid="daily-report-unread-badge"
+            >
+              {{ dailyReportUnreadCount > 99 ? '99+' : dailyReportUnreadCount }}
             </span>
           </button>
         </TransitionGroup>

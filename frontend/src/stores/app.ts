@@ -3,6 +3,7 @@ import { ref, computed, type Ref } from 'vue';
 import type { Article, Feed, Tag, UnreadCounts, RefreshProgress } from '@/types/models';
 import type { FilterCondition } from '@/types/filter';
 import { useSettings } from '@/composables/core/useSettings';
+import type { DailyReportView } from '@/types/dailyReport';
 
 export type Filter = 'all' | 'unread' | 'favorites' | 'readLater' | 'imageGallery' | '';
 export type ThemePreference = 'light' | 'dark' | 'auto';
@@ -21,6 +22,7 @@ export interface AppState {
   feedsLoadError: Ref<string | null>;
   unreadCounts: Ref<UnreadCounts>;
   currentFilter: Ref<Filter>;
+  currentView: Ref<DailyReportView>;
   currentFeedId: Ref<number | null>;
   currentCategory: Ref<string | null>;
   currentArticleId: Ref<number | null>;
@@ -40,6 +42,7 @@ export interface AppState {
 
 export interface AppActions {
   setFilter: (filter: Filter) => void;
+  setTopLevelView: (view: DailyReportView) => void;
   setFeed: (feedId: number) => void;
   selectFeedInArticleList: (feedId: number, articleId?: number) => void;
   setCategory: (category: string) => void;
@@ -88,6 +91,7 @@ export const useAppStore = defineStore('app', () => {
     feedCounts: {},
   });
   const currentFilter = ref<Filter>('all');
+  const currentView = ref<DailyReportView>('articles');
   const currentFeedId = ref<number | null>(null);
   const currentCategory = ref<string | null>(null);
   const currentArticleId = ref<number | null>(null);
@@ -116,6 +120,7 @@ export const useAppStore = defineStore('app', () => {
 
   // Actions - Article Management
   async function setFilter(filter: Filter): Promise<void> {
+    currentView.value = filter === 'imageGallery' ? 'imageGallery' : 'articles';
     currentFilter.value = filter;
     currentFeedId.value = null;
     currentCategory.value = null;
@@ -127,6 +132,7 @@ export const useAppStore = defineStore('app', () => {
   }
 
   function setFeed(feedId: number): void {
+    currentView.value = 'articles';
     // Keep image gallery navigation inside the gallery, but don't force regular article views into it.
     const feed = feeds.value.find((f) => f.id === feedId);
     if (feed?.is_image_mode && currentFilter.value === 'imageGallery') {
@@ -143,6 +149,7 @@ export const useAppStore = defineStore('app', () => {
   }
 
   function selectFeedInArticleList(feedId: number, articleId?: number): void {
+    currentView.value = 'articles';
     currentFilter.value = 'all';
     currentFeedId.value = feedId;
     currentCategory.value = null;
@@ -154,6 +161,7 @@ export const useAppStore = defineStore('app', () => {
   }
 
   function setCategory(category: string): void {
+    currentView.value = 'articles';
     // Check if this category contains only image mode feeds
     const categoryFeeds = feeds.value.filter((f) => {
       // Handle uncategorized category (empty string)
@@ -807,6 +815,11 @@ export const useAppStore = defineStore('app', () => {
     activeFilters.value = filters;
   }
 
+  function setTopLevelView(view: DailyReportView): void {
+    currentView.value = view;
+    if (view === 'imageGallery') currentFilter.value = 'imageGallery';
+  }
+
   function setFilteredArticlesFromServer(articles: Article[]): void {
     filteredArticlesFromServer.value = articles;
   }
@@ -843,6 +856,7 @@ export const useAppStore = defineStore('app', () => {
     unreadCounts,
     filterCounts,
     currentFilter,
+    currentView,
     currentFeedId,
     currentCategory,
     currentArticleId,
@@ -862,6 +876,7 @@ export const useAppStore = defineStore('app', () => {
 
     // Actions
     setFilter,
+    setTopLevelView,
     setFeed,
     selectFeedInArticleList,
     setCategory,

@@ -19,6 +19,7 @@ import (
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
+	"github.com/wailsapp/wails/v3/pkg/services/notifications"
 
 	"MRSS/internal/ai"
 	"MRSS/internal/database"
@@ -215,12 +216,16 @@ func main() {
 	var mainWindow application.Window
 
 	log.Println("Starting Wails v3...")
+	notificationService := notifications.New()
 
 	// Create new Wails v3 application
 	app := application.New(application.Options{
 		Name:        "MRSS",
 		Description: "A modern, privacy-focused RSS reader",
 		LogLevel:    slog.LevelError,
+		Services: []application.Service{
+			application.NewService(notificationService),
+		},
 		Assets: application.AssetOptions{
 			Handler:    combinedHandler,
 			Middleware: APIMiddleware(combinedHandler),
@@ -280,6 +285,7 @@ func main() {
 
 	// Set app instance to handler for browser integration
 	h.SetApp(app)
+	h.SetDailyReportNotifier(newDesktopDailyReportNotifier(notificationService, app, db))
 	log.Println("Browser integration enabled")
 
 	// Get window dimensions from stored state or defaults
@@ -364,6 +370,22 @@ func main() {
 
 	// Create main window
 	mainWindow = app.Window.NewWithOptions(windowOptions)
+	notificationService.OnNotificationResponse(func(result notifications.NotificationResult) {
+		if result.Error != nil {
+			log.Printf("Failed to handle daily report notification: %v", result.Error)
+			return
+		}
+		runID := dailyReportIDFromNotification(result)
+		if runID <= 0 {
+			return
+		}
+		if mainWindow != nil {
+			mainWindow.Show()
+			mainWindow.Restore()
+			mainWindow.Focus()
+		}
+		app.Event.Emit("daily-report:open", map[string]interface{}{"run_id": runID})
+	})
 
 	if !restoredFromDB {
 		mainWindow.Center()
@@ -639,6 +661,7 @@ func main() {
 	}()
 
 	log.Println("Window initialized, running app...")
+	h.StartDailyReportScheduler(bgCtx, true)
 
 	// Run the application
 	err = app.Run()
@@ -647,6 +670,7 @@ func main() {
 	log.Println("Shutting down...")
 
 	// Stop background tasks first
+	h.StopDailyReportScheduler()
 	bgCancel()
 	// Give some time for tasks to finish
 	time.Sleep(500 * time.Millisecond)

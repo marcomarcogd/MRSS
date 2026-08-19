@@ -5,6 +5,9 @@ import Sidebar from './components/sidebar/Sidebar.vue';
 import ArticleList from './components/article/ArticleList.vue';
 import ArticleDetail from './components/article/ArticleDetail.vue';
 import ImageGalleryView from './components/article/imageGallery/index.vue';
+import DailyReportView from './components/dailyReport/DailyReportView.vue';
+import DailyReportMissedRunsModal from './components/dailyReport/DailyReportMissedRunsModal.vue';
+import DailyReportCloudConsentModal from './components/dailyReport/DailyReportCloudConsentModal.vue';
 import AddFeedModal from './components/modals/feed/AddFeedModal.vue';
 import EditFeedModal from './components/modals/feed/EditFeedModal.vue';
 import SettingsModal from './components/modals/SettingsModal.vue';
@@ -15,7 +18,7 @@ import ConfirmDialog from './components/modals/common/ConfirmDialog.vue';
 import InputDialog from './components/modals/common/InputDialog.vue';
 import MultiSelectDialog from './components/modals/common/MultiSelectDialog.vue';
 import Toast from './components/common/Toast.vue';
-import { onMounted, onUnmounted, ref, computed, watchEffect } from 'vue';
+import { onMounted, onUnmounted, ref, computed, watch, watchEffect } from 'vue';
 import { useNotifications } from './composables/ui/useNotifications';
 import { useKeyboardShortcuts } from './composables/ui/useKeyboardShortcuts';
 import { useContextMenu } from './composables/ui/useContextMenu';
@@ -25,6 +28,7 @@ import { useAppUpdates } from './composables/core/useAppUpdates';
 import { useSettings } from './composables/core/useSettings';
 import { resolveFontFamily } from './utils/fontDetector';
 import type { Feed } from './types/models';
+import { useDailyReports } from './composables/dailyReport/useDailyReports';
 
 const store = useAppStore();
 const { t } = useI18n();
@@ -58,7 +62,8 @@ const feedToDiscover = ref<Feed | null>(null);
 const isSidebarOpen = ref(true);
 
 // Check if we're in image gallery mode
-const isImageGalleryMode = computed(() => store.currentFilter === 'imageGallery');
+const isImageGalleryMode = computed(() => store.currentView === 'imageGallery');
+const isDailyReportMode = computed(() => store.currentView === 'dailyReports');
 
 // Check if we're in card mode
 const isCardMode = ref(false);
@@ -72,6 +77,27 @@ const {
   removeToast,
   installGlobalHandlers,
 } = useNotifications();
+
+const {
+  missedPromptVisible,
+  consentModalVisible,
+  config: dailyReportConfig,
+  status: dailyReportStatus,
+  selectedRunId: selectedDailyReportRunId,
+  fetchDetail: fetchDailyReportDetail,
+  markRead: markDailyReportRead,
+  initialize: initializeDailyReports,
+  stopPolling: stopDailyReportPolling,
+  closeMissedPrompt,
+  closeCloudConsentPrompt,
+} = useDailyReports();
+
+watch(
+  () => dailyReportStatus.value.requires_feed_selection,
+  (required) => {
+    if (required) window.showToast(t('dailyReport.config.feedSelectionExpired'), 'warning', 6000);
+  }
+);
 
 const { contextMenu, openContextMenu, handleContextMenuAction } = useContextMenu();
 
@@ -118,6 +144,33 @@ const { shortcuts } = useKeyboardShortcuts({
 onMounted(async () => {
   // Install global notification handlers
   installGlobalHandlers();
+
+  void initializeDailyReports(
+    (runId) => {
+      store.setTopLevelView('dailyReports');
+      if (runId) {
+        selectedDailyReportRunId.value = runId;
+        void fetchDailyReportDetail(runId)
+          .then((detail) => {
+            if (!detail.run.is_read) return markDailyReportRead(runId, true);
+          })
+          .catch((error) => console.error('Failed to open daily report from notification:', error));
+      }
+    },
+    (_runId, runStatus, systemRequested, systemDelivered) => {
+      const needsSystemFallback = systemRequested === true && systemDelivered !== true;
+      if (!dailyReportConfig.value.in_app_notification && !needsSystemFallback) return;
+      if (runStatus === 'no_content' && !dailyReportConfig.value.notify_on_empty) return;
+      window.showToast(
+        t(
+          needsSystemFallback
+            ? 'dailyReport.toast.systemNotificationFallback'
+            : 'dailyReport.toast.completed'
+        ),
+        needsSystemFallback ? 'warning' : 'success'
+      );
+    }
+  );
 
   // Initialize theme system immediately (lightweight)
   store.initTheme();
@@ -241,6 +294,10 @@ onMounted(async () => {
   }, 100);
 });
 
+onUnmounted(() => {
+  stopDailyReportPolling();
+});
+
 // Listen for events from Sidebar (moved outside onMounted to ensure proper capture)
 window.addEventListener('show-add-feed', () => {
   showAddFeed.value = true;
@@ -327,8 +384,10 @@ function onFeedUpdated(): void {
   >
     <Sidebar :is-open="isSidebarOpen" @toggle="toggleSidebar" />
 
+    <DailyReportView v-if="isDailyReportMode" />
+
     <!-- Show ImageGalleryView when in image gallery mode -->
-    <template v-if="isImageGalleryMode">
+    <template v-else-if="isImageGalleryMode">
       <ImageGalleryView :is-sidebar-open="isSidebarOpen" @toggle-sidebar="toggleSidebar" />
     </template>
 
@@ -368,6 +427,9 @@ function onFeedUpdated(): void {
       @close="showUpdateDialog = false"
       @update="downloadAndInstallUpdate"
     />
+
+    <DailyReportMissedRunsModal v-if="missedPromptVisible" @close="closeMissedPrompt" />
+    <DailyReportCloudConsentModal v-if="consentModalVisible" @close="closeCloudConsentPrompt" />
 
     <ContextMenu
       v-if="contextMenu.show"

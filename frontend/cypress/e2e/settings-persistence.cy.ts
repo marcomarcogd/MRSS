@@ -130,6 +130,197 @@ describe('Settings Persistence', () => {
       });
   });
 
+  it('should persist daily report configuration through its dedicated API', () => {
+    let dailyConfig = {
+      enabled: false,
+      schedule_time: '08:00',
+      feed_scope: 'all',
+      feed_ids: [],
+      include_hidden: false,
+      ai_profile_id: null,
+      focus: '',
+      outline: [{ id: 'overview', title: 'Highlights', instruction: 'Summarize.' }],
+      language: 'auto',
+      title_template: '24-Hour AI Digest · {{date}}',
+      in_app_notification: true,
+      system_notification: false,
+      notify_on_empty: false,
+    };
+    cy.intercept('GET', '/api/daily-report/config', (req) => req.reply({ config: dailyConfig })).as(
+      'getDailyReportConfig'
+    );
+    cy.intercept('PUT', '/api/daily-report/config', (req) => {
+      dailyConfig = { ...dailyConfig, ...req.body };
+      expect(req.body).not.to.have.property('created_at');
+      expect(req.body).not.to.have.property('last_handled_boundary');
+      req.reply({ config: dailyConfig });
+    }).as('saveDailyReportConfig');
+    cy.intercept('GET', '/api/daily-report/status', {
+      enabled: false,
+      is_running: false,
+      progress: 0,
+      unread_count: 0,
+      missed_count: 0,
+      notification_authorization: 'not_determined',
+    });
+    cy.intercept('GET', '/api/daily-report/history?*', {
+      items: [],
+      total: 0,
+      page: 1,
+      page_size: 20,
+    });
+    cy.intercept('GET', '/api/ai/profiles', []);
+    cy.reload();
+
+    cy.get('button[title="24-Hour AI Digest"], button[title="24 小时 AI 日报"]').click({
+      force: true,
+    });
+    cy.get('[data-testid="daily-report-view"]').should('be.visible');
+    cy.get('button[title="Digest settings"], button[title="日报设置"]').click({ force: true });
+    cy.wait('@getDailyReportConfig');
+    cy.get('[data-testid="daily-report-config"] input[type="time"]').clear().type('09:30');
+    cy.get('button')
+      .contains(/^Save$|^保存$/)
+      .click({ force: true });
+    cy.wait('@saveDailyReportConfig').its('request.body.schedule_time').should('eq', '09:30');
+
+    cy.get('button[title="Digest settings"], button[title="日报设置"]').click({ force: true });
+    cy.wait('@getDailyReportConfig');
+    cy.get('[data-testid="daily-report-config"] input[type="time"]').should('have.value', '09:30');
+  });
+
+  it('should require explicit cloud processing consent and support revocation', () => {
+    let accepted = false;
+    let optimizeCalls = 0;
+    const config = {
+      enabled: false,
+      schedule_time: '08:00',
+      feed_scope: 'all',
+      feed_ids: [],
+      include_hidden: false,
+      ai_profile_id: 12,
+      focus: '',
+      outline: [{ id: 'overview', title: 'Highlights', instruction: 'Summarize.' }],
+      language: 'auto',
+      title_template: '24-Hour AI Digest · {{date}}',
+      in_app_notification: true,
+      system_notification: false,
+      notify_on_empty: false,
+    };
+    const cloudProcessing = () => ({
+      disclosure_version: 1,
+      required: true,
+      accepted,
+      accepted_version: accepted ? 1 : null,
+      accepted_at: accepted ? '2026-08-19T08:00:00Z' : null,
+      destination: {
+        profile_id: 12,
+        profile_name: 'Work AI',
+        endpoint: 'https://api.example.com',
+      },
+    });
+    cy.intercept('GET', '/api/daily-report/config', (req) =>
+      req.reply({ config, cloud_processing: cloudProcessing() })
+    );
+    cy.intercept('GET', '/api/daily-report/consent', (req) =>
+      req.reply({ cloud_processing: cloudProcessing() })
+    );
+    cy.intercept('POST', '/api/daily-report/consent', (req) => {
+      if (req.body.action === 'grant') {
+        expect(req.body).to.deep.equal({ action: 'grant', version: 1 });
+        accepted = true;
+      } else {
+        expect(req.body).to.deep.equal({ action: 'revoke' });
+        accepted = false;
+      }
+      req.reply({ cloud_processing: cloudProcessing() });
+    }).as('updateCloudConsent');
+    cy.intercept('POST', '/api/daily-report/outline/optimize', (req) => {
+      optimizeCalls += 1;
+      req.reply({ outline: [] });
+    }).as('optimizeDailyReportOutline');
+    cy.intercept('GET', '/api/daily-report/status', {
+      enabled: false,
+      is_running: false,
+      progress: 0,
+      unread_count: 0,
+      missed_count: 0,
+      notification_authorization: 'not_determined',
+    });
+    cy.intercept('GET', '/api/daily-report/history?*', {
+      items: [],
+      total: 0,
+      page: 1,
+      page_size: 20,
+    });
+    cy.intercept('GET', '/api/ai/profiles', [
+      {
+        id: 12,
+        name: 'Work AI',
+        endpoint: 'https://api.example.com/v1/chat/completions',
+        model: 'test-model',
+        custom_headers: '',
+        is_default: true,
+        created_at: '',
+        updated_at: '',
+      },
+      {
+        id: 13,
+        name: 'Changed AI',
+        endpoint: 'https://changed.example.com/v1/chat/completions',
+        model: 'changed-model',
+        custom_headers: '',
+        is_default: false,
+        created_at: '',
+        updated_at: '',
+      },
+    ]);
+    cy.reload();
+
+    cy.get('button[title="24-Hour AI Digest"], button[title="24 小时 AI 日报"]').click({
+      force: true,
+    });
+    cy.get('button[title="Digest settings"], button[title="日报设置"]').click({ force: true });
+    cy.get('[data-testid="daily-report-consent-status"]').should('contain.text', 'Work AI');
+
+    // Optimizing with an unsaved profile must not call the backend or open the
+    // consent prompt for the previously saved destination.
+    cy.get('[data-testid="daily-report-profile-select"]').select('13');
+    cy.get('[data-testid="daily-report-optimize-outline"]').click();
+    cy.contains(
+      /The AI profile selection changed\. Save settings before optimizing the outline\.|AI 配置选择已更改，请先保存设置，再优化目录/
+    ).should('be.visible');
+    cy.then(() => expect(optimizeCalls).to.eq(0));
+    cy.get('[data-testid="daily-report-cloud-consent"]').should('not.exist');
+    cy.get('[data-testid="daily-report-profile-select"]').select('12');
+
+    cy.contains('button', /Review and authorize|查看并授权/).click();
+    cy.get('[data-testid="daily-report-cloud-consent"]').should('contain.text', 'Work AI');
+    cy.get('[data-testid="daily-report-cloud-consent"]').should(
+      'contain.text',
+      'https://api.example.com'
+    );
+    cy.contains('button', /Agree and continue|同意并继续/).should('be.disabled');
+    cy.get('[data-testid="daily-report-consent-checkbox"]').check();
+    cy.contains('button', /Agree and continue|同意并继续/).click();
+    cy.wait('@updateCloudConsent').its('request.body.action').should('eq', 'grant');
+    cy.get('[data-testid="daily-report-consent-status"]').should(
+      'contain.text',
+      'Cloud processing authorized'
+    );
+
+    cy.contains('button', /Revoke consent|撤销授权/).click();
+    cy.get('[data-modal-open="true"]')
+      .last()
+      .contains('button', /Revoke consent|撤销授权/)
+      .click();
+    cy.wait('@updateCloudConsent').its('request.body.action').should('eq', 'revoke');
+    cy.get('[data-testid="daily-report-consent-status"]').should(
+      'contain.text',
+      'Authorization required'
+    );
+  });
+
   it('should persist update interval changes', () => {
     // Wait for initial load
     cy.wait('@getFeeds', { timeout: 10000 });
