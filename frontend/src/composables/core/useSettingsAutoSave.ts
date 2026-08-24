@@ -13,6 +13,13 @@ import { buildAutoSavePayload } from './useSettings.generated';
 import { mergeSharedSettings } from './useSettings';
 
 type SettingsPayload = Record<string, string>;
+const immediateTypographyKeys = [
+  'ui_font_family',
+  'ui_font_size',
+  'content_font_family',
+  'content_font_size',
+  'content_line_height',
+] as const;
 
 function diffPayload(current: SettingsPayload, baseline: SettingsPayload): SettingsPayload {
   return Object.fromEntries(
@@ -29,6 +36,7 @@ export function useSettingsAutoSave(
   const settingsRef = isRef(settings) ? settings : computed(settings);
 
   let baseline: SettingsPayload | null = null;
+  let baselineSettings: SettingsData | null = null;
   let saveTimeout: ReturnType<typeof setTimeout> | null = null;
   let saveInFlight: Promise<void> | null = null;
   let saveQueued = false;
@@ -185,10 +193,20 @@ export function useSettingsAutoSave(
         const savedSettings = Object.fromEntries(
           Object.keys(changes).map((key) => [key, settingsAtRequest[key as keyof SettingsData]])
         ) as Partial<SettingsData>;
+        if (baselineSettings) {
+          Object.assign(baselineSettings, savedSettings);
+        }
         mergeSharedSettings(savedSettings);
         await applySavedSideEffects(changes, settingsAtRequest);
       } catch (error) {
         console.error('Error auto-saving settings:', error);
+        if (baselineSettings) {
+          mergeSharedSettings(
+            Object.fromEntries(
+              immediateTypographyKeys.map((key) => [key, baselineSettings?.[key]])
+            ) as Partial<SettingsData>
+          );
+        }
         window.showToast(t('common.errors.savingSettings'), 'error');
       }
     })();
@@ -223,6 +241,7 @@ export function useSettingsAutoSave(
     ([isReady]) => {
       if (!isReady) {
         baseline = null;
+        baselineSettings = null;
         if (saveTimeout) {
           clearTimeout(saveTimeout);
           saveTimeout = null;
@@ -232,8 +251,17 @@ export function useSettingsAutoSave(
 
       if (baseline === null) {
         baseline = snapshot();
+        baselineSettings = { ...settingsRef.value };
         return;
       }
+      // Typography is a visual preference and must preview immediately. The
+      // backend save remains debounced; a failed save restores the last
+      // confirmed values in the shared application state.
+      mergeSharedSettings(
+        Object.fromEntries(
+          immediateTypographyKeys.map((key) => [key, settingsRef.value[key]])
+        ) as Partial<SettingsData>
+      );
       debouncedAutoSave();
     },
     { deep: true, immediate: true }
@@ -243,7 +271,6 @@ export function useSettingsAutoSave(
     if (saveTimeout) {
       clearTimeout(saveTimeout);
       saveTimeout = null;
-      void autoSave();
     }
     void persistCurrentChanges();
   });
