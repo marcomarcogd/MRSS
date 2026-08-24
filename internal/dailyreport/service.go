@@ -280,7 +280,7 @@ func (s *Service) StartManual(ctx context.Context, periodStart, periodEnd *time.
 	return s.startOne(ctx, config, RunKindManual, start, end, nil)
 }
 
-func (s *Service) Retry(ctx context.Context, id int64) (*models.DailyReportRun, error) {
+func (s *Service) Retry(ctx context.Context, id int64, restart ...bool) (*models.DailyReportRun, error) {
 	original, err := s.store.GetDailyReportRun(id)
 	if err != nil {
 		return nil, err
@@ -295,16 +295,53 @@ func (s *Service) Retry(ctx context.Context, id int64) (*models.DailyReportRun, 
 	if err := s.ensureCloudProcessingConsent(config); err != nil {
 		return nil, err
 	}
-	return s.startOne(ctx, config, RunKindManual, original.PeriodStart, original.PeriodEnd, &id)
+	mode := ""
+	if len(restart) > 0 && restart[0] {
+		mode = "ai"
+	}
+	return s.startOneMode(ctx, config, RunKindManual, original.PeriodStart, original.PeriodEnd, &id, mode)
+}
+
+// UseLocalFallback creates a separate, auditable local report for a failed AI
+// run. The failed run and its consumed token count remain unchanged.
+func (s *Service) UseLocalFallback(ctx context.Context, id int64) (*models.DailyReportRun, error) {
+	original, err := s.store.GetDailyReportRun(id)
+	if err != nil {
+		return nil, err
+	}
+	if original == nil {
+		return nil, ErrRunNotFound
+	}
+	if original.Status != RunStatusFailed && original.Status != RunStatusInterrupted {
+		return nil, fmt.Errorf("local fallback requires a failed or interrupted report")
+	}
+	config := &models.DailyReportConfig{}
+	if err := json.Unmarshal([]byte(original.ConfigSnapshot), config); err != nil {
+		return nil, fmt.Errorf("restore report configuration: %w", err)
+	}
+	s.applyLocalizedDefaults(config)
+	return s.startOneMode(ctx, config, RunKindManual, original.PeriodStart, original.PeriodEnd, &id, "local")
 }
 
 func (s *Service) startOne(ctx context.Context, config *models.DailyReportConfig, kind string, start, end time.Time, retryOf *int64) (*models.DailyReportRun, error) {
+	return s.startOneMode(ctx, config, kind, start, end, retryOf, "")
+}
+
+func (s *Service) startOneMode(ctx context.Context, config *models.DailyReportConfig, kind string, start, end time.Time, retryOf *int64, mode string) (*models.DailyReportRun, error) {
 	if err := s.claimRun(); err != nil {
 		return nil, err
 	}
 	run := &models.DailyReportRun{
 		Kind: kind, Status: RunStatusQueued, PeriodStart: start, PeriodEnd: end,
-		Progress: 0, CurrentStep: "queued", RetryOfID: retryOf, CreatedAt: s.clock.Now(),
+		Progress: 0, CurrentStep: "queued", RetryOfID: retryOf, GenerationMode: mode, CreatedAt: s.clock.Now(),
+	}
+	if retryOf != nil && mode == "" {
+		if original, lookupErr := s.store.GetDailyReportRun(*retryOf); lookupErr == nil && original != nil {
+			if original.Status == RunStatusFailed || original.Status == RunStatusInterrupted {
+				run.GenerationHash = original.GenerationHash
+				run.CheckpointJSON = original.CheckpointJSON
+			}
+		}
 	}
 	run.ConfigSnapshot = safeConfigSnapshot(config)
 	id, err := s.store.CreateDailyReportRun(run)
@@ -394,27 +431,60 @@ func (s *Service) execute(ctx context.Context, config *models.DailyReportConfig,
 	run.Progress = 55
 	run.CurrentStep = "generating"
 	s.updateRun(run)
-	consentErr := s.ensureCloudProcessingConsent(config)
 	var result AIResult
 	var generateErr error
-	if consentErr != nil {
+	if run.GenerationMode == "local" {
 		result = localFallback(config, candidates)
-		generateErr = consentErr
+		run.GenerationMode = "local"
 	} else {
-		result, generateErr = s.generator.Generate(ctx, config, candidates)
+		consentErr := s.ensureCloudProcessingConsent(config)
+		if consentErr != nil {
+			generateErr = consentErr
+		} else if resumable, ok := s.generator.(ResumableReportGenerator); ok {
+			result, generateErr = resumable.GenerateResumable(ctx, config, candidates, run.GenerationHash, run.CheckpointJSON, func(progress GenerationProgress) error {
+				run.GenerationHash = progress.Fingerprint
+				run.CheckpointJSON = progress.Checkpoint
+				run.CurrentStep = progress.Stage
+				run.InputTokens = progress.InputTokens
+				run.OutputTokens = progress.OutputTokens
+				run.TotalTokens = progress.InputTokens + progress.OutputTokens
+				run.AIUsed = run.TotalTokens > 0
+				return s.store.UpdateDailyReportRun(run)
+			})
+		} else {
+			result, generateErr = s.generator.Generate(ctx, config, candidates)
+		}
 	}
 	if ctx.Err() != nil {
 		s.interruptRun(run)
 		return
 	}
 	if generateErr != nil {
-		log.Printf("daily report: AI generation unavailable, using local fallback: %v", generateErr)
-		fallback := localFallback(config, candidates)
-		fallback.InputTokens = result.InputTokens
-		fallback.OutputTokens = result.OutputTokens
-		result = fallback
-		partial = true
-		run.Error = "AI generation unavailable; used local summary"
+		run.InputTokens = result.InputTokens
+		run.OutputTokens = result.OutputTokens
+		run.TotalTokens = result.InputTokens + result.OutputTokens
+		run.AIUsed = run.TotalTokens > 0
+		if errors.Is(generateErr, ErrNoAIProvider) || (errors.Is(generateErr, ErrAIUsageLimit) && !run.AIUsed) {
+			result = localFallback(config, candidates)
+			run.GenerationMode = "local"
+			partial = true
+			run.Error = "Cloud AI was unavailable before generation; created a local report"
+			if errors.Is(generateErr, ErrAIUsageLimit) {
+				run.FailureCode = "usage_limit_reached"
+			} else {
+				run.FailureCode = "no_ai_provider"
+			}
+		} else {
+			run.GenerationMode = "ai"
+			var generationErr *GenerationError
+			if errors.As(generateErr, &generationErr) {
+				run.FailureCode = generationErr.Code
+			}
+			log.Printf("daily report: AI generation failed run=%d stage=%s code=%s", run.ID, run.CurrentStep, run.FailureCode)
+			_ = s.store.ReplaceDailyReportSources(run.ID, sourceSnapshots(run.ID, candidates))
+			s.failRun(run, generateErr)
+			return
+		}
 	}
 	if result.InputTokens+result.OutputTokens > 0 {
 		run.AIUsed = true
@@ -422,6 +492,13 @@ func (s *Service) execute(ctx context.Context, config *models.DailyReportConfig,
 	run.InputTokens = result.InputTokens
 	run.OutputTokens = result.OutputTokens
 	run.TotalTokens = result.InputTokens + result.OutputTokens
+	if run.GenerationMode == "" {
+		if run.AIUsed {
+			run.GenerationMode = "ai"
+		} else {
+			run.GenerationMode = "local"
+		}
+	}
 	run.ContentJSON = mustJSON(result.Content)
 	run.Markdown = result.Markdown
 	run.Progress = 90
@@ -436,6 +513,9 @@ func (s *Service) execute(ctx context.Context, config *models.DailyReportConfig,
 		s.failRun(run, err)
 		return
 	}
+	// Successful reports keep their audited token totals but no longer need the
+	// potentially large resumable insight payload.
+	run.CheckpointJSON = ""
 	s.completeRun(ctx, config, run)
 }
 
@@ -480,6 +560,9 @@ func (s *Service) candidates(config *models.DailyReportConfig, start, end time.T
 
 func (s *Service) feedIDs(config *models.DailyReportConfig) ([]int64, error) {
 	if config.FeedScope == "selected" {
+		if config.FeedIDs != nil {
+			return append([]int64(nil), config.FeedIDs...), nil
+		}
 		return s.store.GetDailyReportSelectedFeedIDs()
 	}
 	feeds, err := s.store.GetFeeds()

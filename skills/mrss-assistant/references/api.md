@@ -652,6 +652,10 @@ Manage daily report history
 
 Manage daily report history
 
+### `POST /daily-report/history/{id}/local-fallback`
+
+Manage daily report history
+
 ### `PUT /daily-report/history/{id}/read`
 
 Manage daily report history

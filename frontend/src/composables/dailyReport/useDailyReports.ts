@@ -203,11 +203,22 @@ async function markRead(id: number, read: boolean): Promise<void> {
   await fetchStatus();
 }
 
-async function retryRun(id: number): Promise<DailyReportRun> {
-  const data = await request<{ run: DailyReportRun }>(`/api/daily-report/history/${id}/retry`, {
-    method: 'POST',
-  });
+async function retryRun(id: number, restart = false): Promise<DailyReportRun> {
+  const suffix = restart ? '?restart=true' : '';
+  const data = await request<{ run: DailyReportRun }>(
+    `/api/daily-report/history/${id}/retry${suffix}`,
+    { method: 'POST' }
+  );
   await Promise.all([fetchHistory(), fetchStatus()]);
+  return data.run;
+}
+
+async function createLocalFallback(id: number): Promise<DailyReportRun> {
+  const data = await request<{ run: DailyReportRun }>(
+    `/api/daily-report/history/${id}/local-fallback`,
+    { method: 'POST' }
+  );
+  await Promise.all([fetchHistory(1), fetchStatus()]);
   return data.run;
 }
 
@@ -499,6 +510,7 @@ export function useDailyReports() {
     fetchDetail,
     markRead,
     retryRun,
+    createLocalFallback,
     deleteRun,
     previewGenerate,
     startGenerate,

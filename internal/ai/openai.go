@@ -61,6 +61,9 @@ func (h *OpenAIHandler) BuildRequest(config RequestConfig) (map[string]interface
 	if config.ReasoningEffort != "" {
 		request["reasoning_effort"] = config.ReasoningEffort
 	}
+	if config.ReasoningConfig != nil {
+		request["reasoning"] = config.ReasoningConfig
+	}
 
 	// Response format for structured outputs
 	if config.ResponseFormat != nil {
@@ -93,9 +96,17 @@ func (h *OpenAIHandler) ParseResponse(body []byte) (ResponseResult, error) {
 	var response struct {
 		Choices []struct {
 			Message struct {
-				Content string `json:"content"`
+				Content   string `json:"content"`
+				Reasoning string `json:"reasoning"`
 			} `json:"message"`
 		} `json:"choices"`
+		Usage struct {
+			PromptTokens      int64 `json:"prompt_tokens"`
+			CompletionTokens  int64 `json:"completion_tokens"`
+			CompletionDetails struct {
+				ReasoningTokens int64 `json:"reasoning_tokens"`
+			} `json:"completion_tokens_details"`
+		} `json:"usage"`
 		Error *struct {
 			Message string `json:"message"`
 			Type    string `json:"type"`
@@ -122,8 +133,12 @@ func (h *OpenAIHandler) ParseResponse(body []byte) (ResponseResult, error) {
 	}
 
 	return ResponseResult{
-		Content:    content,
-		FormatUsed: FormatTypeOpenAI,
+		Content:         content,
+		Thinking:        strings.TrimSpace(response.Choices[0].Message.Reasoning),
+		FormatUsed:      FormatTypeOpenAI,
+		InputTokens:     response.Usage.PromptTokens,
+		OutputTokens:    response.Usage.CompletionTokens,
+		ReasoningTokens: response.Usage.CompletionDetails.ReasoningTokens,
 	}, nil
 }
 
@@ -137,6 +152,16 @@ func (h *OpenAIHandler) ValidateResponse(statusCode int, body []byte) error {
 	case http.StatusNotFound:
 		return fmt.Errorf("model not found")
 	case http.StatusBadRequest:
+		var payload struct {
+			Error struct {
+				Message string `json:"message"`
+				Type    string `json:"type"`
+				Param   string `json:"param"`
+			} `json:"error"`
+		}
+		if json.Unmarshal(body, &payload) == nil && payload.Error.Message != "" {
+			return fmt.Errorf("bad request (%s/%s): %s", payload.Error.Type, payload.Error.Param, payload.Error.Message)
+		}
 		return fmt.Errorf("bad request - check parameters")
 	default:
 		return fmt.Errorf("OpenAI API returned status %d: %s", statusCode, string(body))

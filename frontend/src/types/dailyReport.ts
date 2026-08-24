@@ -67,6 +67,8 @@ export interface DailyReportRun {
   is_read: boolean;
   error: string;
   retry_of_id?: number | null;
+  failure_code?: string;
+  generation_mode?: 'ai' | 'local';
   created_at: string;
   started_at?: string | null;
   completed_at?: string | null;

@@ -3062,6 +3062,7 @@
         },
         "/daily-report/history": {
             "get": {
+                "description": "List, inspect, mutate, retry, or delete daily report history. The retry route accepts restart=true to discard an invalid checkpoint.",
                 "produces": [
                     "application/json"
                 ],
@@ -3104,6 +3105,7 @@
         },
         "/daily-report/history/{id}": {
             "get": {
+                "description": "List, inspect, mutate, retry, or delete daily report history. The retry route accepts restart=true to discard an invalid checkpoint.",
                 "produces": [
                     "application/json"
                 ],
@@ -3144,6 +3146,50 @@
                 }
             },
             "delete": {
+                "description": "List, inspect, mutate, retry, or delete daily report history. The retry route accepts restart=true to discard an invalid checkpoint.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "daily-report"
+                ],
+                "summary": "Manage daily report history",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/response.APIResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/response.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/daily-report/history/{id}/local-fallback": {
+            "post": {
+                "description": "List, inspect, mutate, retry, or delete daily report history. The retry route accepts restart=true to discard an invalid checkpoint.",
                 "produces": [
                     "application/json"
                 ],
@@ -3186,6 +3232,7 @@
         },
         "/daily-report/history/{id}/read": {
             "put": {
+                "description": "List, inspect, mutate, retry, or delete daily report history. The retry route accepts restart=true to discard an invalid checkpoint.",
                 "produces": [
                     "application/json"
                 ],
@@ -3228,6 +3275,7 @@
         },
         "/daily-report/history/{id}/retry": {
             "post": {
+                "description": "List, inspect, mutate, retry, or delete daily report history. The retry route accepts restart=true to discard an invalid checkpoint.",
                 "produces": [
                     "application/json"
                 ],
@@ -6356,6 +6404,9 @@
                 "error": {
                     "type": "string"
                 },
+                "expanded_terms": {
+                    "$ref": "#/definitions/handlers.SearchTerms"
+                },
                 "search_terms": {
                     "type": "string"
                 },
@@ -6430,6 +6481,32 @@
                 },
                 "response_time_ms": {
                     "type": "integer"
+                }
+            }
+        },
+        "handlers.SearchTerms": {
+            "type": "object",
+            "properties": {
+                "optional": {
+                    "description": "Boost relevance if matched",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "patterns": {
+                    "description": "LIKE patterns like \"详解%llm\"",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "required": {
+                    "description": "Must match at least one",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },

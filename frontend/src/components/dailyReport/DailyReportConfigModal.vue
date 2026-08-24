@@ -16,7 +16,7 @@ import ModalFooter from '@/components/common/ModalFooter.vue';
 import ToggleControl from '@/components/settings/base/SettingControl/ToggleControl.vue';
 import { useAppStore } from '@/stores/app';
 import { useAIProfiles } from '@/composables/ai/useAIProfiles';
-import { useDailyReports } from '@/composables/dailyReport/useDailyReports';
+import { DailyReportAPIError, useDailyReports } from '@/composables/dailyReport/useDailyReports';
 import type { DailyReportConfig, DailyReportOutlineItem } from '@/types/dailyReport';
 import { DEFAULT_DAILY_REPORT_CONFIG } from '@/types/dailyReport';
 
@@ -165,7 +165,25 @@ async function requestOutlineDraft(): Promise<void> {
   } catch (error) {
     if (await promptCloudConsent(error, requestOutlineDraft)) return;
     console.error('Failed to optimize daily report outline:', error);
-    window.showToast(t('dailyReport.toast.optimizeFailed'), 'error');
+    const supportedCodes = new Set([
+      'timeout',
+      'rate_limited',
+      'provider_unavailable',
+      'authentication_failed',
+      'provider_rejected_request',
+      'empty_response',
+      'invalid_json',
+      'schema_invalid',
+      'network_error',
+      'request_failed',
+    ]);
+    const code = error instanceof DailyReportAPIError ? error.code : undefined;
+    window.showToast(
+      code && supportedCodes.has(code)
+        ? t(`dailyReport.config.outlineErrors.${code}`)
+        : t('dailyReport.toast.optimizeFailed'),
+      'error'
+    );
   } finally {
     optimizing.value = false;
   }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -409,6 +410,168 @@ func TestDailyReportAIGeneratorRetryPolicyAndSourceValidation(t *testing.T) {
 	}
 }
 
+func TestDailyReportAIGeneratorUsesStrictSchemaActualUsageAndResumesCheckpoint(t *testing.T) {
+	var calls atomic.Int32
+	var extractionCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		call := calls.Add(1)
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode request: %v", err)
+			return
+		}
+		format, ok := body["response_format"].(map[string]interface{})
+		if !ok || format["type"] != "json_schema" {
+			t.Errorf("missing strict response format: %#v", body["response_format"])
+		}
+		definition, _ := format["json_schema"].(map[string]interface{})
+		if definition["strict"] != true {
+			t.Errorf("response schema is not strict: %#v", definition)
+		}
+		joined := ""
+		if messages, ok := body["messages"].([]interface{}); ok {
+			for _, raw := range messages {
+				message, _ := raw.(map[string]interface{})
+				joined += fmt.Sprint(message["content"])
+			}
+		}
+		if strings.Contains(joined, "Extract concise factual insights") {
+			extractionCalls.Add(1)
+			writeOpenAIResponseWithUsage(t, w, `{"insights":[{"summary":"checkpointed","source_ids":[1]}]}`, 101, 17, 3)
+			return
+		}
+		if call == 2 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"error":{"message":"temporary"}}`))
+			return
+		}
+		writeOpenAIResponseWithUsage(t, w, `{"sections":[{"id":"highlights","title":"Highlights","summary":"resumed","source_ids":[1]}]}`, 53, 11, 2)
+	}))
+	defer server.Close()
+
+	db := newDailyReportTestDB(t)
+	defer db.Close()
+	openAIEndpoint := strings.Replace(server.URL, "127.0.0.1", "0.0.0.0", 1)
+	profileID, err := db.CreateAIProfile(&models.AIProfile{Name: "Checkpoint", Endpoint: openAIEndpoint, Model: "test-model", IsDefault: true})
+	if err != nil {
+		t.Fatalf("CreateAIProfile failed: %v", err)
+	}
+	generator := dailyreport.NewAIGenerator(db, ai.NewUsageTracker(db), nil, dailyreport.WithAIGeneratorRetryDelays(0))
+	generator.SetConsentVerifier(func(*models.DailyReportConfig, *dailyreport.ResolvedAIProvider) error { return nil })
+	config := dailyReportGeneratorConfig(profileID)
+	candidates := []models.DailyReportCandidate{{ArticleID: 1, FeedID: 1, Title: "Title", Summary: "Summary"}}
+	var fingerprint, checkpoint string
+	result, err := generator.GenerateResumable(context.Background(), config, candidates, "", "", func(progress dailyreport.GenerationProgress) error {
+		fingerprint, checkpoint = progress.Fingerprint, progress.Checkpoint
+		return nil
+	})
+	if err == nil {
+		t.Fatal("first generation unexpectedly succeeded")
+	}
+	if result.InputTokens != 101 || result.OutputTokens != 17 {
+		t.Fatalf("provider usage not preserved on failure: %+v", result)
+	}
+	if fingerprint == "" || checkpoint == "" {
+		t.Fatal("generation checkpoint was not persisted")
+	}
+	changedCandidates := append([]models.DailyReportCandidate(nil), candidates...)
+	changedCandidates[0].Title = "Changed after checkpoint"
+	_, mismatchErr := generator.GenerateResumable(
+		context.Background(), config, changedCandidates, fingerprint, checkpoint, nil,
+	)
+	var generationErr *dailyreport.GenerationError
+	if !errors.As(mismatchErr, &generationErr) || generationErr.Code != "checkpoint_invalidated" {
+		t.Fatalf("changed inputs did not invalidate checkpoint: %v", mismatchErr)
+	}
+	result, err = generator.GenerateResumable(context.Background(), config, candidates, fingerprint, checkpoint, nil)
+	if err != nil {
+		t.Fatalf("resumed generation failed: %v", err)
+	}
+	if extractionCalls.Load() != 1 {
+		t.Fatalf("resumed generation repeated extraction %d times", extractionCalls.Load())
+	}
+	if result.InputTokens != 154 || result.OutputTokens != 28 {
+		t.Fatalf("resumed attempt did not use actual provider usage: %+v", result)
+	}
+}
+
+func TestDailyReportLocalFallbackMatchesOutlineAndCleansHTML(t *testing.T) {
+	config := &models.DailyReportConfig{
+		Language: "en",
+		OutlineJSON: `[
+			{"id":"ai","title":"AI","instruction":"artificial intelligence models"},
+			{"id":"sport","title":"Sport","instruction":"football league"}
+		]`,
+	}
+	candidates := []models.DailyReportCandidate{
+		{ArticleID: 1, Title: "New artificial intelligence model", Summary: `<p>Model update</p><script>steal()</script>`},
+		{ArticleID: 2, Title: "Football league final", Summary: `<strong>Team wins</strong>`},
+		{ArticleID: 3, Title: "Unrelated cooking notes", Summary: "A recipe"},
+	}
+	result, err := (dailyreport.LocalGenerator{}).Generate(context.Background(), config, candidates)
+	if err != nil {
+		t.Fatalf("local generation failed: %v", err)
+	}
+	if len(result.Content.Sections) != 2 {
+		t.Fatalf("local sections = %+v", result.Content.Sections)
+	}
+	if got := result.Content.Sections[0].SourceIDs; len(got) != 1 || got[0] != 1 {
+		t.Fatalf("AI section sources = %v", got)
+	}
+	if got := result.Content.Sections[1].SourceIDs; len(got) != 1 || got[0] != 2 {
+		t.Fatalf("sport section sources = %v", got)
+	}
+	if strings.Contains(result.Markdown, "<p>") || strings.Contains(result.Markdown, "steal()") || strings.Contains(result.Markdown, "cooking") {
+		t.Fatalf("local report was not cleaned or relevance-filtered: %s", result.Markdown)
+	}
+}
+
+func TestDailyReportStructuredOutputFallsBackOnlyWhenUnsupported(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		call := calls.Add(1)
+		var body map[string]interface{}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if call == 1 {
+			if _, ok := body["response_format"]; !ok {
+				t.Error("first request did not attempt strict schema")
+			}
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":{"message":"response_format json_schema is unsupported","type":"invalid_request_error","param":"response_format"}}`))
+			return
+		}
+		joined := fmt.Sprint(body["messages"])
+		if strings.Contains(joined, "Fill the requested outline") {
+			writeOpenAIResponseWithUsage(t, w, `{"sections":[{"id":"highlights","title":"Highlights","summary":"done","source_ids":[1]}]}`, 20, 3, 1)
+			return
+		}
+		if _, ok := body["response_format"]; ok {
+			t.Error("schema fallback request still contained response_format")
+		}
+		writeOpenAIResponseWithUsage(t, w, `{"insights":[{"summary":"done","source_ids":[1]}]}`, 10, 2, 1)
+	}))
+	defer server.Close()
+	db := newDailyReportTestDB(t)
+	defer db.Close()
+	endpoint := strings.Replace(server.URL, "127.0.0.1", "0.0.0.0", 1)
+	profileID, err := db.CreateAIProfile(&models.AIProfile{Name: "Schema fallback", Endpoint: endpoint, Model: "test-model", IsDefault: true})
+	if err != nil {
+		t.Fatalf("CreateAIProfile failed: %v", err)
+	}
+	generator := dailyreport.NewAIGenerator(db, ai.NewUsageTracker(db), nil, dailyreport.WithAIGeneratorRetryDelays(0))
+	generator.SetConsentVerifier(func(*models.DailyReportConfig, *dailyreport.ResolvedAIProvider) error { return nil })
+	result, err := generator.Generate(context.Background(), dailyReportGeneratorConfig(profileID), []models.DailyReportCandidate{{ArticleID: 1, Title: "Title"}})
+	if err != nil {
+		t.Fatalf("schema compatibility fallback failed: %v", err)
+	}
+	if calls.Load() != 3 {
+		t.Fatalf("schema fallback calls = %d, want 3", calls.Load())
+	}
+	if result.InputTokens != 30 || result.OutputTokens != 5 {
+		t.Fatalf("unsupported schema response was incorrectly counted: %+v", result)
+	}
+}
+
 func TestDailyReportAIGeneratorRequiresConsentBeforeNetworkAndHonorsLimit(t *testing.T) {
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -771,6 +934,20 @@ func writeOpenAIResponse(t *testing.T, w http.ResponseWriter, content string) {
 	}
 }
 
+func writeOpenAIResponseWithUsage(t *testing.T, w http.ResponseWriter, content string, input, output, reasoning int64) {
+	t.Helper()
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
+		"choices": []map[string]interface{}{{"message": map[string]string{"content": content, "reasoning": "private reasoning"}}},
+		"usage": map[string]interface{}{
+			"prompt_tokens": input, "completion_tokens": output,
+			"completion_tokens_details": map[string]int64{"reasoning_tokens": reasoning},
+		},
+	}); err != nil {
+		t.Errorf("write AI response failed: %v", err)
+	}
+}
+
 func writeOllamaResponse(t *testing.T, w http.ResponseWriter, content string) {
 	t.Helper()
 	w.Header().Set("Content-Type", "application/json")
@@ -859,6 +1036,21 @@ func waitForDailyReportRuns(t *testing.T, db *database.DB, want int) {
 	t.Fatalf("daily report run count did not reach %d", want)
 }
 
+func waitForDailyReportRunStatus(t *testing.T, db *database.DB, id int64, want string) *models.DailyReportRun {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		run, err := db.GetDailyReportRun(id)
+		if err == nil && run != nil && run.Status == want {
+			return run
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	run, err := db.GetDailyReportRun(id)
+	t.Fatalf("daily report run %d did not reach %s: run=%+v err=%v", id, want, run, err)
+	return nil
+}
+
 type blockingDailyReportGenerator struct {
 	started chan struct{}
 	once    sync.Once
@@ -878,6 +1070,56 @@ type releasedDailyReportGenerator struct {
 	started chan struct{}
 	release chan struct{}
 	once    sync.Once
+}
+
+type failedDailyReportGenerator struct{}
+
+func (failedDailyReportGenerator) Generate(context.Context, *models.DailyReportConfig, []models.DailyReportCandidate) (dailyreport.AIResult, error) {
+	return dailyreport.AIResult{InputTokens: 120, OutputTokens: 30}, &dailyreport.GenerationError{
+		Code: "timeout", Stage: "finalizing", Cause: context.DeadlineExceeded,
+	}
+}
+
+func (failedDailyReportGenerator) OptimizeOutline(context.Context, string, string, *int64) ([]dailyreport.OutlineSection, error) {
+	return nil, nil
+}
+
+func TestDailyReportAIFailureRequiresExplicitLocalFallback(t *testing.T) {
+	db := newDailyReportTestDB(t)
+	defer db.Close()
+	feedID, err := db.AddFeed(&models.Feed{Title: "AI Feed", URL: "https://example.com/ai-feed", Type: "rss"})
+	if err != nil {
+		t.Fatalf("AddFeed failed: %v", err)
+	}
+	now := time.Now().UTC()
+	if err := db.SaveArticle(&models.Article{
+		FeedID: feedID, Title: "Artificial intelligence release", URL: "https://example.com/ai",
+		OriginalSummary: `<p>New model</p>`, PublishedAt: now.Add(-time.Hour), FirstSeenAt: now.Add(-time.Hour), HasValidPublishedTime: true,
+	}); err != nil {
+		t.Fatalf("SaveArticle failed: %v", err)
+	}
+	service := dailyreport.NewService(db, nil, failedDailyReportGenerator{}, dailyreport.NoopNotifier{}, dailyreport.RealClock(), time.UTC)
+	start, end := now.Add(-2*time.Hour), now
+	run, err := service.StartManual(context.Background(), &start, &end)
+	if err != nil {
+		t.Fatalf("StartManual failed: %v", err)
+	}
+	failed := waitForDailyReportRunStatus(t, db, run.ID, dailyreport.RunStatusFailed)
+	if failed.ContentJSON != "" || failed.Markdown != "" || failed.TotalTokens != 150 || failed.FailureCode != "timeout" {
+		t.Fatalf("AI failure was replaced or lost audit data: %+v", failed)
+	}
+	localRun, err := service.UseLocalFallback(context.Background(), failed.ID)
+	if err != nil {
+		t.Fatalf("UseLocalFallback failed: %v", err)
+	}
+	local := waitForDailyReportRunStatus(t, db, localRun.ID, dailyreport.RunStatusCompleted)
+	if local.GenerationMode != "local" || local.RetryOfID == nil || *local.RetryOfID != failed.ID || strings.Contains(local.Markdown, "<p>") {
+		t.Fatalf("explicit local fallback is invalid: %+v", local)
+	}
+	reloadedFailed, _ := db.GetDailyReportRun(failed.ID)
+	if reloadedFailed.TotalTokens != 150 || reloadedFailed.Status != dailyreport.RunStatusFailed {
+		t.Fatalf("local fallback modified original AI audit: %+v", reloadedFailed)
+	}
 }
 
 func (g *releasedDailyReportGenerator) Generate(_ context.Context, _ *models.DailyReportConfig, _ []models.DailyReportCandidate) (dailyreport.AIResult, error) {

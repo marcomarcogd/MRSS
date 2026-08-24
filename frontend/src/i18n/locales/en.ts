@@ -144,6 +144,12 @@ const en: TranslationMessages = {
     placeholder: 'Describe what you want to find...',
     searchFailed: 'AI search failed. Please check your AI settings.',
     showingResults: 'Showing AI search results',
+    relevanceScore: 'Relevance {score}',
+    matchFields: {
+      title: 'Title match',
+      summary: 'Summary match',
+      content: 'Content match',
+    },
   },
   common: {
     cancel: 'Cancel',
@@ -1224,6 +1230,9 @@ const en: TranslationMessages = {
       download: 'Download Markdown',
       markRead: 'Mark as read',
       markUnread: 'Mark as unread',
+      resumeAI: 'Resume AI from checkpoint',
+      restartAI: 'Restart AI generation from the beginning',
+      useLocalFallback: 'Use local summary instead',
     },
     header: {
       generating: 'Generating · {progress}%',
@@ -1231,6 +1240,7 @@ const en: TranslationMessages = {
       notScheduled: 'Scheduled digests are not enabled',
     },
     filter: { label: 'Digest status', all: 'All statuses' },
+    mode: { local: 'Local summary' },
     status: {
       queued: 'Queued',
       refreshing: 'Refreshing feeds',
@@ -1255,9 +1265,18 @@ const en: TranslationMessages = {
       contentUnavailable: 'No structured content is available.',
       sources: 'Sources',
       lateArrival: 'Late arrival',
-      partialError: 'The AI service was unavailable, so this digest used local fallback summaries.',
+      partialError:
+        'Some feeds could not be refreshed, so this digest used the available local data.',
+      localFallbackUsageLimit:
+        'The usage limit was reached before the first AI request, so this digest is explicitly marked as a local summary.',
+      localFallbackNoProvider:
+        'No external AI profile was available, so this digest is explicitly marked as a local summary.',
+      checkpointInvalidated:
+        'Articles or digest settings changed after the checkpoint was created. Restart AI generation from the beginning or use a local summary.',
       interruptedError: 'Digest generation was interrupted when the app stopped. You can retry it.',
-      failedError: 'Digest generation failed. Check the logs or try again later.',
+      failedError:
+        'AI digest generation did not finish. Completed stages and actual token usage were preserved; resume it or explicitly choose a local summary.',
+      failureCode: 'Error code: {code}',
     },
     preview: {
       title: 'Confirm digest generation',
@@ -1265,7 +1284,7 @@ const en: TranslationMessages = {
       articles: 'Articles',
       batches: 'Estimated AI batches',
       costHint:
-        'Generation may use your configured AI service and consume tokens. MRSS falls back to local summaries when the limit is reached.',
+        'Generation may use your configured AI service and consume tokens. A local summary is used only when no provider exists or the limit is reached before the first request; failures after AI starts preserve a checkpoint instead of masquerading as a completed report.',
       confirm: 'Start generation',
     },
     delete: {
@@ -1365,6 +1384,19 @@ const en: TranslationMessages = {
         'The AI profile selection changed. Save settings before optimizing the outline.',
       optimizing: 'Creating draft…',
       emptyOutline: 'AI returned no valid outline',
+      outlineErrors: {
+        timeout: 'AI outline optimization timed out. Try again.',
+        rate_limited: 'The AI service rate-limited this request. Try again later.',
+        provider_unavailable: 'The AI service is temporarily unavailable. Try again later.',
+        authentication_failed: 'AI authentication failed. Check the selected profile and API key.',
+        provider_rejected_request:
+          'The AI service rejected the outline request. Check whether the model supports structured output.',
+        empty_response: 'The AI service returned empty content. Retry or choose another model.',
+        invalid_json: 'The AI response was not valid JSON. Retry or choose another model.',
+        schema_invalid: 'The AI response did not match the required outline structure. Try again.',
+        network_error: 'Could not reach the AI service. Check the network and try again.',
+        request_failed: 'The AI outline request failed. Try again.',
+      },
       outlineDraft: 'AI outline draft (applied only after confirmation)',
       useDraft: 'Use this draft',
       sectionTitle: 'Section title',
@@ -1388,6 +1420,8 @@ const en: TranslationMessages = {
       generationFailed: 'Failed to start digest generation',
       retryStarted: 'Digest generation restarted',
       retryFailed: 'Retry failed',
+      localFallbackStarted: 'Created a local summary linked to the failed AI run',
+      localFallbackFailed: 'Failed to create a local summary',
       deleted: 'Digest deleted',
       deleteFailed: 'Failed to delete digest',
       configSaved: 'Digest settings saved',

@@ -2,10 +2,12 @@ package dailyreport
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -20,17 +22,33 @@ import (
 )
 
 const (
-	maxArticleInputTokens = int64(3000)
-	maxRequestInputTokens = int64(12000)
-	requestDataBudget     = int64(10500)
+	maxArticleInputTokens   = int64(3000)
+	maxRequestInputTokens   = int64(12000)
+	requestDataBudget       = int64(10500)
+	generationPromptVersion = "daily-report-v2"
 )
 
 var (
-	ErrNoAIProvider = errors.New("no AI provider is configured")
-	ErrAIUsageLimit = errors.New("AI token usage limit reached")
-	htmlTagPattern  = regexp.MustCompile(`(?s)<[^>]*>`)
-	spacePattern    = regexp.MustCompile(`\s+`)
+	ErrNoAIProvider  = errors.New("no AI provider is configured")
+	ErrAIUsageLimit  = errors.New("AI token usage limit reached")
+	htmlTagPattern   = regexp.MustCompile(`(?s)<[^>]*>`)
+	htmlBlockPattern = regexp.MustCompile(`(?is)<(?:script|style|noscript|template)\b[^>]*>.*?</(?:script|style|noscript|template)\s*>`)
+	htmlBreakPattern = regexp.MustCompile(`(?i)<(?:br\s*/?|/p|/div|/li|/h[1-6])\s*>`)
+	spacePattern     = regexp.MustCompile(`\s+`)
 )
+
+type generationCheckpoint struct {
+	Version      int           `json:"version"`
+	Stage        string        `json:"stage"`
+	NextBatch    int           `json:"next_batch,omitempty"`
+	Insights     []aiInsight   `json:"insights,omitempty"`
+	MergeDepth   int           `json:"merge_depth,omitempty"`
+	MergeGroups  [][]aiInsight `json:"merge_groups,omitempty"`
+	NextMerge    int           `json:"next_merge,omitempty"`
+	Merged       []aiInsight   `json:"merged,omitempty"`
+	InputTokens  int64         `json:"input_tokens,omitempty"`
+	OutputTokens int64         `json:"output_tokens,omitempty"`
+}
 
 type aiDailyReportStats interface {
 	TrackAIDailyReport()
@@ -84,6 +102,17 @@ func (g *AIGenerator) SetConsentVerifier(verifier func(*models.DailyReportConfig
 }
 
 func (g *AIGenerator) Generate(ctx context.Context, config *models.DailyReportConfig, candidates []models.DailyReportCandidate) (result AIResult, err error) {
+	return g.GenerateResumable(ctx, config, candidates, "", "", nil)
+}
+
+func (g *AIGenerator) GenerateResumable(
+	ctx context.Context,
+	config *models.DailyReportConfig,
+	candidates []models.DailyReportCandidate,
+	resumeFingerprint string,
+	resumeJSON string,
+	save CheckpointSaver,
+) (result AIResult, err error) {
 	provider, err := g.resolver.Resolve(config)
 	if err != nil {
 		return result, err
@@ -99,6 +128,41 @@ func (g *AIGenerator) Generate(ctx context.Context, config *models.DailyReportCo
 	if err != nil {
 		return result, err
 	}
+	fingerprint, err := generationFingerprint(config, candidates, provider)
+	if err != nil {
+		return result, generationFailure("preparing", "fingerprint_failed", err)
+	}
+	if resumeFingerprint != "" && resumeFingerprint != fingerprint {
+		return result, generationFailure(
+			"preparing",
+			"checkpoint_invalidated",
+			fmt.Errorf("report inputs changed after the checkpoint was created"),
+		)
+	}
+	checkpoint := generationCheckpoint{Version: 1, Stage: "extracting"}
+	if resumeFingerprint == fingerprint && strings.TrimSpace(resumeJSON) != "" {
+		var persisted generationCheckpoint
+		if json.Unmarshal([]byte(resumeJSON), &persisted) == nil && persisted.Version == 1 {
+			checkpoint = persisted
+			result.InputTokens = persisted.InputTokens
+			result.OutputTokens = persisted.OutputTokens
+		}
+	}
+	persist := func() error {
+		if save == nil {
+			return nil
+		}
+		checkpoint.InputTokens = result.InputTokens
+		checkpoint.OutputTokens = result.OutputTokens
+		encoded, marshalErr := json.Marshal(checkpoint)
+		if marshalErr != nil {
+			return marshalErr
+		}
+		return save(GenerationProgress{
+			Fingerprint: fingerprint, Checkpoint: string(encoded), Stage: checkpoint.Stage,
+			InputTokens: result.InputTokens, OutputTokens: result.OutputTokens,
+		})
+	}
 
 	called := false
 	defer func() {
@@ -112,21 +176,48 @@ func (g *AIGenerator) Generate(ctx context.Context, config *models.DailyReportCo
 	if err != nil {
 		return result, err
 	}
-	insights := make([]aiInsight, 0, len(candidates))
-	for _, batch := range batches {
+	insights := append([]aiInsight(nil), checkpoint.Insights...)
+	if checkpoint.NextBatch < 0 || checkpoint.NextBatch > len(batches) {
+		// A malformed stage cursor invalidates reusable output, not the audit of
+		// requests that were already charged. Restart generation while retaining
+		// the accumulated provider usage.
+		checkpoint = generationCheckpoint{
+			Version:      1,
+			Stage:        "extracting",
+			InputTokens:  result.InputTokens,
+			OutputTokens: result.OutputTokens,
+		}
+		insights = nil
+	}
+	for batchIndex := checkpoint.NextBatch; batchIndex < len(batches); batchIndex++ {
+		batch := batches[batchIndex]
+		stage := fmt.Sprintf("extracting:%d/%d", batchIndex+1, len(batches))
 		prompt := extractionPrompt(language, config.Focus, batch)
-		content, inputTokens, outputTokens, attempted, requestErr := g.requestWithRetry(ctx, client, provider.Model, extractionSystemPrompt(language), prompt, 3000, guard)
+		content, inputTokens, outputTokens, attempted, requestErr := g.requestWithRetry(ctx, client, provider, structuredRequest{
+			Stage: stage, SystemPrompt: extractionSystemPrompt(language), UserPrompt: prompt,
+			MaxTokens: 3000, SchemaName: "daily_report_insights", Schema: insightsResponseSchema(),
+		}, guard)
 		called = called || attempted
 		result.InputTokens += inputTokens
 		result.OutputTokens += outputTokens
 		if requestErr != nil {
+			checkpoint.Stage = stage
+			_ = persist()
 			return result, requestErr
 		}
 		parsed, parseErr := parseInsights(content, len(candidates))
 		if parseErr != nil {
-			return result, parseErr
+			checkpoint.Stage = stage
+			_ = persist()
+			return result, generationFailure(stage, parseFailureCode(parseErr), parseErr)
 		}
 		insights = append(insights, parsed...)
+		checkpoint.Stage = "extracting"
+		checkpoint.NextBatch = batchIndex + 1
+		checkpoint.Insights = insights
+		if err := persist(); err != nil {
+			return result, generationFailure(stage, "checkpoint_save_failed", err)
+		}
 	}
 
 	outline, err := parseOutline(config.OutlineJSON)
@@ -138,47 +229,93 @@ func (g *AIGenerator) Generate(ctx context.Context, config *models.DailyReportCo
 	if finalInsightBudget < 1000 {
 		finalInsightBudget = 1000
 	}
-	for depth := 0; ai.EstimateTokens(mustJSON(insights)) > finalInsightBudget; depth++ {
+	for depth := checkpoint.MergeDepth; ai.EstimateTokens(mustJSON(insights)) > finalInsightBudget; depth++ {
 		if depth >= 6 {
-			return result, fmt.Errorf("AI insight merge did not converge")
+			return result, generationFailure("merging", "merge_not_converged", fmt.Errorf("AI insight merge did not converge"))
 		}
-		groups := packInsights(insights, requestDataBudget)
-		merged := make([]aiInsight, 0, len(groups))
-		for _, group := range groups {
+		groups := checkpoint.MergeGroups
+		merged := append([]aiInsight(nil), checkpoint.Merged...)
+		nextGroup := checkpoint.NextMerge
+		if len(groups) == 0 || checkpoint.MergeDepth != depth {
+			groups = packInsights(insights, requestDataBudget)
+			merged = nil
+			nextGroup = 0
+			checkpoint.MergeDepth = depth
+			checkpoint.MergeGroups = groups
+			checkpoint.Merged = nil
+			checkpoint.NextMerge = 0
+		}
+		for groupIndex := nextGroup; groupIndex < len(groups); groupIndex++ {
+			group := groups[groupIndex]
+			stage := fmt.Sprintf("merging:%d:%d/%d", depth+1, groupIndex+1, len(groups))
 			prompt := mergePrompt(language, group)
-			content, inputTokens, outputTokens, attempted, requestErr := g.requestWithRetry(ctx, client, provider.Model, mergeSystemPrompt(language), prompt, 3000, guard)
+			content, inputTokens, outputTokens, attempted, requestErr := g.requestWithRetry(ctx, client, provider, structuredRequest{
+				Stage: stage, SystemPrompt: mergeSystemPrompt(language), UserPrompt: prompt,
+				MaxTokens: 3000, SchemaName: "daily_report_insights", Schema: insightsResponseSchema(),
+			}, guard)
 			called = called || attempted
 			result.InputTokens += inputTokens
 			result.OutputTokens += outputTokens
 			if requestErr != nil {
+				checkpoint.Stage = stage
+				_ = persist()
 				return result, requestErr
 			}
 			parsed, parseErr := parseInsights(content, len(candidates))
 			if parseErr != nil {
-				return result, parseErr
+				checkpoint.Stage = stage
+				_ = persist()
+				return result, generationFailure(stage, parseFailureCode(parseErr), parseErr)
 			}
 			merged = append(merged, parsed...)
+			checkpoint.Stage = "merging"
+			checkpoint.NextMerge = groupIndex + 1
+			checkpoint.Merged = merged
+			if err := persist(); err != nil {
+				return result, generationFailure(stage, "checkpoint_save_failed", err)
+			}
 		}
 		insights = merged
+		checkpoint = generationCheckpoint{Version: 1, Stage: "merging", NextBatch: len(batches), Insights: insights, MergeDepth: depth + 1}
+		if err := persist(); err != nil {
+			return result, generationFailure("merging", "checkpoint_save_failed", err)
+		}
+	}
+	checkpoint.Stage = "finalizing"
+	checkpoint.Insights = insights
+	checkpoint.MergeGroups = nil
+	checkpoint.Merged = nil
+	checkpoint.NextMerge = 0
+	if err := persist(); err != nil {
+		return result, generationFailure("finalizing", "checkpoint_save_failed", err)
 	}
 
 	finalPrompt, err := finalReportPrompt(language, config.Focus, outline, insights)
 	if err != nil {
 		return result, err
 	}
-	content, inputTokens, outputTokens, attempted, requestErr := g.requestWithRetry(ctx, client, provider.Model, finalSystemPrompt(language), finalPrompt, 4096, guard)
+	content, inputTokens, outputTokens, attempted, requestErr := g.requestWithRetry(ctx, client, provider, structuredRequest{
+		Stage: "finalizing", SystemPrompt: finalSystemPrompt(language), UserPrompt: finalPrompt,
+		MaxTokens: 4096, SchemaName: "daily_report_sections", Schema: reportResponseSchema(outline),
+	}, guard)
 	called = called || attempted
 	result.InputTokens += inputTokens
 	result.OutputTokens += outputTokens
 	if requestErr != nil {
+		_ = persist()
 		return result, requestErr
 	}
 	sections, err := parseReportSections(content, outline, len(candidates))
 	if err != nil {
-		return result, err
+		_ = persist()
+		return result, generationFailure("finalizing", parseFailureCode(err), err)
 	}
 	result.Content = ReportContent{Sections: sections}
 	result.Markdown = renderMarkdown(result.Content, candidates)
+	checkpoint.Stage = "completed"
+	if err := persist(); err != nil {
+		return result, generationFailure("finalizing", "checkpoint_save_failed", err)
+	}
 	return result, nil
 }
 
@@ -214,12 +351,19 @@ func (g *AIGenerator) OptimizeOutline(ctx context.Context, focus, language strin
 	}()
 	languageCode := g.resolveLanguage(normalizedLanguage)
 	promptBytes, _ := json.Marshal(map[string]string{"focus": focus, "language": languageCode})
-	content, _, _, attempted, err := g.requestWithRetry(ctx, client, provider.Model, outlineSystemPrompt(languageCode), string(promptBytes), 2048, guard)
+	content, _, _, attempted, err := g.requestWithRetry(ctx, client, provider, structuredRequest{
+		Stage: "outline", SystemPrompt: outlineSystemPrompt(languageCode), UserPrompt: string(promptBytes),
+		MaxTokens: 2048, SchemaName: "daily_report_outline", Schema: outlineResponseSchema(),
+	}, guard)
 	called = attempted
 	if err != nil {
 		return nil, err
 	}
-	return parseOptimizedOutline(content)
+	outline, parseErr := parseOptimizedOutline(content)
+	if parseErr != nil {
+		return nil, generationFailure("outline", parseFailureCode(parseErr), parseErr)
+	}
+	return outline, nil
 }
 
 func (g *AIGenerator) client(provider *ResolvedAIProvider) (*ai.Client, error) {
@@ -292,29 +436,44 @@ func (g *AIGenerator) verifyConsent(config *models.DailyReportConfig, provider *
 	return nil
 }
 
-func (g *AIGenerator) requestWithRetry(ctx context.Context, client *ai.Client, model, systemPrompt, userPrompt string, maxTokens int, guard func() error) (string, int64, int64, bool, error) {
+type structuredRequest struct {
+	Stage        string
+	SystemPrompt string
+	UserPrompt   string
+	MaxTokens    int
+	SchemaName   string
+	Schema       map[string]interface{}
+}
+
+func (g *AIGenerator) requestWithRetry(ctx context.Context, client *ai.Client, provider *ResolvedAIProvider, request structuredRequest, guard func() error) (string, int64, int64, bool, error) {
 	var inputTotal, outputTotal int64
-	inputEstimate := ai.EstimateTokens(systemPrompt + "\n" + userPrompt)
+	inputEstimate := ai.EstimateTokens(request.SystemPrompt + "\n" + request.UserPrompt)
 	delays := g.retryDelays
 	if len(delays) == 0 {
 		delays = []time.Duration{0}
 	}
-	for attempt, delay := range delays {
-		if delay > 0 {
+	schemaEnabled := request.Schema != nil
+	attempt := 0
+	attemptedAny := false
+	skipDelay := false
+	for attempt < len(delays) {
+		delay := delays[attempt]
+		if delay > 0 && !skipDelay {
 			if err := g.sleep(ctx, delay); err != nil {
-				return "", inputTotal, outputTotal, attempt > 0, err
+				return "", inputTotal, outputTotal, attemptedAny, generationFailure(request.Stage, aiErrorCode(err), err)
 			}
 		}
+		skipDelay = false
 		if err := ctx.Err(); err != nil {
-			return "", inputTotal, outputTotal, attempt > 0, err
+			return "", inputTotal, outputTotal, attemptedAny, generationFailure(request.Stage, aiErrorCode(err), err)
 		}
-		requestMaxTokens := maxTokens
+		requestMaxTokens := request.MaxTokens
 		if g.usage != nil {
 			g.usage.WaitForRateLimit()
 			current, _ := g.usage.GetCurrentUsage()
 			limit, _ := g.usage.GetUsageLimit()
 			if g.usage.IsLimitReached() || (limit > 0 && current+inputEstimate >= limit) {
-				return "", inputTotal, outputTotal, attempt > 0, ErrAIUsageLimit
+				return "", inputTotal, outputTotal, attemptedAny, generationFailure(request.Stage, "usage_limit_reached", ErrAIUsageLimit)
 			}
 			if limit > 0 {
 				remainingOutput := limit - current - inputEstimate
@@ -325,31 +484,86 @@ func (g *AIGenerator) requestWithRetry(ctx context.Context, client *ai.Client, m
 		}
 		if guard != nil {
 			if err := guard(); err != nil {
-				return "", inputTotal, outputTotal, attempt > 0, err
+				return "", inputTotal, outputTotal, attemptedAny, generationFailure(request.Stage, "consent_required", err)
 			}
 		}
-		attempted := true
-		response, err := client.RequestWithConfigContext(ctx, ai.RequestConfig{
-			Model: model, SystemPrompt: systemPrompt, UserPrompt: userPrompt,
+		attemptedAny = true
+		requestConfig := ai.RequestConfig{
+			Model: provider.Model, SystemPrompt: request.SystemPrompt, UserPrompt: request.UserPrompt,
 			Temperature: 0.2, MaxTokens: requestMaxTokens,
+		}
+		if schemaEnabled {
+			requestConfig.ResponseFormat = strictJSONSchema(request.SchemaName, request.Schema)
+		}
+		if isOpenRouterEndpoint(provider.Endpoint) {
+			requestConfig.ReasoningConfig = map[string]interface{}{"effort": "low"}
+		}
+		started := time.Now()
+		log.Printf("daily report: AI stage=%s attempt=%d schema=%t started", request.Stage, attempt+1, schemaEnabled)
+		response, err := client.RequestWithConfigContext(ctx, ai.RequestConfig{
+			Model: requestConfig.Model, SystemPrompt: requestConfig.SystemPrompt, UserPrompt: requestConfig.UserPrompt,
+			Temperature: requestConfig.Temperature, MaxTokens: requestConfig.MaxTokens,
+			ReasoningEffort: requestConfig.ReasoningEffort, ReasoningConfig: requestConfig.ReasoningConfig,
+			ResponseFormat: requestConfig.ResponseFormat,
 		})
-		outputEstimate := ai.EstimateTokens(response.Content)
-		inputTotal += inputEstimate
-		outputTotal += outputEstimate
+		inputUsed := response.InputTokens
+		var statusErr *ai.HTTPStatusError
+		httpFailed := errors.As(err, &statusErr)
+		if inputUsed <= 0 && !httpFailed {
+			inputUsed = inputEstimate
+		}
+		outputUsed := response.OutputTokens
+		if outputUsed <= 0 {
+			outputUsed = ai.EstimateTokens(response.Content)
+		}
+		inputTotal += inputUsed
+		outputTotal += outputUsed
 		if g.usage != nil {
-			_ = g.usage.AddUsage(inputEstimate + outputEstimate)
+			_ = g.usage.AddUsage(inputUsed + outputUsed)
 		}
 		if err == nil {
-			return response.Content, inputTotal, outputTotal, attempted, nil
+			log.Printf("daily report: AI stage=%s attempt=%d completed duration_ms=%d input_tokens=%d output_tokens=%d reasoning_tokens=%d", request.Stage, attempt+1, time.Since(started).Milliseconds(), inputUsed, outputUsed, response.ReasoningTokens)
+			return response.Content, inputTotal, outputTotal, attemptedAny, nil
+		}
+		if schemaEnabled && isSchemaUnsupportedError(err) {
+			log.Printf("daily report: AI stage=%s schema unsupported; retrying without response_format", request.Stage)
+			schemaEnabled = false
+			skipDelay = true
+			continue
 		}
 		if ctx.Err() != nil {
-			return "", inputTotal, outputTotal, attempted, ctx.Err()
+			return "", inputTotal, outputTotal, attemptedAny, generationFailure(request.Stage, aiErrorCode(ctx.Err()), ctx.Err())
 		}
+		code := aiErrorCode(err)
+		log.Printf("daily report: AI stage=%s attempt=%d failed duration_ms=%d code=%s", request.Stage, attempt+1, time.Since(started).Milliseconds(), code)
 		if !retryableAIError(err) || attempt == len(delays)-1 {
-			return "", inputTotal, outputTotal, attempted, safeAIRequestError(err)
+			return "", inputTotal, outputTotal, attemptedAny, generationFailure(request.Stage, code, safeAIRequestError(err))
 		}
+		attempt++
 	}
-	return "", inputTotal, outputTotal, false, fmt.Errorf("AI request failed")
+	return "", inputTotal, outputTotal, attemptedAny, generationFailure(request.Stage, "request_failed", fmt.Errorf("AI request failed"))
+}
+
+func strictJSONSchema(name string, schema map[string]interface{}) map[string]interface{} {
+	return map[string]interface{}{
+		"type":        "json_schema",
+		"json_schema": map[string]interface{}{"name": name, "strict": true, "schema": schema},
+	}
+}
+
+func isOpenRouterEndpoint(endpoint string) bool {
+	parsed, err := url.Parse(endpoint)
+	return err == nil && strings.EqualFold(parsed.Hostname(), "openrouter.ai")
+}
+
+func isSchemaUnsupportedError(err error) bool {
+	var statusErr *ai.HTTPStatusError
+	if !errors.As(err, &statusErr) || statusErr.StatusCode != http.StatusBadRequest {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "response_format") || strings.Contains(message, "json_schema") ||
+		strings.Contains(message, "structured output") || strings.Contains(message, "unsupported parameter")
 }
 
 func retryableAIError(err error) bool {
@@ -371,6 +585,56 @@ func safeAIRequestError(err error) error {
 		return fmt.Errorf("AI network request failed")
 	}
 	return fmt.Errorf("AI request failed")
+}
+
+func aiErrorCode(err error) string {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "timeout"
+	}
+	if errors.Is(err, context.Canceled) {
+		return "canceled"
+	}
+	var statusErr *ai.HTTPStatusError
+	if errors.As(err, &statusErr) {
+		switch {
+		case statusErr.StatusCode == http.StatusTooManyRequests:
+			return "rate_limited"
+		case statusErr.StatusCode >= 500:
+			return "provider_unavailable"
+		case statusErr.StatusCode == http.StatusUnauthorized || statusErr.StatusCode == http.StatusForbidden:
+			return "authentication_failed"
+		default:
+			return "provider_rejected_request"
+		}
+	}
+	var networkErr net.Error
+	if errors.As(err, &networkErr) {
+		if networkErr.Timeout() {
+			return "timeout"
+		}
+		return "network_error"
+	}
+	message := strings.ToLower(err.Error())
+	if strings.Contains(message, "empty content") || strings.Contains(message, "no choices") {
+		return "empty_response"
+	}
+	return "request_failed"
+}
+
+func generationFailure(stage, code string, cause error) error {
+	var existing *GenerationError
+	if errors.As(cause, &existing) {
+		return existing
+	}
+	return &GenerationError{Stage: stage, Code: code, Cause: cause}
+}
+
+func parseFailureCode(err error) string {
+	message := strings.ToLower(err.Error())
+	if strings.Contains(message, "valid json") || strings.Contains(message, "decode ai") {
+		return "invalid_json"
+	}
+	return "schema_invalid"
 }
 
 func sleepWithContext(ctx context.Context, duration time.Duration) error {
@@ -397,6 +661,103 @@ type articlePromptItem struct {
 type aiInsight struct {
 	Summary   string `json:"summary"`
 	SourceIDs []int  `json:"source_ids"`
+}
+
+func insightsResponseSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object", "additionalProperties": false, "required": []string{"insights"},
+		"properties": map[string]interface{}{
+			"insights": map[string]interface{}{
+				"type": "array", "items": map[string]interface{}{
+					"type": "object", "additionalProperties": false, "required": []string{"summary", "source_ids"},
+					"properties": map[string]interface{}{
+						"summary":    map[string]interface{}{"type": "string"},
+						"source_ids": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "integer", "minimum": 1}},
+					},
+				},
+			},
+		},
+	}
+}
+
+func reportResponseSchema(outline []OutlineSection) map[string]interface{} {
+	ids := make([]interface{}, 0, len(outline))
+	for _, section := range outline {
+		ids = append(ids, section.ID)
+	}
+	return map[string]interface{}{
+		"type": "object", "additionalProperties": false, "required": []string{"sections"},
+		"properties": map[string]interface{}{
+			"sections": map[string]interface{}{
+				"type": "array", "items": map[string]interface{}{
+					"type": "object", "additionalProperties": false,
+					"required": []string{"id", "title", "summary", "source_ids"},
+					"properties": map[string]interface{}{
+						"id":         map[string]interface{}{"type": "string", "enum": ids},
+						"title":      map[string]interface{}{"type": "string"},
+						"summary":    map[string]interface{}{"type": "string"},
+						"source_ids": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "integer", "minimum": 1}},
+					},
+				},
+			},
+		},
+	}
+}
+
+func outlineResponseSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object", "additionalProperties": false, "required": []string{"outline"},
+		"properties": map[string]interface{}{
+			"outline": map[string]interface{}{
+				"type": "array", "minItems": 1, "maxItems": MaxOutlineSections,
+				"items": map[string]interface{}{
+					"type": "object", "additionalProperties": false,
+					"required": []string{"id", "title", "instruction"},
+					"properties": map[string]interface{}{
+						"id":          map[string]interface{}{"type": "string"},
+						"title":       map[string]interface{}{"type": "string", "maxLength": 80},
+						"instruction": map[string]interface{}{"type": "string", "maxLength": MaxInstructionLength},
+					},
+				},
+			},
+		},
+	}
+}
+
+func generationFingerprint(config *models.DailyReportConfig, candidates []models.DailyReportCandidate, provider *ResolvedAIProvider) (string, error) {
+	type fingerprintCandidate struct {
+		ID     int64  `json:"id"`
+		FeedID int64  `json:"feed_id"`
+		Title  string `json:"title"`
+		Text   string `json:"text"`
+	}
+	payload := struct {
+		Version    string                 `json:"version"`
+		ProfileID  *int64                 `json:"profile_id,omitempty"`
+		Endpoint   string                 `json:"endpoint"`
+		Model      string                 `json:"model"`
+		Focus      string                 `json:"focus"`
+		Outline    string                 `json:"outline"`
+		Language   string                 `json:"language"`
+		Candidates []fingerprintCandidate `json:"candidates"`
+	}{
+		Version: generationPromptVersion, ProfileID: config.AIProfileID,
+		Endpoint: strings.TrimSpace(provider.Endpoint), Model: strings.TrimSpace(provider.Model),
+		Focus: config.Focus, Outline: config.OutlineJSON, Language: config.Language,
+		Candidates: make([]fingerprintCandidate, 0, len(candidates)),
+	}
+	for _, candidate := range candidates {
+		text, _ := candidateContent(candidate)
+		payload.Candidates = append(payload.Candidates, fingerprintCandidate{
+			ID: candidate.ArticleID, FeedID: candidate.FeedID, Title: cleanReportText(candidate.Title), Text: cleanReportText(text),
+		})
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	hash := sha256.Sum256(encoded)
+	return fmt.Sprintf("%x", hash[:]), nil
 }
 
 func buildArticleBatches(candidates []models.DailyReportCandidate) ([]string, error) {
@@ -441,9 +802,23 @@ func buildArticleBatches(candidates []models.DailyReportCandidate) ([]string, er
 }
 
 func cleanPromptText(value string) string {
-	value = html.UnescapeString(value)
+	return strings.TrimSpace(spacePattern.ReplaceAllString(cleanReportText(value), " "))
+}
+
+func cleanReportText(value string) string {
+	value = htmlBlockPattern.ReplaceAllString(value, " ")
+	value = htmlBreakPattern.ReplaceAllString(value, "\n")
 	value = htmlTagPattern.ReplaceAllString(value, " ")
-	return strings.TrimSpace(spacePattern.ReplaceAllString(value, " "))
+	value = html.UnescapeString(value)
+	lines := strings.Split(strings.ReplaceAll(value, "\r", "\n"), "\n")
+	cleaned := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(spacePattern.ReplaceAllString(line, " "))
+		if line != "" {
+			cleaned = append(cleaned, line)
+		}
+	}
+	return strings.Join(cleaned, "\n")
 }
 
 func truncateToTokens(value string, limit int64) string {

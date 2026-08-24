@@ -37,27 +37,29 @@ type configDTO struct {
 }
 
 type runDTO struct {
-	ID           int64                `json:"id"`
-	Kind         string               `json:"kind"`
-	Status       string               `json:"status"`
-	PeriodStart  time.Time            `json:"period_start"`
-	PeriodEnd    time.Time            `json:"period_end"`
-	Progress     int                  `json:"progress"`
-	CurrentStep  string               `json:"current_step"`
-	Title        string               `json:"title"`
-	Content      report.ReportContent `json:"content"`
-	Markdown     string               `json:"markdown"`
-	InputTokens  int64                `json:"input_tokens"`
-	OutputTokens int64                `json:"output_tokens"`
-	TotalTokens  int64                `json:"total_tokens"`
-	ArticleCount int                  `json:"article_count"`
-	AIUsed       bool                 `json:"ai_used"`
-	IsRead       bool                 `json:"is_read"`
-	Error        string               `json:"error,omitempty"`
-	RetryOfID    *int64               `json:"retry_of_id,omitempty"`
-	CreatedAt    time.Time            `json:"created_at"`
-	StartedAt    *time.Time           `json:"started_at,omitempty"`
-	CompletedAt  *time.Time           `json:"completed_at,omitempty"`
+	ID             int64                `json:"id"`
+	Kind           string               `json:"kind"`
+	Status         string               `json:"status"`
+	PeriodStart    time.Time            `json:"period_start"`
+	PeriodEnd      time.Time            `json:"period_end"`
+	Progress       int                  `json:"progress"`
+	CurrentStep    string               `json:"current_step"`
+	Title          string               `json:"title"`
+	Content        report.ReportContent `json:"content"`
+	Markdown       string               `json:"markdown"`
+	InputTokens    int64                `json:"input_tokens"`
+	OutputTokens   int64                `json:"output_tokens"`
+	TotalTokens    int64                `json:"total_tokens"`
+	ArticleCount   int                  `json:"article_count"`
+	AIUsed         bool                 `json:"ai_used"`
+	IsRead         bool                 `json:"is_read"`
+	Error          string               `json:"error,omitempty"`
+	FailureCode    string               `json:"failure_code,omitempty"`
+	GenerationMode string               `json:"generation_mode,omitempty"`
+	RetryOfID      *int64               `json:"retry_of_id,omitempty"`
+	CreatedAt      time.Time            `json:"created_at"`
+	StartedAt      *time.Time           `json:"started_at,omitempty"`
+	CompletedAt    *time.Time           `json:"completed_at,omitempty"`
 }
 
 type sourceDTO struct {
@@ -344,6 +346,7 @@ func HandleMissedRuns(h *core.Handler, w http.ResponseWriter, r *http.Request) {
 
 // HandleHistory lists, reads, marks, retries, or deletes report history.
 // @Summary Manage daily report history
+// @Description List, inspect, mutate, retry, or delete daily report history. The retry route accepts restart=true to discard an invalid checkpoint.
 // @Tags daily-report
 // @Produce json
 // @Success 200 {object} map[string]interface{}
@@ -356,6 +359,7 @@ func HandleMissedRuns(h *core.Handler, w http.ResponseWriter, r *http.Request) {
 // @Router /daily-report/history/{id} [delete]
 // @Router /daily-report/history/{id}/read [put]
 // @Router /daily-report/history/{id}/retry [post]
+// @Router /daily-report/history/{id}/local-fallback [post]
 func HandleHistory(h *core.Handler, w http.ResponseWriter, r *http.Request) {
 	service, ok := requireService(h, w)
 	if !ok {
@@ -423,7 +427,21 @@ func HandleHistory(h *core.Handler, w http.ResponseWriter, r *http.Request) {
 			methodNotAllowed(w, http.MethodPost)
 			return
 		}
-		run, err := service.Retry(r.Context(), id)
+		restart := r.URL.Query().Get("restart") == "true"
+		run, err := service.Retry(r.Context(), id, restart)
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"run": toRunDTO(run)})
+	case "local-fallback":
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w, http.MethodPost)
+			return
+		}
+		run, err := service.UseLocalFallback(r.Context(), id)
 		if err != nil {
 			writeError(w, err)
 			return
@@ -555,6 +573,7 @@ func toRunDTO(run *models.DailyReportRun) runDTO {
 		Progress: run.Progress, CurrentStep: run.CurrentStep, Title: run.Title, Content: content, Markdown: run.Markdown,
 		InputTokens: run.InputTokens, OutputTokens: run.OutputTokens, TotalTokens: run.TotalTokens,
 		ArticleCount: run.ArticleCount, AIUsed: run.AIUsed, IsRead: run.IsRead, Error: run.Error,
+		FailureCode: run.FailureCode, GenerationMode: run.GenerationMode,
 		RetryOfID: run.RetryOfID, CreatedAt: run.CreatedAt, StartedAt: run.StartedAt, CompletedAt: run.CompletedAt,
 	}
 }
@@ -605,6 +624,23 @@ func writeError(w http.ResponseWriter, err error) {
 				"code":    "cloud_processing_consent_required",
 				"message": consentErr.Error(),
 				"details": map[string]interface{}{"cloud_processing": consentErr.CloudProcessing},
+			},
+		})
+		return
+	}
+	var generationErr *report.GenerationError
+	if errors.As(err, &generationErr) {
+		status := http.StatusBadGateway
+		if generationErr.Code == "usage_limit_reached" || generationErr.Code == "consent_required" {
+			status = http.StatusConflict
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error": map[string]interface{}{
+				"code": generationErr.Code, "message": generationErr.Error(),
+				"details": map[string]string{"stage": generationErr.Stage},
 			},
 		})
 		return

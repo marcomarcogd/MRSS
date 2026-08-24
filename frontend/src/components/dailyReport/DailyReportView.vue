@@ -52,6 +52,7 @@ const {
   fetchDetail,
   markRead,
   retryRun,
+  createLocalFallback,
   deleteRun,
   previewGenerate,
   startGenerate,
@@ -64,6 +65,8 @@ const showConfig = ref(false);
 const preview = ref<DailyReportPreview | null>(null);
 const previewing = ref(false);
 const starting = ref(false);
+const retryingRunId = ref<number | null>(null);
+const fallbackRunId = ref<number | null>(null);
 const mobileDetail = ref(false);
 
 const statuses: Array<DailyReportStatus | ''> = [
@@ -82,10 +85,28 @@ const sections = computed(() => parseContent(selectedDetail.value?.run.content))
 const displayError = computed(() => {
   const run = selectedDetail.value?.run;
   if (!run?.error) return '';
+  if (run.generation_mode === 'local' && run.failure_code === 'usage_limit_reached') {
+    return t('dailyReport.detail.localFallbackUsageLimit');
+  }
+  if (run.generation_mode === 'local' && run.failure_code === 'no_ai_provider') {
+    return t('dailyReport.detail.localFallbackNoProvider');
+  }
+  if (run.failure_code === 'checkpoint_invalidated') {
+    return t('dailyReport.detail.checkpointInvalidated');
+  }
   if (run.status === 'partial') return t('dailyReport.detail.partialError');
   if (run.status === 'interrupted') return t('dailyReport.detail.interruptedError');
   return t('dailyReport.detail.failedError');
 });
+const canRecoverAI = computed(() => {
+  const run = selectedDetail.value?.run;
+  return Boolean(
+    run && run.generation_mode === 'ai' && ['failed', 'interrupted'].includes(run.status)
+  );
+});
+const checkpointInvalidated = computed(
+  () => selectedDetail.value?.run.failure_code === 'checkpoint_invalidated'
+);
 const sourcesById = computed(() => {
   const map = new Map<number, DailyReportSource>();
   selectedDetail.value?.sources.forEach((source) => map.set(source.source_index, source));
@@ -209,15 +230,34 @@ async function confirmGenerate(): Promise<void> {
   }
 }
 
-async function handleRetry(run: DailyReportRun): Promise<void> {
+async function handleRetry(run: DailyReportRun, restart = false): Promise<void> {
+  if (retryingRunId.value !== null) return;
+  retryingRunId.value = run.id;
   try {
-    const retried = await retryRun(run.id);
+    const retried = await retryRun(run.id, restart);
     await selectReport(retried.id);
     window.showToast(t('dailyReport.toast.retryStarted'), 'success');
   } catch (error) {
-    if (await promptCloudConsent(error, () => handleRetry(run))) return;
+    if (await promptCloudConsent(error, () => handleRetry(run, restart))) return;
     console.error('Failed to retry daily report:', error);
     window.showToast(t('dailyReport.toast.retryFailed'), 'error');
+  } finally {
+    retryingRunId.value = null;
+  }
+}
+
+async function handleLocalFallback(run: DailyReportRun): Promise<void> {
+  if (fallbackRunId.value !== null) return;
+  fallbackRunId.value = run.id;
+  try {
+    const fallback = await createLocalFallback(run.id);
+    await selectReport(fallback.id);
+    window.showToast(t('dailyReport.toast.localFallbackStarted'), 'success');
+  } catch (error) {
+    console.error('Failed to create local daily report fallback:', error);
+    window.showToast(t('dailyReport.toast.localFallbackFailed'), 'error');
+  } finally {
+    fallbackRunId.value = null;
   }
 }
 
@@ -387,6 +427,9 @@ async function openSource(source: DailyReportSource): Promise<void> {
             </div>
             <p class="mt-2 flex items-center gap-1 text-xs text-text-secondary">
               <PhClock :size="14" />{{ formatDate(run.period_end) }}
+              <span v-if="run.generation_mode === 'local'" class="report-mode-local">
+                {{ t('dailyReport.mode.local') }}
+              </span>
             </p>
             <div
               v-if="['queued', 'refreshing', 'generating'].includes(run.status)"
@@ -479,12 +522,21 @@ async function openSource(source: DailyReportSource): Promise<void> {
                 <PhDownloadSimple :size="19" />
               </button>
               <button
-                v-if="['failed', 'partial', 'interrupted'].includes(selectedDetail.run.status)"
+                v-if="
+                  !canRecoverAI &&
+                  ['failed', 'partial', 'interrupted'].includes(selectedDetail.run.status)
+                "
                 class="detail-icon"
                 :title="t('common.retry')"
+                :disabled="retryingRunId === selectedDetail.run.id"
                 @click="handleRetry(selectedDetail.run)"
               >
-                <PhRepeat :size="19" />
+                <PhCircleNotch
+                  v-if="retryingRunId === selectedDetail.run.id"
+                  :size="19"
+                  class="animate-spin"
+                />
+                <PhRepeat v-else :size="19" />
               </button>
               <button
                 class="detail-icon danger"
@@ -504,14 +556,63 @@ async function openSource(source: DailyReportSource): Promise<void> {
               <p class="mt-2 text-sm text-text-secondary">
                 {{ formatDate(selectedDetail.run.period_start) }} —
                 {{ formatDate(selectedDetail.run.period_end) }}
+                <span
+                  v-if="selectedDetail.run.generation_mode === 'local'"
+                  class="report-mode-local ml-2"
+                >
+                  {{ t('dailyReport.mode.local') }}
+                </span>
               </p>
 
               <div
                 v-if="selectedDetail.run.error"
-                class="mt-5 flex gap-3 rounded-xl border border-red-400/30 bg-red-500/10 p-4 text-sm text-red-600 dark:text-red-300"
+                class="mt-5 rounded-xl border border-red-400/30 bg-red-500/10 p-4 text-sm text-red-600 dark:text-red-300"
               >
-                <PhWarningCircle :size="20" class="shrink-0" />
-                <span>{{ displayError }}</span>
+                <div class="flex gap-3">
+                  <PhWarningCircle :size="20" class="shrink-0" />
+                  <div class="min-w-0">
+                    <p>{{ displayError }}</p>
+                    <p v-if="selectedDetail.run.failure_code" class="mt-1 text-xs opacity-80">
+                      {{
+                        t('dailyReport.detail.failureCode', {
+                          code: selectedDetail.run.failure_code,
+                        })
+                      }}
+                    </p>
+                  </div>
+                </div>
+                <div v-if="canRecoverAI" class="mt-4 flex flex-wrap gap-2 pl-8">
+                  <button
+                    class="report-action primary"
+                    :disabled="retryingRunId !== null || fallbackRunId !== null"
+                    @click="handleRetry(selectedDetail.run, checkpointInvalidated)"
+                  >
+                    <PhCircleNotch
+                      v-if="retryingRunId === selectedDetail.run.id"
+                      :size="17"
+                      class="animate-spin"
+                    />
+                    <PhRepeat v-else :size="17" />
+                    {{
+                      checkpointInvalidated
+                        ? t('dailyReport.action.restartAI')
+                        : t('dailyReport.action.resumeAI')
+                    }}
+                  </button>
+                  <button
+                    class="report-action secondary"
+                    :disabled="retryingRunId !== null || fallbackRunId !== null"
+                    @click="handleLocalFallback(selectedDetail.run)"
+                  >
+                    <PhCircleNotch
+                      v-if="fallbackRunId === selectedDetail.run.id"
+                      :size="17"
+                      class="animate-spin"
+                    />
+                    <PhArticle v-else :size="17" />
+                    {{ t('dailyReport.action.useLocalFallback') }}
+                  </button>
+                </div>
               </div>
 
               <div
@@ -547,30 +648,6 @@ async function openSource(source: DailyReportSource): Promise<void> {
               <p v-else class="mt-10 text-center text-text-secondary">
                 {{ t('dailyReport.detail.contentUnavailable') }}
               </p>
-
-              <section
-                v-if="selectedDetail.sources.length"
-                class="mt-12 border-t border-border pt-6"
-              >
-                <h3 class="text-lg font-semibold">{{ t('dailyReport.detail.sources') }}</h3>
-                <ol class="mt-4 space-y-3">
-                  <li v-for="source in selectedDetail.sources" :key="source.id">
-                    <button class="source-row" @click="openSource(source)">
-                      <span class="source-index">{{ source.source_index }}</span>
-                      <span class="min-w-0 flex-1">
-                        <span class="block truncate text-sm font-medium">{{ source.title }}</span>
-                        <span class="block truncate text-xs text-text-secondary">
-                          {{ source.feed_title
-                          }}<template v-if="source.author"> · {{ source.author }}</template>
-                          <template v-if="source.late_arrival">
-                            · {{ t('dailyReport.detail.lateArrival') }}</template
-                          >
-                        </span>
-                      </span>
-                    </button>
-                  </li>
-                </ol>
-              </section>
             </div>
           </article>
         </div>
@@ -664,6 +741,9 @@ async function openSource(source: DailyReportSource): Promise<void> {
 .report-status {
   @apply inline-flex shrink-0 items-center rounded-full px-2 py-1 text-[10px] font-semibold;
 }
+.report-mode-local {
+  @apply inline-flex shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300;
+}
 .status-success {
   @apply bg-green-500/10 text-green-600 dark:text-green-300;
 }
@@ -694,12 +774,6 @@ async function openSource(source: DailyReportSource): Promise<void> {
 }
 .source-chip {
   @apply max-w-full truncate rounded-full border border-border bg-bg-secondary px-3 py-1.5 text-xs text-text-secondary hover:border-accent hover:text-accent disabled:opacity-40;
-}
-.source-row {
-  @apply flex w-full items-center gap-3 rounded-lg p-2 text-left transition-colors hover:bg-bg-secondary;
-}
-.source-index {
-  @apply flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-bg-tertiary text-xs font-semibold text-text-secondary;
 }
 @media (max-width: 900px) {
   .report-workspace {

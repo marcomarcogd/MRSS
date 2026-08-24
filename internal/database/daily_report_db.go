@@ -336,12 +336,14 @@ func (db *DB) CreateDailyReportRun(run *models.DailyReportRun) (int64, error) {
 			kind, status, period_start, period_end, progress, current_step,
 			title, content_json, markdown, config_snapshot, input_tokens,
 			output_tokens, total_tokens, article_count, ai_used, is_read,
-			error, retry_of_id, created_at, started_at, completed_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			error, failure_code, generation_mode, generation_fingerprint,
+			generation_checkpoint, retry_of_id, created_at, started_at, completed_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, run.Kind, run.Status, run.PeriodStart, run.PeriodEnd, run.Progress,
 		run.CurrentStep, run.Title, run.ContentJSON, run.Markdown,
 		run.ConfigSnapshot, run.InputTokens, run.OutputTokens, run.TotalTokens,
-		run.ArticleCount, run.AIUsed, run.IsRead, run.Error, run.RetryOfID,
+		run.ArticleCount, run.AIUsed, run.IsRead, run.Error, run.FailureCode,
+		run.GenerationMode, run.GenerationHash, run.CheckpointJSON, run.RetryOfID,
 		run.CreatedAt, run.StartedAt, run.CompletedAt)
 	if err != nil {
 		if run.Kind != "manual" {
@@ -378,12 +380,15 @@ func (db *DB) UpdateDailyReportRun(run *models.DailyReportRun) error {
 			current_step = ?, title = ?, content_json = ?, markdown = ?,
 			config_snapshot = ?, input_tokens = ?, output_tokens = ?,
 			total_tokens = ?, article_count = ?, ai_used = ?, is_read = ?,
-			error = ?, retry_of_id = ?, started_at = ?, completed_at = ?
+			error = ?, failure_code = ?, generation_mode = ?,
+			generation_fingerprint = ?, generation_checkpoint = ?, retry_of_id = ?,
+			started_at = ?, completed_at = ?
 		WHERE id = ?
 	`, run.Kind, run.Status, run.PeriodStart, run.PeriodEnd, run.Progress,
 		run.CurrentStep, run.Title, run.ContentJSON, run.Markdown,
 		run.ConfigSnapshot, run.InputTokens, run.OutputTokens, run.TotalTokens,
-		run.ArticleCount, run.AIUsed, run.IsRead, run.Error, run.RetryOfID,
+		run.ArticleCount, run.AIUsed, run.IsRead, run.Error, run.FailureCode,
+		run.GenerationMode, run.GenerationHash, run.CheckpointJSON, run.RetryOfID,
 		run.StartedAt, run.CompletedAt, run.ID)
 	if err != nil {
 		return fmt.Errorf("update daily report run: %w", err)
@@ -407,7 +412,8 @@ func scanDailyReportRun(scanner rowScanner) (*models.DailyReportRun, error) {
 		&run.Progress, &run.CurrentStep, &run.Title, &run.ContentJSON,
 		&run.Markdown, &run.ConfigSnapshot, &run.InputTokens, &run.OutputTokens,
 		&run.TotalTokens, &run.ArticleCount, &run.AIUsed, &run.IsRead,
-		&run.Error, &retryOfID, &run.CreatedAt, &startedAt, &completedAt,
+		&run.Error, &run.FailureCode, &run.GenerationMode, &run.GenerationHash,
+		&run.CheckpointJSON, &retryOfID, &run.CreatedAt, &startedAt, &completedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -427,7 +433,8 @@ func scanDailyReportRun(scanner rowScanner) (*models.DailyReportRun, error) {
 const dailyReportRunColumns = `
 	id, kind, status, period_start, period_end, progress, current_step,
 	title, content_json, markdown, config_snapshot, input_tokens, output_tokens,
-	total_tokens, article_count, ai_used, is_read, error, retry_of_id,
+	total_tokens, article_count, ai_used, is_read, error, failure_code,
+	generation_mode, generation_fingerprint, generation_checkpoint, retry_of_id,
 	created_at, started_at, completed_at`
 
 // GetDailyReportRun returns one report history entry.

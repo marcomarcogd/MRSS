@@ -151,6 +151,10 @@ type DailyReportRun struct {
 	AIUsed         bool       `json:"ai_used"`
 	IsRead         bool       `json:"is_read"`
 	Error          string     `json:"error"`
+	FailureCode    string     `json:"failure_code"`
+	GenerationMode string     `json:"generation_mode"`
+	GenerationHash string     `json:"-"`
+	CheckpointJSON string     `json:"-"`
 	RetryOfID      *int64     `json:"retry_of_id"`
 	CreatedAt      time.Time  `json:"created_at"`
 	StartedAt      *time.Time `json:"started_at"`

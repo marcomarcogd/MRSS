@@ -3,6 +3,7 @@ package dailyreport
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"MRSS/internal/models"
@@ -75,6 +76,50 @@ type AIResult struct {
 	Markdown     string
 	InputTokens  int64
 	OutputTokens int64
+}
+
+// GenerationProgress is the non-sensitive, persisted state of a multi-stage
+// report generation. Checkpoint contains only validated AI insights and source
+// identifiers; credentials and request headers are never included.
+type GenerationProgress struct {
+	Fingerprint  string
+	Checkpoint   string
+	Stage        string
+	InputTokens  int64
+	OutputTokens int64
+}
+
+type CheckpointSaver func(GenerationProgress) error
+
+// ResumableReportGenerator is implemented by cloud generators that can resume
+// already completed extraction and merge batches after a retry or restart.
+type ResumableReportGenerator interface {
+	GenerateResumable(context.Context, *models.DailyReportConfig, []models.DailyReportCandidate, string, string, CheckpointSaver) (AIResult, error)
+}
+
+// GenerationError exposes a stable, non-sensitive failure code and stage to
+// handlers and logs while retaining the original cause for errors.Is/As.
+type GenerationError struct {
+	Code  string
+	Stage string
+	Cause error
+}
+
+func (e *GenerationError) Error() string {
+	if e == nil {
+		return "daily report generation failed"
+	}
+	if e.Stage == "" {
+		return fmt.Sprintf("daily report generation failed (%s)", e.Code)
+	}
+	return fmt.Sprintf("daily report generation failed at %s (%s)", e.Stage, e.Code)
+}
+
+func (e *GenerationError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Cause
 }
 
 type ReportGenerator interface {

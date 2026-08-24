@@ -386,6 +386,19 @@ func migrateDailyReportArticleMetadata(db *sql.DB) error {
 	if err := addColumnIfMissing(db, "daily_report_sources", "article_unique_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
+	for _, column := range []struct {
+		name       string
+		definition string
+	}{
+		{"failure_code", "TEXT NOT NULL DEFAULT ''"},
+		{"generation_mode", "TEXT NOT NULL DEFAULT ''"},
+		{"generation_fingerprint", "TEXT NOT NULL DEFAULT ''"},
+		{"generation_checkpoint", "TEXT NOT NULL DEFAULT ''"},
+	} {
+		if err := addColumnIfMissing(db, "daily_report_runs", column.name, column.definition); err != nil {
+			return err
+		}
+	}
 	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_daily_report_sources_unique ON daily_report_sources(article_unique_id)`); err != nil {
 		return err
 	}

@@ -27,6 +27,7 @@ type RequestConfig struct {
 	MaxTokens           int                    // Optional max tokens override (deprecated for OpenAI)
 	MaxCompletionTokens int                    // OpenAI: new parameter for max completion tokens
 	ReasoningEffort     string                 // OpenAI: reasoning effort for o-series models ("none", "minimal", "low", "medium", "high")
+	ReasoningConfig     map[string]interface{} // OpenRouter: provider-neutral reasoning controls
 	ResponseFormat      map[string]interface{} // OpenAI/Ollama: JSON schema for structured outputs
 	ThinkingConfig      map[string]interface{} // Gemini: thinking configuration
 	PresencePenalty     float64                // OpenAI/Gemini: presence penalty
@@ -38,9 +39,12 @@ type RequestConfig struct {
 
 // ResponseResult holds the result from an AI API call
 type ResponseResult struct {
-	Content    string     // The main response content
-	Thinking   string     // Optional thinking/reasoning content (for models that support it)
-	FormatUsed FormatType // Which format was successful
+	Content         string     // The main response content
+	Thinking        string     // Optional thinking/reasoning content (for models that support it)
+	FormatUsed      FormatType // Which format was successful
+	InputTokens     int64      // Provider-reported prompt/input tokens, when available
+	OutputTokens    int64      // Provider-reported completion/output tokens, when available
+	ReasoningTokens int64      // Provider-reported reasoning tokens, when available
 }
 
 // FormatHandler defines the interface for handling different API formats
