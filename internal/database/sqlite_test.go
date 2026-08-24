@@ -111,6 +111,23 @@ func TestDatabaseInitialization(t *testing.T) {
 		t.Fatalf("Expected first-seen index to exist")
 	}
 
+	run := &models.DailyReportRun{
+		Kind: "manual", Status: "failed", PeriodStart: time.Now().Add(-time.Hour), PeriodEnd: time.Now(),
+		FailureCode: "timeout", GenerationMode: "ai", GenerationHash: "safe-fingerprint",
+		CheckpointJSON: `{"version":1,"stage":"finalizing"}`,
+	}
+	if _, err := db.CreateDailyReportRun(run); err != nil {
+		t.Fatalf("Failed to create checkpointed daily report: %v", err)
+	}
+	persistedRun, err := db.GetDailyReportRun(run.ID)
+	if err != nil {
+		t.Fatalf("Failed to reload checkpointed daily report: %v", err)
+	}
+	if persistedRun.FailureCode != run.FailureCode || persistedRun.GenerationMode != run.GenerationMode ||
+		persistedRun.GenerationHash != run.GenerationHash || persistedRun.CheckpointJSON != run.CheckpointJSON {
+		t.Fatalf("Daily report checkpoint fields did not round-trip: %+v", persistedRun)
+	}
+
 	// Schema version table removed in development - skip version check
 }
 
@@ -182,6 +199,7 @@ func TestDailyReportDevelopmentMigrationIsIdempotent(t *testing.T) {
 	for table, column := range map[string]string{
 		"articles":             "has_valid_published_time",
 		"daily_report_sources": "article_unique_id",
+		"daily_report_runs":    "failure_code",
 	} {
 		var count int
 		if err := db.QueryRow(
@@ -191,6 +209,15 @@ func TestDailyReportDevelopmentMigrationIsIdempotent(t *testing.T) {
 		}
 		if count != 1 {
 			t.Fatalf("expected exactly one %s.%s column, got %d", table, column, count)
+		}
+	}
+	for _, column := range []string{"generation_mode", "generation_fingerprint", "generation_checkpoint"} {
+		var count int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('daily_report_runs') WHERE name = ?`, column).Scan(&count); err != nil {
+			t.Fatalf("inspect daily_report_runs.%s: %v", column, err)
+		}
+		if count != 1 {
+			t.Fatalf("expected exactly one daily_report_runs.%s column, got %d", column, count)
 		}
 	}
 	var indexSQL string
@@ -687,5 +714,135 @@ func TestCleanupUnimportantArticles(t *testing.T) {
 	}
 	if secondCount != 0 {
 		t.Fatalf("Expected idempotent cleanup to delete 0 articles, deleted %d", secondCount)
+	}
+}
+
+func TestSearchArticlesWithTermsRanksAndExplainsMatches(t *testing.T) {
+	db, err := NewDB(":memory:")
+	if err != nil {
+		t.Fatalf("NewDB error: %v", err)
+	}
+	defer db.Close()
+	if err := db.Init(); err != nil {
+		t.Fatalf("Init error: %v", err)
+	}
+
+	result, err := db.Exec(`INSERT INTO feeds (url, title) VALUES (?, ?)`, "https://example.com/feed", "Example")
+	if err != nil {
+		t.Fatalf("insert feed: %v", err)
+	}
+	feedID, _ := result.LastInsertId()
+	insertArticle := func(title, originalSummary string, hidden bool) int64 {
+		t.Helper()
+		row, insertErr := db.Exec(`
+			INSERT INTO articles (feed_id, title, url, published_at, original_summary, is_hidden)
+			VALUES (?, ?, ?, ?, ?, ?)
+		`, feedID, title, "https://example.com/"+title, time.Now(), originalSummary, hidden)
+		if insertErr != nil {
+			t.Fatalf("insert article %q: %v", title, insertErr)
+		}
+		id, _ := row.LastInsertId()
+		return id
+	}
+
+	titleID := insertArticle("AI safety engineering guide", "Practical controls", false)
+	summaryID := insertArticle("Engineering notes", "A guide to AI safety evaluations", false)
+	contentID := insertArticle("Research digest", "Weekly research", false)
+	hiddenID := insertArticle("AI safety hidden article", "must stay hidden", true)
+	if err := db.SetArticleContent(contentID, `<p>Hands-on <strong>AI safety</strong> testing.</p><script>secret()</script>`); err != nil {
+		t.Fatalf("set content: %v", err)
+	}
+
+	results, err := db.SearchArticlesWithTerms(AISearchQuery{
+		Original: "AI safety",
+		Required: []string{"AI", "safety"},
+		Optional: []string{"engineering", "testing"},
+		Patterns: []string{"AI%safety"},
+		Limit:    10,
+	})
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if len(results) != 3 {
+		t.Fatalf("expected 3 visible results, got %d: %+v", len(results), results)
+	}
+	if results[0].Article.ID != titleID {
+		t.Fatalf("expected title phrase match first, got article %d", results[0].Article.ID)
+	}
+	seen := map[int64]AISearchResult{}
+	for _, searchResult := range results {
+		seen[searchResult.Article.ID] = searchResult
+		if searchResult.Article.ID == hiddenID {
+			t.Fatal("hidden article must not be returned")
+		}
+		if searchResult.RelevanceScore <= 0 || len(searchResult.MatchedTerms) == 0 || len(searchResult.MatchedFields) == 0 {
+			t.Fatalf("missing relevance explanation: %+v", searchResult)
+		}
+	}
+	if _, ok := seen[summaryID]; !ok {
+		t.Fatal("expected original RSS summary match")
+	}
+	contentResult, ok := seen[contentID]
+	if !ok {
+		t.Fatal("expected article content match")
+	}
+	if strings.Contains(contentResult.Excerpt, "<") || strings.Contains(contentResult.Excerpt, "secret()") {
+		t.Fatalf("excerpt was not sanitized: %q", contentResult.Excerpt)
+	}
+
+	injectionResults, err := db.SearchArticlesWithTerms(AISearchQuery{
+		Original: `' OR 1=1 --`,
+		Required: []string{`%' OR 1=1 --`},
+		Limit:    10,
+	})
+	if err != nil {
+		t.Fatalf("parameterized search rejected input unexpectedly: %v", err)
+	}
+	if len(injectionResults) != 0 {
+		t.Fatalf("SQL-like input must not broaden results: %+v", injectionResults)
+	}
+
+	// A broad expansion can match more rows than the bounded candidate set.
+	// The exact original phrase must be prioritized before LIMIT, even when it
+	// is older and inserted after all broad matches.
+	for i := 0; i < 230; i++ {
+		if _, err := db.Exec(`
+			INSERT INTO articles (feed_id, title, url, published_at, original_summary)
+			VALUES (?, ?, ?, ?, ?)
+		`, feedID, fmt.Sprintf("Broad result %03d", i), fmt.Sprintf("https://example.com/broad/%d", i), time.Now(), "common expansion"); err != nil {
+			t.Fatalf("insert broad search candidate %d: %v", i, err)
+		}
+	}
+	exactResult, err := db.Exec(`
+		INSERT INTO articles (feed_id, title, url, published_at, original_summary)
+		VALUES (?, ?, ?, ?, ?)
+	`, feedID, "rare exact phrase", "https://example.com/exact", time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), "common expansion")
+	if err != nil {
+		t.Fatalf("insert exact search candidate: %v", err)
+	}
+	exactID, _ := exactResult.LastInsertId()
+
+	boundedResults, err := db.SearchArticlesWithTerms(AISearchQuery{
+		Original: "rare exact phrase",
+		Required: []string{"common"},
+		Limit:    10,
+	})
+	if err != nil {
+		t.Fatalf("bounded candidate search: %v", err)
+	}
+	if len(boundedResults) == 0 || boundedResults[0].Article.ID != exactID {
+		t.Fatalf("expected exact phrase result before bounded broad matches, got %+v", boundedResults)
+	}
+
+	wildcardOnlyResults, err := db.SearchArticlesWithTerms(AISearchQuery{
+		Original: "missing literal phrase",
+		Patterns: []string{"%", " % % "},
+		Limit:    10,
+	})
+	if err != nil {
+		t.Fatalf("wildcard-only pattern search: %v", err)
+	}
+	if len(wildcardOnlyResults) != 0 {
+		t.Fatalf("wildcard-only patterns must not broaden results: %+v", wildcardOnlyResults)
 	}
 }
