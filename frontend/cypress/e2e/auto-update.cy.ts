@@ -151,6 +151,7 @@ describe('Auto Update Feature', () => {
 
   describe('Update Available Dialog', () => {
     it('should show an update dialog when startup update checks are enabled', () => {
+      // Enable startup update checks.
       cy.intercept('GET', '/api/settings', {
         statusCode: 200,
         body: {
@@ -417,6 +418,7 @@ describe('Auto Update Feature', () => {
       // Verify downloading message appears
       cy.contains(/downloading|正在下载/i).should('be.visible');
 
+      // Verify progress bar exists
       cy.get('[data-testid="update-download-progress"]').should('be.visible');
     });
 

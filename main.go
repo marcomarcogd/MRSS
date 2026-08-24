@@ -23,6 +23,7 @@ import (
 
 	"MRSS/internal/ai"
 	"MRSS/internal/database"
+	"MRSS/internal/desktopapi"
 	"MRSS/internal/feed"
 	handlers "MRSS/internal/handlers/core"
 	"MRSS/internal/network"
@@ -287,6 +288,23 @@ func main() {
 	h.SetApp(app)
 	h.SetDailyReportNotifier(newDesktopDailyReportNotifier(notificationService, app, db))
 	log.Println("Browser integration enabled")
+
+	// Expose the API to local integrations such as the mrss-assistant skill.
+	// The listener is loopback-only and deliberately does not serve frontend assets.
+	desktopAPIServer, apiErr := desktopapi.Start(
+		desktopapi.DefaultAddress,
+		routes.WrapWithMiddleware(apiMux, routes.DefaultConfig()),
+	)
+	if apiErr != nil {
+		log.Printf("Local desktop API unavailable: %v", apiErr)
+	} else {
+		log.Printf("Local desktop API listening on http://%s/api", desktopAPIServer.Address())
+		go func() {
+			if serveErr := <-desktopAPIServer.Errors(); serveErr != nil {
+				log.Printf("Local desktop API stopped unexpectedly: %v", serveErr)
+			}
+		}()
+	}
 
 	// Get window dimensions from stored state or defaults
 	windowWidth := 1024
@@ -668,6 +686,13 @@ func main() {
 
 	// Cleanup when app exits
 	log.Println("Shutting down...")
+	if desktopAPIServer != nil {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if shutdownErr := desktopAPIServer.Shutdown(shutdownCtx); shutdownErr != nil {
+			log.Printf("Local desktop API shutdown failed: %v", shutdownErr)
+		}
+		shutdownCancel()
+	}
 
 	// Stop background tasks first
 	h.StopDailyReportScheduler()

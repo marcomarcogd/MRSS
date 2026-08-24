@@ -35,12 +35,12 @@ cp -R ./mrss-assistant ~/.codex/skills/
 
 ## Use
 
-Start MRSS in server mode or run the desktop app with its local API available.
+Start the MRSS desktop app. Released desktop builds expose `http://127.0.0.1:1234/api` on the loopback interface while MRSS is running. The API is not exposed to other computers on the network. If port `1234` is occupied, MRSS continues running but the local API remains unavailable until the port is freed and the app is restarted.
 
-Server mode:
+Alternatively, run MRSS in headless server mode:
 
 ```bash
-docker run -p 1234:1234 ghcr.io/devxdojo/mrss:latest-amd64
+docker run -p 1234:1234 ghcr.io/marcomarcogd/mrss:latest
 ```
 
 Then ask Codex:
@@ -49,7 +49,7 @@ Then ask Codex:
 Use $mrss-assistant to inspect my unread MRSS articles and summarize the most important items.
 ```
 
-The skill defaults to `http://localhost:1234/api`. If your instance uses another host or port, include it in the prompt.
+The skill defaults to `http://127.0.0.1:1234/api`. If your instance uses another host or port, include it in the prompt.
 
 ## Safety Model
 

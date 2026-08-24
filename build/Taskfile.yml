@@ -78,7 +78,7 @@ tasks:
       - "windows/tray-light.ico"
       - "windows/tray-dark.ico"
     cmds:
-      - wails3 generate icons -input appicon.png -macfilename darwin/icons.icns
+      - wails3 generate icons -input appicon.png -windowsfilename= -macfilename darwin/icons.icns
       - npm --prefix ../frontend run generate:windows-icons
 
   dev:frontend:

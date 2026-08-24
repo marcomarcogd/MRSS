@@ -8,8 +8,9 @@
 
 [![Release](https://img.shields.io/github/v/release/marcomarcogd/MRSS?label=release)](https://github.com/marcomarcogd/MRSS/releases/latest)
 [![License](https://img.shields.io/badge/license-GPL--3.0-green.svg)](LICENSE)
-[![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go)](https://go.dev/)
-[![Wails](https://img.shields.io/badge/Wails-v3-blue)](https://wails.io/)
+[![Go](https://img.shields.io/badge/Go-1.27+-00ADD8?logo=go)](https://go.dev/)
+[![Wails](https://img.shields.io/badge/Wails-v3%20beta-blue)](https://wails.io/)
+[![Vue.js](https://img.shields.io/badge/Vue.js-3.5+-4FC08D?logo=vue.js)](https://vuejs.org/)
 
 MRSS is a privacy-focused, cross-platform desktop RSS reader with translation, local and AI summaries, feed discovery, automation, and integrations. Application data is stored locally, and this distribution does not include analytics or telemetry.
 
@@ -53,9 +54,9 @@ Portable mode continues to use the adjacent `data/` directory. Server mode conti
 
 Requirements:
 
-- Go 1.25+
+- Go 1.27+
 - Node.js 24
-- Wails CLI `v3.0.0-alpha2.117`
+- Wails CLI `v3.0.0-beta.8`
 - Platform dependencies listed in [Build Requirements](docs/BUILD_REQUIREMENTS.md)
 
 ```bash
@@ -63,7 +64,7 @@ git clone https://github.com/marcomarcogd/MRSS.git
 cd MRSS
 go mod download
 cd frontend && npm ci && cd ..
-go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha2.117
+go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.8
 task build
 ```
 
@@ -82,7 +83,9 @@ See [Contributing](CONTRIBUTING.md), [Code of Conduct](CODE_OF_CONDUCT.md), [Tes
 docker run -d -p 1234:1234 -v mrss-data:/app/data ghcr.io/marcomarcogd/mrss:latest
 ```
 
-The local API is documented in [Swagger](docs/SERVER_MODE/swagger.json). The packaged Codex skill is documented in [Skills](docs/SKILLS.md).
+The desktop app exposes its REST API at `http://127.0.0.1:1234/api` while it is running. The listener accepts loopback requests only and is not exposed to other computers on the network. If port `1234` is occupied, MRSS continues running but the desktop API remains unavailable until the port is freed and the app is restarted.
+
+The complete API is documented in [Swagger](docs/SERVER_MODE/swagger.json). The packaged Codex skill is documented in [Skills](docs/SKILLS.md).
 
 ## Fork attribution and license
 

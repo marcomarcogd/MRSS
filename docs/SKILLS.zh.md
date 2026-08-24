@@ -35,12 +35,12 @@ cp -R ./mrss-assistant ~/.codex/skills/
 
 ## 使用
 
-启动 MRSS server 模式，或运行带本地 API 的桌面版。
+启动 MRSS 桌面版。发行版会在应用运行期间通过本机回环接口提供 `http://127.0.0.1:1234/api`。该 API 不会暴露给局域网中的其他计算机。如果端口 `1234` 已被占用，MRSS 会继续运行，但本地 API 将不可用；释放端口并重启应用后即可恢复。
 
-Server 模式示例：
+也可以使用无界面的 server 模式：
 
 ```bash
-docker run -p 1234:1234 ghcr.io/devxdojo/mrss:latest-amd64
+docker run -p 1234:1234 ghcr.io/marcomarcogd/mrss:latest
 ```
 
 然后在 Codex 中输入：
@@ -49,7 +49,7 @@ docker run -p 1234:1234 ghcr.io/devxdojo/mrss:latest-amd64
 Use $mrss-assistant to inspect my unread MRSS articles and summarize the most important items.
 ```
 
-该 skill 默认访问 `http://localhost:1234/api`。如果你的实例使用其他主机或端口，请在提示词中说明。
+该 skill 默认访问 `http://127.0.0.1:1234/api`。如果你的实例使用其他主机或端口，请在提示词中说明。
 
 ## 安全模型
 

@@ -243,6 +243,7 @@ export function useSettingsAutoSave(
     if (saveTimeout) {
       clearTimeout(saveTimeout);
       saveTimeout = null;
+      void autoSave();
     }
     void persistCurrentChanges();
   });

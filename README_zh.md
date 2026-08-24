@@ -8,8 +8,9 @@
 
 [![Release](https://img.shields.io/github/v/release/marcomarcogd/MRSS?label=release)](https://github.com/marcomarcogd/MRSS/releases/latest)
 [![License](https://img.shields.io/badge/license-GPL--3.0-green.svg)](LICENSE)
-[![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go)](https://go.dev/)
-[![Wails](https://img.shields.io/badge/Wails-v3-blue)](https://wails.io/)
+[![Go](https://img.shields.io/badge/Go-1.27+-00ADD8?logo=go)](https://go.dev/)
+[![Wails](https://img.shields.io/badge/Wails-v3%20beta-blue)](https://wails.io/)
+[![Vue.js](https://img.shields.io/badge/Vue.js-3.5+-4FC08D?logo=vue.js)](https://vuejs.org/)
 
 MRSS 是一款注重隐私的跨平台桌面 RSS 阅读器，提供翻译、本地与 AI 摘要、订阅发现、自动化和多种集成功能。应用数据保存在本机，本发行版不包含分析或遥测服务。
 
@@ -53,9 +54,9 @@ MRSS 是一款注重隐私的跨平台桌面 RSS 阅读器，提供翻译、本�
 
 环境要求：
 
-- Go 1.25+
+- Go 1.27+
 - Node.js 24
-- Wails CLI `v3.0.0-alpha2.117`
+- Wails CLI `v3.0.0-beta.8`
 - [构建要求](docs/BUILD_REQUIREMENTS.md)中列出的平台依赖
 
 ```bash
@@ -63,7 +64,7 @@ git clone https://github.com/marcomarcogd/MRSS.git
 cd MRSS
 go mod download
 cd frontend && npm ci && cd ..
-go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha2.117
+go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.8
 task build
 ```
 
@@ -82,7 +83,9 @@ pre-commit run --all-files
 docker run -d -p 1234:1234 -v mrss-data:/app/data ghcr.io/marcomarcogd/mrss:latest
 ```
 
-本地 API 参见 [Swagger 文档](docs/SERVER_MODE/swagger.json)，Codex Skill 参见 [Skills 文档](docs/SKILLS.zh.md)。
+桌面应用运行时会在 `http://127.0.0.1:1234/api` 提供 REST API。监听器仅接受本机回环请求，不会暴露给局域网中的其他计算机。如果端口 `1234` 已被占用，MRSS 会继续运行，但桌面 API 将不可用；释放端口并重启应用后即可恢复。
+
+完整 API 参见 [Swagger 文档](docs/SERVER_MODE/swagger.json)，Codex Skill 参见 [Skills 文档](docs/SKILLS.zh.md)。
 
 ## 复刻归属与许可证
 

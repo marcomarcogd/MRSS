@@ -30,6 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - 新增独立日报配置、运行记录和来源快照，并为文章记录不可变的首次收录时间；旧文章优先按发布时间回填，缺少发布时间时使用迁移时间。
 - 默认排除隐藏文章，但包含已读和未读文章。自动日报不会重复引用已被成功定时报告收录的文章，手动日报允许再次选择同一周期。
+- 同步上游 v1.3.27：桌面应用运行时在 `127.0.0.1:1234` 向本机集成提供 REST API，并限制为回环访问和受保护的跨域请求。
+- 构建基线升级到 Go 1.27 与 Wails v3 beta，并吸收设置保存、更新进度、活动栏布局、macOS 签名、空标签管理和重要文章清理等上游修复。
 - Windows 安装包和便携包仍未使用 Authenticode 证书签名，Publisher 可能显示为未知，Microsoft Defender SmartScreen 仍可能提示。本版本不会绕过 UAC、Defender 或 SmartScreen。
 
 ### English
@@ -55,6 +57,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added dedicated report configuration, run history, and source snapshot storage, plus an immutable first-seen timestamp for articles. Existing articles are backfilled from their publication time when available, otherwise from migration time.
 - Hidden articles are excluded by default, while both read and unread articles are included. Successful scheduled reports do not reuse already reported articles; manual reports may intentionally cover the same period again.
+- Synchronized upstream v1.3.27: while the desktop app is running, it exposes a REST API for local integrations on `127.0.0.1:1234`, restricted to loopback and protected cross-origin requests.
+- Raised the build baseline to Go 1.27 and Wails v3 beta, and incorporated upstream fixes for settings saves, update progress, activity-bar layout, macOS signing, empty tag management, and protected-article cleanup.
 - Windows installer and portable artifacts remain unsigned with Authenticode. Publisher may appear as unknown and Microsoft Defender SmartScreen may still warn. This release does not bypass UAC, Defender, or SmartScreen.
 
 ## [1.6.2] - 2026-08-18
@@ -279,6 +283,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Fixed article cards reloading stale layout settings and preventing users from switching away from card layout. (#987)
+
+## [1.3.27] - 2026-08-22
+
+### Added
+
+- Exposed the desktop REST API to local integrations on `127.0.0.1:1234`, with loopback and cross-origin request protections. (issue 1022)
+
+### Changed
+
+- Updated the Go build baseline to 1.27.
+
+### Fixed
+
+- Flushed pending debounced settings saves when settings tabs unmount. (issue 1011)
+- Rendered the download progress already tracked by the update flow. (issue 1010)
+- Kept activity-bar navigation aligned in macOS WKWebView. (issue 1008)
+- Signed and strictly verified completed macOS app bundles before creating DMGs. (issue 1009)
+- Fixed Manage Tags when the tag database is empty. (issue 1016)
+- Preserved protected articles during manual cleanup. (issue 1006)
 
 ## [1.3.26] - 2026-08-16
 
