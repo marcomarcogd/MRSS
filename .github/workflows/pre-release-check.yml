@@ -254,6 +254,43 @@ jobs:
             Write-Host "$($artifact.Name): Authenticode=$($signature.Status)"
           }
 
+      - name: Create Windows portable test package
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $packageJson = Get-Content "frontend/package.json" -Raw | ConvertFrom-Json
+          $version = $packageJson.version
+          $arch = "${{ matrix.arch }}"
+          $portableDir = "build/portable-test-$arch"
+          $portableZip = "build/bin/MRSS-$version-windows-$arch-portable.zip"
+
+          if (Test-Path $portableDir) {
+            Remove-Item -Recurse -Force $portableDir
+          }
+          New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
+          Copy-Item "build/bin/MRSS.exe", "LICENSE", "NOTICE" -Destination $portableDir
+          New-Item -ItemType File -Force -Path "$portableDir/portable.txt" | Out-Null
+          @"
+          MRSS Portable Test Build
+
+          Keep MRSS.exe and portable.txt in the same directory. Portable data is
+          stored in the data directory beside MRSS.exe and remains isolated from
+          an installed MRSS release.
+          "@ | Out-File -FilePath "$portableDir/README.txt" -Encoding UTF8
+
+          Compress-Archive -Path "$portableDir/*" -DestinationPath $portableZip -Force
+          $archive = [IO.Compression.ZipFile]::OpenRead((Resolve-Path $portableZip))
+          try {
+            $entries = $archive.Entries.FullName
+            if ($entries -notcontains "portable.txt") {
+              Write-Error "Portable package is missing portable.txt"
+              exit 1
+            }
+          }
+          finally {
+            $archive.Dispose()
+          }
+
       - name: Upload Windows test artifacts
         if: matrix.platform == 'windows'
         uses: actions/upload-artifact@v7
@@ -261,8 +298,8 @@ jobs:
           name: MRSS-${{ matrix.arch }}-windows-test
           if-no-files-found: error
           path: |
-            build/bin/MRSS.exe
             build/bin/MRSS-*-windows-${{ matrix.arch }}-installer.exe
+            build/bin/MRSS-*-windows-${{ matrix.arch }}-portable.zip
 
       - name: Create installer (Linux)
         if: matrix.platform == 'linux'
