@@ -1248,7 +1248,6 @@ const zh: TranslationMessages = {
       articles: '已收集文章',
       inputTokens: '输入 Token',
       outputTokens: '输出 Token',
-      autoRefresh: '生成状态与详细进度每 2 秒自动刷新。',
       stages: {
         queued: '正在等待生成任务开始…',
         refreshing: '正在刷新所选订阅源…',

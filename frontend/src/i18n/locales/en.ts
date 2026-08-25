@@ -1276,7 +1276,6 @@ const en: TranslationMessages = {
       articles: 'Articles collected',
       inputTokens: 'Input tokens',
       outputTokens: 'Output tokens',
-      autoRefresh: 'Generation status and detailed progress refresh automatically every 2 seconds.',
       stages: {
         queued: 'Waiting for the generation task to start…',
         refreshing: 'Refreshing the selected feeds…',

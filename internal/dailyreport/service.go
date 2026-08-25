@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -20,7 +21,9 @@ var (
 )
 
 type preparedRunInputs struct {
-	candidates []models.DailyReportCandidate
+	candidates        []models.DailyReportCandidate
+	carryInputTokens  int64
+	carryOutputTokens int64
 }
 
 type Service struct {
@@ -331,14 +334,67 @@ func (s *Service) Retry(ctx context.Context, id int64, restart ...bool) (*models
 			return nil, generationFailure("preparing", "checkpoint_invalidated", ErrCheckpointInvalidated)
 		}
 	}
-	mode := ""
-	if restartRequested {
-		mode = "ai"
+	if err := s.claimRun(); err != nil {
+		return nil, err
 	}
-	return s.startOneModePrepared(
-		ctx, config, RunKindManual, original.PeriodStart, original.PeriodEnd, &id, mode,
-		&preparedRunInputs{candidates: append([]models.DailyReportCandidate(nil), candidates...)},
-	)
+	prepared := &preparedRunInputs{
+		candidates: append([]models.DailyReportCandidate(nil), candidates...),
+	}
+	if restartRequested {
+		prepared.carryInputTokens = original.InputTokens
+		prepared.carryOutputTokens = original.OutputTokens
+		original.GenerationHash = ""
+		original.CheckpointJSON = ""
+	} else {
+		prepared.carryInputTokens, prepared.carryOutputTokens = retryTokenCarry(original)
+	}
+	original.Status = RunStatusQueued
+	original.Progress = 0
+	original.CurrentStep = "queued"
+	original.ContentJSON = ""
+	original.Markdown = ""
+	original.ConfigSnapshot = safeConfigSnapshot(config)
+	original.ArticleCount = len(candidates)
+	original.IsRead = false
+	original.Error = ""
+	original.FailureCode = ""
+	original.GenerationMode = "ai"
+	original.StartedAt = nil
+	original.CompletedAt = nil
+	if err := s.store.UpdateDailyReportRun(original); err != nil {
+		s.releaseRun()
+		return nil, err
+	}
+	s.setCurrent(original)
+	runCtx, stop := s.detachedContext(ctx)
+	go func() {
+		defer stop()
+		defer s.releaseRun()
+		s.executePrepared(runCtx, config, original, prepared)
+	}()
+	return original, nil
+}
+
+func retryTokenCarry(run *models.DailyReportRun) (int64, int64) {
+	if run == nil || strings.TrimSpace(run.CheckpointJSON) == "" {
+		return 0, 0
+	}
+	var checkpoint struct {
+		InputTokens  int64 `json:"input_tokens"`
+		OutputTokens int64 `json:"output_tokens"`
+	}
+	if err := json.Unmarshal([]byte(run.CheckpointJSON), &checkpoint); err != nil {
+		return 0, 0
+	}
+	inputCarry := run.InputTokens - checkpoint.InputTokens
+	outputCarry := run.OutputTokens - checkpoint.OutputTokens
+	if inputCarry < 0 {
+		inputCarry = 0
+	}
+	if outputCarry < 0 {
+		outputCarry = 0
+	}
+	return inputCarry, outputCarry
 }
 
 // UseLocalFallback creates a separate, auditable local report for a failed AI
@@ -483,6 +539,12 @@ func (s *Service) executePrepared(ctx context.Context, config *models.DailyRepor
 	run.Progress = 55
 	run.CurrentStep = "generating"
 	s.updateRun(run)
+	carryInputTokens := int64(0)
+	carryOutputTokens := int64(0)
+	if prepared != nil {
+		carryInputTokens = prepared.carryInputTokens
+		carryOutputTokens = prepared.carryOutputTokens
+	}
 	var result AIResult
 	var generateErr error
 	if run.GenerationMode == "local" {
@@ -497,9 +559,9 @@ func (s *Service) executePrepared(ctx context.Context, config *models.DailyRepor
 				run.GenerationHash = progress.Fingerprint
 				run.CheckpointJSON = progress.Checkpoint
 				run.CurrentStep = progress.Stage
-				run.InputTokens = progress.InputTokens
-				run.OutputTokens = progress.OutputTokens
-				run.TotalTokens = progress.InputTokens + progress.OutputTokens
+				run.InputTokens = progress.InputTokens + carryInputTokens
+				run.OutputTokens = progress.OutputTokens + carryOutputTokens
+				run.TotalTokens = run.InputTokens + run.OutputTokens
 				run.AIUsed = run.TotalTokens > 0
 				return s.store.UpdateDailyReportRun(run)
 			})
@@ -507,6 +569,8 @@ func (s *Service) executePrepared(ctx context.Context, config *models.DailyRepor
 			result, generateErr = s.generator.Generate(ctx, config, candidates)
 		}
 	}
+	result.InputTokens += carryInputTokens
+	result.OutputTokens += carryOutputTokens
 	if ctx.Err() != nil {
 		s.interruptRun(run)
 		return

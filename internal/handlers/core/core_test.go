@@ -1366,6 +1366,7 @@ func TestDailyReportRetryPreflightDoesNotCreateDuplicateRuns(t *testing.T) {
 		PeriodStart: now.Add(-2 * time.Hour), PeriodEnd: now,
 		GenerationMode: "ai", GenerationHash: "checkpoint-fingerprint",
 		CheckpointJSON: `{"version":1,"stage":"merging"}`, ConfigSnapshot: `{}`,
+		InputTokens: 80, OutputTokens: 20, TotalTokens: 100, AIUsed: true,
 	}
 	originalID, err := db.CreateDailyReportRun(original)
 	if err != nil {
@@ -1402,11 +1403,17 @@ func TestDailyReportRetryPreflightDoesNotCreateDuplicateRuns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Retry from checkpoint failed: %v", err)
 	}
-	completed := waitForDailyReportRunStatus(t, db, retryRun.ID, dailyreport.RunStatusCompleted)
-	if completed.RetryOfID == nil || *completed.RetryOfID != originalID {
-		t.Fatalf("retry relation = %+v, want %d", completed.RetryOfID, originalID)
+	if retryRun.ID != originalID {
+		t.Fatalf("retry run id = %d, want original id %d", retryRun.ID, originalID)
 	}
-	if _, total, err := db.ListDailyReportRuns(models.DailyReportRunFilter{Limit: 10}); err != nil || total != 2 {
+	completed := waitForDailyReportRunStatus(t, db, retryRun.ID, dailyreport.RunStatusCompleted)
+	if completed.RetryOfID != nil {
+		t.Fatalf("in-place retry unexpectedly created a retry relation: %+v", completed.RetryOfID)
+	}
+	if completed.TotalTokens != 100 {
+		t.Fatalf("in-place retry token audit = %d, want 100", completed.TotalTokens)
+	}
+	if _, total, err := db.ListDailyReportRuns(models.DailyReportRunFilter{Limit: 10}); err != nil || total != 1 {
 		t.Fatalf("successful retry count = %d, err=%v", total, err)
 	}
 	if refresher.calls.Load() != 0 {
@@ -1416,6 +1423,68 @@ func TestDailyReportRetryPreflightDoesNotCreateDuplicateRuns(t *testing.T) {
 	defer generator.mu.Unlock()
 	if generator.resumeCalls != 1 || generator.lastHash != "checkpoint-fingerprint" || generator.lastCheckpoint != original.CheckpointJSON {
 		t.Fatalf("resume call = count:%d hash:%q checkpoint:%q", generator.resumeCalls, generator.lastHash, generator.lastCheckpoint)
+	}
+}
+
+func TestDailyReportRestartReusesRunAndPreservesTokenAudit(t *testing.T) {
+	db := newDailyReportTestDB(t)
+	defer db.Close()
+	feedID, err := db.AddFeed(&models.Feed{Title: "Restart Feed", URL: "https://example.com/restart", Type: "rss"})
+	if err != nil {
+		t.Fatalf("AddFeed failed: %v", err)
+	}
+	now := time.Now().UTC()
+	if err := db.SaveArticle(&models.Article{
+		FeedID: feedID, Title: "Restart candidate", URL: "https://example.com/restart/article",
+		OriginalSummary: "Summary", PublishedAt: now.Add(-time.Hour), FirstSeenAt: now.Add(-time.Hour), HasValidPublishedTime: true,
+	}); err != nil {
+		t.Fatalf("SaveArticle failed: %v", err)
+	}
+	original := &models.DailyReportRun{
+		Kind: dailyreport.RunKindManual, Status: dailyreport.RunStatusFailed,
+		PeriodStart: now.Add(-2 * time.Hour), PeriodEnd: now,
+		GenerationMode: "ai", GenerationHash: "stale-fingerprint",
+		CheckpointJSON: `{"version":1,"stage":"extracting","input_tokens":60,"output_tokens":15}`,
+		ConfigSnapshot: `{}`, InputTokens: 60, OutputTokens: 15, TotalTokens: 75, AIUsed: true,
+		Error: "previous failure", FailureCode: "schema_invalid",
+	}
+	originalID, err := db.CreateDailyReportRun(original)
+	if err != nil {
+		t.Fatalf("CreateDailyReportRun failed: %v", err)
+	}
+	original.ID = originalID
+	createdAt := original.CreatedAt
+
+	generator := &retryInspectionGenerator{}
+	refresher := &countingDailyReportRefresher{}
+	service := dailyreport.NewService(db, refresher, generator, dailyreport.NoopNotifier{}, dailyreport.RealClock(), time.UTC)
+	restarted, err := service.Retry(context.Background(), originalID, true)
+	if err != nil {
+		t.Fatalf("Restart from beginning failed: %v", err)
+	}
+	if restarted.ID != originalID {
+		t.Fatalf("restart run id = %d, want original id %d", restarted.ID, originalID)
+	}
+	completed := waitForDailyReportRunStatus(t, db, originalID, dailyreport.RunStatusCompleted)
+	if completed.CreatedAt != createdAt {
+		t.Fatalf("restart changed created_at: got %s want %s", completed.CreatedAt, createdAt)
+	}
+	if completed.TotalTokens != 75 {
+		t.Fatalf("restart token audit = %d, want 75", completed.TotalTokens)
+	}
+	if completed.Error != "" || completed.FailureCode != "" {
+		t.Fatalf("restart retained stale failure: error=%q code=%q", completed.Error, completed.FailureCode)
+	}
+	if _, total, err := db.ListDailyReportRuns(models.DailyReportRunFilter{Limit: 10}); err != nil || total != 1 {
+		t.Fatalf("restart created another history row: total=%d err=%v", total, err)
+	}
+	if refresher.calls.Load() != 0 {
+		t.Fatalf("restart refreshed feeds %d times, want 0", refresher.calls.Load())
+	}
+	generator.mu.Lock()
+	defer generator.mu.Unlock()
+	if generator.resumeCalls != 1 || generator.lastHash != "" || generator.lastCheckpoint != "" {
+		t.Fatalf("restart call = count:%d hash:%q checkpoint:%q", generator.resumeCalls, generator.lastHash, generator.lastCheckpoint)
 	}
 }
 

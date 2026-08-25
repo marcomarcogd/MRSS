@@ -734,9 +734,6 @@ async function openSource(source: DailyReportSource): Promise<void> {
                     <dd>{{ formatNumber(selectedDetail.run.output_tokens) }}</dd>
                   </div>
                 </dl>
-                <p class="mt-4 text-xs text-text-secondary">
-                  {{ t('dailyReport.progress.autoRefresh') }}
-                </p>
               </div>
 
               <div
