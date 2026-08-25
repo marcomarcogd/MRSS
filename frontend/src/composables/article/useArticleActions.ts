@@ -456,20 +456,16 @@ export function useArticleActions(
       });
 
       if (!response.ok) {
-        const error = await response.text();
-        throw new Error(error);
+        const errorText = await response.text().catch(() => '');
+        console.error('Obsidian export request failed:', response.status, errorText);
+        throw new Error('Obsidian export failed');
       }
 
-      const data = await response.json();
-
-      const message = data.message || t('setting.plugins.obsidian.exported');
-      const filePath = data.file_path ? ` (${data.file_path})` : '';
-      window.showToast(message + filePath, 'success');
+      await response.json();
+      window.showToast(t('setting.plugins.obsidian.exported'), 'success');
     } catch (error) {
       console.error('Failed to export to Obsidian:', error);
-      const message =
-        error instanceof Error ? error.message : t('setting.plugins.obsidian.exportFailed');
-      window.showToast(message, 'error');
+      window.showToast(t('setting.plugins.obsidian.exportFailed'), 'error');
     }
   }
 
@@ -487,23 +483,20 @@ export function useArticleActions(
       });
 
       if (!response.ok) {
-        const error = await response.text();
-        throw new Error(error);
+        const errorText = await response.text().catch(() => '');
+        console.error('Notion export request failed:', response.status, errorText);
+        throw new Error('Notion export failed');
       }
 
       const data = await response.json();
-
-      const message = data.message || t('setting.plugins.notion.exported');
-      window.showToast(message, 'success');
+      window.showToast(t('setting.plugins.notion.exported'), 'success');
 
       if (data.page_url) {
         openInBrowser(data.page_url);
       }
     } catch (error) {
       console.error('Failed to export to Notion:', error);
-      const message =
-        error instanceof Error ? error.message : t('setting.plugins.notion.exportFailed');
-      window.showToast(message, 'error');
+      window.showToast(t('setting.plugins.notion.exportFailed'), 'error');
     }
   }
 
@@ -521,19 +514,16 @@ export function useArticleActions(
       });
 
       if (!response.ok) {
-        const error = await response.text();
-        throw new Error(error);
+        const errorText = await response.text().catch(() => '');
+        console.error('Zotero export request failed:', response.status, errorText);
+        throw new Error('Zotero export failed');
       }
 
-      const data = await response.json();
-
-      const message = data.message || t('setting.plugins.zotero.exported');
-      window.showToast(message, 'success');
+      await response.json();
+      window.showToast(t('setting.plugins.zotero.exported'), 'success');
     } catch (error) {
       console.error('Failed to export to Zotero:', error);
-      const message =
-        error instanceof Error ? error.message : t('setting.plugins.zotero.exportFailed');
-      window.showToast(message, 'error');
+      window.showToast(t('setting.plugins.zotero.exportFailed'), 'error');
     }
   }
 

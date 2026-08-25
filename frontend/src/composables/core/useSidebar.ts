@@ -261,25 +261,19 @@ export function useSidebar() {
               return;
             }
           } else {
-            // Transformation failed - try to get error message from response
-            let errorMessage =
-              t('common.errors.failedToTransformRSSHubURL') || 'Failed to transform RSSHub URL';
+            let errorText = '';
             try {
-              const errorText = await response.text();
-              if (errorText) {
-                errorMessage = errorText;
-              }
-            } catch (e) {
-              // Ignore error reading response
+              errorText = await response.text();
+            } catch {
+              // The status is still enough for local diagnostics.
             }
-            window.showToast(errorMessage, 'error');
+            console.error('Failed to transform RSSHub URL:', response.status, errorText);
+            window.showToast(t('common.errors.failedToTransformRSSHubURL'), 'error');
             return;
           }
         } catch (error) {
-          window.showToast(
-            t('common.errors.failedToTransformRSSHubURL') || 'Failed to transform RSSHub URL',
-            'error'
-          );
+          console.error('Failed to transform RSSHub URL:', error);
+          window.showToast(t('common.errors.failedToTransformRSSHubURL'), 'error');
           return;
         }
       }

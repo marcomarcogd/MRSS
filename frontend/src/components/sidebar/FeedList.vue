@@ -324,7 +324,8 @@ async function handleDrop(categoryName: string, feeds: any[]) {
       await store.fetchFeeds();
       window.showToast(t('modal.feed.feedReordered'), 'success');
     } else {
-      window.showToast(t('common.errors.reorderingFeed') + ': ' + result.error, 'error');
+      console.error('Failed to reorder feed:', result.error);
+      window.showToast(t('common.errors.reorderingFeed'), 'error');
     }
   } finally {
     isDragging.value = false;
@@ -473,9 +474,8 @@ async function handleSaveFilter(name: string, conditions: FilterCondition[]) {
       await fetchSavedFilters();
     }
   } catch (e) {
-    // Show the error message from server
-    const errorMessage = e instanceof Error ? e.message : t('sidebar.savedFilters.saveFailed');
-    window.showToast(errorMessage, 'error');
+    console.error('Failed to save filter:', e);
+    window.showToast(t('sidebar.savedFilters.saveFailed'), 'error');
   }
 }
 

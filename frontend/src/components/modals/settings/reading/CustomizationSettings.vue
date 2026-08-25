@@ -74,7 +74,7 @@ const handleFileUpload = async () => {
       window.dispatchEvent(new CustomEvent('custom-css-changed'));
     } else {
       console.error('CSS upload failed:', result);
-      window.showToast(result.message || t('setting.customization.cssUploadFailed'), 'error');
+      window.showToast(t('setting.customization.cssUploadFailed'), 'error');
     }
   } catch (error) {
     console.error('CSS upload error:', error);

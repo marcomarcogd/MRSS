@@ -26,6 +26,15 @@ const createStub = (name: string) => ({
   template: '<div class="stub-component"><slot /></div>',
 });
 
+const collectStrings = (value: unknown): string[] => {
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value)) return value.flatMap(collectStrings);
+  if (value && typeof value === 'object') {
+    return Object.values(value as Record<string, unknown>).flatMap(collectStrings);
+  }
+  return [];
+};
+
 describe('App', () => {
   it('uses the MRSS brand and fork attribution', () => {
     expect(en.appName).toBe('MRSS');
@@ -55,6 +64,39 @@ describe('App', () => {
     expect(chat).not.toContain('v-html="msg.html || msg.content"');
   });
 
+  it('does not pass raw service errors directly to user notifications', () => {
+    const notificationSources = [
+      'src/components/article/ArticleDetailModal.vue',
+      'src/components/modals/feed/FeedFormModal.vue',
+      'src/components/modals/settings/plugins/FreshRSSSettings.vue',
+      'src/components/modals/settings/plugins/RSSHubSettings.vue',
+      'src/components/modals/settings/reading/CustomizationSettings.vue',
+      'src/components/sidebar/FeedList.vue',
+      'src/composables/article/useArticleActions.ts',
+      'src/composables/article/useArticleDetail.ts',
+      'src/composables/core/useSidebar.ts',
+    ];
+    const unsafeToastValue =
+      /showToast\(\s*(?:error\.message|result\.(?:error|message)|response\.text\(\)|errorText|responseText)/;
+
+    for (const path of notificationSources) {
+      expect(readFileSync(path, 'utf8'), path).not.toMatch(unsafeToastValue);
+    }
+  });
+
+  it('tests the saved AI key only when the form still contains its mask', () => {
+    const profileModal = readFileSync(
+      'src/components/modals/settings/ai/AIProfileModal.vue',
+      'utf8'
+    );
+
+    expect(profileModal).toContain("formData.value.api_key.startsWith('****')");
+    expect(profileModal).not.toContain("!formData.value.api_key.startsWith('****')");
+    expect(profileModal.indexOf('result = await testProfile(props.editProfileId)')).toBeLessThan(
+      profileModal.indexOf('result = await testConfig({')
+    );
+  });
+
   it('provides a safe, bilingual daily report interface', () => {
     expect(en.dailyReport.title).toBe('24-Hour AI Digest');
     expect(zh.dailyReport.title).toBe('24 小时 AI 日报');
@@ -65,6 +107,16 @@ describe('App', () => {
     expect(dailyReportView).not.toContain('v-html');
     expect(dailyReportView).toContain('source.source_index');
     expect(dailyReportView).toContain('downloadMarkdown');
+    expect(dailyReportView).not.toContain("t('dailyReport.detail.failureCode'");
+
+    expect(zh.dailyReport.action.resumeAI).toBe('继续生成');
+    expect(zh.dailyReport.action.restartAI).toBe('重新生成');
+    expect(en.dailyReport.action.resumeAI).toBe('Continue generation');
+    expect(en.dailyReport.action.restartAI).toBe('Regenerate');
+
+    const visibleCopy = collectStrings([zh.dailyReport, en.dailyReport]).join('\n');
+    expect(visibleCopy).not.toMatch(/未创建新记录|No new record|从断点|错误代码|Error code/i);
+    expect(visibleCopy).not.toMatch(/checkpoint|fingerprint|polling/i);
   });
 
   it('switches to the daily report top-level view and caps its unread badge', async () => {

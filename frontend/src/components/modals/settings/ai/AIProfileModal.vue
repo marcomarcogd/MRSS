@@ -90,11 +90,12 @@ async function testConfiguration() {
   try {
     let result: AIProfileTestResult | null;
 
-    if (isEditMode.value && props.editProfileId && !formData.value.api_key.startsWith('****')) {
-      // For existing profiles with unchanged API key, test via profile ID
+    if (isEditMode.value && props.editProfileId && formData.value.api_key.startsWith('****')) {
+      // The masked value represents an unchanged saved key. Let the backend
+      // load and decrypt the real key instead of sending the mask upstream.
       result = await testProfile(props.editProfileId);
     } else {
-      // For new profiles or changed API keys, test the configuration directly
+      // New or edited keys must be tested from the current form values.
       result = await testConfig({
         api_key: formData.value.api_key,
         endpoint: formData.value.endpoint,

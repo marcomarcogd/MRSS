@@ -227,18 +227,12 @@ async function submit() {
         return;
       }
 
-      // Check if it's an XPath error for better display
-      if (feedType.value === 'xpath' && errorText.includes('XPath')) {
-        // For XPath errors, show a more detailed toast
-        const errorKey = props.mode === 'add' ? 'errorAddingFeed' : 'errorUpdatingFeed';
-        const title = t(errorKey);
-        let formattedMessage = `${title}:\n${errorText}`;
-
-        window.showToast(formattedMessage, 'error', 8000); // Show for 8 seconds for XPath errors
+      console.error('Failed to save feed:', res.status, errorText);
+      if (feedType.value === 'xpath') {
+        window.showToast(t('modal.feed.xpathConfigInvalid'), 'error');
       } else {
-        // For other errors, show the standard format
         const errorKey = props.mode === 'add' ? 'errorAddingFeed' : 'errorUpdatingFeed';
-        window.showToast(`${t(errorKey)}: ${errorText}`, 'error');
+        window.showToast(t(errorKey), 'error');
       }
     }
   } catch {

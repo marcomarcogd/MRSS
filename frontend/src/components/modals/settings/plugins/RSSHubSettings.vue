@@ -75,13 +75,12 @@ async function testConnection() {
     if (result.success) {
       window.showToast(t('setting.rsshub.connectionSuccessful'), 'success');
     } else {
-      window.showToast(result.error || t('setting.rsshub.connectionFailed'), 'error');
+      console.error('RSSHub connection test failed:', result.error);
+      window.showToast(t('setting.rsshub.connectionFailed'), 'error');
     }
   } catch (error) {
-    window.showToast(
-      error instanceof Error ? error.message : t('setting.rsshub.connectionFailed'),
-      'error'
-    );
+    console.error('RSSHub connection test failed:', error);
+    window.showToast(t('setting.rsshub.connectionFailed'), 'error');
   } finally {
     isTesting.value = false;
   }

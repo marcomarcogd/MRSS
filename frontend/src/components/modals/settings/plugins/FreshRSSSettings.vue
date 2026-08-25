@@ -96,10 +96,8 @@ async function syncNow() {
       throw new Error(t('setting.freshrss.syncFailed'));
     }
   } catch (error) {
-    window.showToast(
-      error instanceof Error ? error.message : t('setting.freshrss.syncFailed'),
-      'error'
-    );
+    console.error('Failed to start FreshRSS sync:', error);
+    window.showToast(t('setting.freshrss.syncFailed'), 'error');
   } finally {
     isSyncing.value = false;
   }
