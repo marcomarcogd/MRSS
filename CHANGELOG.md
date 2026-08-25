@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 外部 AI 已经开始调用后若最终失败，会保留错误阶段、实际用量和断点，不再用本地内容冒充 AI 报告。未配置外部 AI、首次请求前已达到上限、本地预览或用户主动选择降级时，才生成明确标记的本地摘要。
 - 本地摘要会清洗 RSS HTML，并依据关注重点、栏目标题和栏目要求计算文章相关度；文章只进入最相关栏目，无匹配内容的栏目会如实显示为空，不再按文章顺序轮流填充。
 - 云端内容处理默认关闭。每个用户首次启用定时日报、手动开始 AI 生成或使用 AI 优化目录前，都必须在授权弹窗中确认实际 AI Profile 和脱敏端点，并明确同意发送标题、RSS 摘要、本地正文缓存、关注重点和目录要求；未授权时不会发出任何 AI 网络请求。
+- AI 优化目录现在明确约束栏目结构，并兼容常见字段别名、直接数组、Markdown 包裹和不支持结构化输出的服务；首次格式异常时会在同一授权、用量和安全限制下自动修复一次，仍失败时提示更换模型或手动编辑，且不会覆盖现有目录。
 - 授权可随时撤销；切换 AI Profile 或端点会立即使旧授权失效并暂停定时日报，只有同一端点的模型变化无需重复授权。未配置可用 AI 服务时仅执行本地降级生成，不尝试默认远程地址。
 - 日报不会逐篇访问原网页。云端生成由客户端直接连接用户选择的 AI 服务，可能产生对应服务的 Token 费用并受第三方数据保留政策约束；MRSS 不运营中转服务器，API Key、自定义鉴权值和端点查询密钥不会写入日报历史、日志或配置快照。
 
@@ -55,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - If an external AI call has started and generation ultimately fails, MRSS preserves the failed stage, actual usage, and checkpoint instead of presenting local content as an AI report. Local summaries are used only when no external profile exists, the limit is reached before the first request, for local preview, or after the user explicitly chooses fallback.
 - Local summaries sanitize RSS HTML and score articles against the focus, section titles, and section instructions. Each article is assigned to its most relevant section; unrelated sections remain explicitly empty instead of being filled round-robin.
 - Cloud processing is off by default. Before scheduled reports, manual AI generation, or AI outline optimization can contact a provider, every user must review the actual AI Profile and redacted endpoint and explicitly consent to sending titles, RSS summaries, locally cached bodies, focus instructions, and outline requirements. No AI network request is made without that consent.
+- AI outline optimization now enforces an explicit section contract and accepts common field aliases, direct arrays, Markdown-wrapped JSON, and providers without structured-output support. One format-repair call is made under the same consent, usage, and safety limits; if that still fails, MRSS suggests another model or manual editing without replacing the existing outline.
 - Consent can be revoked at any time. Changing the AI Profile or endpoint invalidates the prior grant and pauses scheduling; changing only the model at the same endpoint does not require consent again. With no usable AI service configured, MRSS uses local fallback generation and never tries a default remote endpoint.
 - Reports do not fetch each original web page. The client connects directly to the user-selected AI service, which may charge tokens and apply its own data-retention policy; MRSS operates no relay server. API keys, custom authorization values, and endpoint query secrets are never written to report history, logs, or configuration snapshots.
 

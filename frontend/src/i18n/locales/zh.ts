@@ -1364,7 +1364,7 @@ const zh: TranslationMessages = {
       focusPlaceholder: '例如：重点关注 AI 产品、开发工具和隐私安全；减少营销新闻…',
       optimizeOutline: 'AI 优化目录',
       saveProfileBeforeOptimize: 'AI 配置选择已更改，请先保存设置，再优化目录',
-      optimizing: '正在生成草案…',
+      optimizing: '正在生成目录…',
       emptyOutline: 'AI 未返回有效目录',
       outlineErrors: {
         timeout: 'AI 目录优化超时，请重试。',
@@ -1374,7 +1374,7 @@ const zh: TranslationMessages = {
         provider_rejected_request: 'AI 服务拒绝了目录请求，请检查模型是否支持结构化输出。',
         empty_response: 'AI 服务返回了空内容，请重试或更换模型。',
         invalid_json: 'AI 返回内容不是有效 JSON，请重试或更换模型。',
-        schema_invalid: 'AI 返回的目录结构不符合要求，请重试。',
+        schema_invalid: 'AI 两次返回的目录格式都不符合要求，请更换模型或手动编辑目录。',
         network_error: '连接 AI 服务失败，请检查网络后重试。',
         request_failed: 'AI 目录请求失败，请重试。',
       },

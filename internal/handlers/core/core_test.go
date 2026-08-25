@@ -582,6 +582,198 @@ func TestDailyReportStructuredOutputFallsBackOnlyWhenUnsupported(t *testing.T) {
 	}
 }
 
+func TestDailyReportOutlineOptimizationAcceptsCommonResponseVariants(t *testing.T) {
+	longTitle := strings.Repeat("题", dailyreport.MaxTitleLength+10)
+	longInstruction := strings.Repeat("要求", dailyreport.MaxInstructionLength)
+	manyCandidates := make([]map[string]string, 0, dailyreport.MaxOutlineSections+2)
+	manyTitles := make([]string, 0, dailyreport.MaxOutlineSections)
+	manyIDs := make([]string, 0, dailyreport.MaxOutlineSections)
+	for index := 1; index <= dailyreport.MaxOutlineSections+2; index++ {
+		title := fmt.Sprintf("Section %d", index)
+		manyCandidates = append(manyCandidates, map[string]string{"title": title})
+		if index <= dailyreport.MaxOutlineSections {
+			manyTitles = append(manyTitles, title)
+			manyIDs = append(manyIDs, fmt.Sprintf("section-%d", index))
+		}
+	}
+	manyResponse, err := json.Marshal(map[string]interface{}{"outline": manyCandidates})
+	if err != nil {
+		t.Fatalf("marshal oversized outline: %v", err)
+	}
+	tests := []struct {
+		name         string
+		response     string
+		wantTitles   []string
+		wantIDs      []string
+		wantCalls    int32
+		unsupported  bool
+		checkLengths bool
+	}{
+		{
+			name:       "strict outline envelope",
+			response:   `{"outline":[{"id":"news","title":"News","instruction":"Important updates"}]}`,
+			wantTitles: []string{"News"}, wantIDs: []string{"news"}, wantCalls: 1,
+		},
+		{
+			name: "sections envelope and aliases without schema support", unsupported: true,
+			response: `{"sections":[` +
+				`{"name":"Products","description":"Product launches"},` +
+				`{"heading":"Research","requirement":"Research results"},` +
+				`{"title":"Policy","prompt":"Policy changes"},` +
+				`{"title":"Security","content":"Security incidents"}]}`,
+			wantTitles: []string{"Products", "Research", "Policy", "Security"},
+			wantIDs:    []string{"section-1", "section-2", "section-3", "section-4"}, wantCalls: 2,
+		},
+		{
+			name: "markdown direct array normalizes ids and lengths",
+			response: "```json\n[" +
+				fmt.Sprintf(`{"id":"dup","name":%q,"description":%q},`, longTitle, longInstruction) +
+				`{"id":"dup","heading":"Second","requirement":"Requirement"},` +
+				`{"prompt":"missing title is discarded"},` +
+				`{"title":"Third","content":"Content"}]` + "\n```",
+			wantTitles: []string{strings.Repeat("题", dailyreport.MaxTitleLength), "Second", "Third"},
+			wantIDs:    []string{"dup", "section-2", "section-3"}, wantCalls: 1, checkLengths: true,
+		},
+		{
+			name:     "extra sections are capped",
+			response: string(manyResponse), wantTitles: manyTitles, wantIDs: manyIDs, wantCalls: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var calls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				call := calls.Add(1)
+				var body map[string]interface{}
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Errorf("decode request: %v", err)
+					return
+				}
+				if call == 1 {
+					joined := fmt.Sprint(body["messages"])
+					if !strings.Contains(joined, `{"outline"`) || !strings.Contains(joined, `"instruction"`) {
+						t.Errorf("outline prompt does not describe the required contract: %s", joined)
+					}
+					if tt.unsupported {
+						w.WriteHeader(http.StatusBadRequest)
+						_, _ = w.Write([]byte(`{"error":{"message":"response_format json_schema is unsupported"}}`))
+						return
+					}
+				}
+				writeOpenAIResponse(t, w, tt.response)
+			}))
+			defer server.Close()
+
+			db := newDailyReportTestDB(t)
+			defer db.Close()
+			endpoint := strings.Replace(server.URL, "127.0.0.1", "0.0.0.0", 1)
+			profileID, err := db.CreateAIProfile(&models.AIProfile{
+				Name: "Outline variants", Endpoint: endpoint, Model: "test-model", IsDefault: true,
+			})
+			if err != nil {
+				t.Fatalf("CreateAIProfile failed: %v", err)
+			}
+			usage := ai.NewUsageTracker(db)
+			usage.SetMinInterval(0)
+			generator := dailyreport.NewAIGenerator(db, usage, nil, dailyreport.WithAIGeneratorRetryDelays(0))
+			generator.SetConsentVerifier(func(*models.DailyReportConfig, *dailyreport.ResolvedAIProvider) error { return nil })
+			outline, err := generator.OptimizeOutline(context.Background(), "AI and developer tools", "en", &profileID)
+			if err != nil {
+				t.Fatalf("OptimizeOutline failed: %v", err)
+			}
+			if got := calls.Load(); got != tt.wantCalls {
+				t.Fatalf("request count = %d, want %d", got, tt.wantCalls)
+			}
+			if len(outline) != len(tt.wantTitles) {
+				t.Fatalf("outline = %+v, want %d sections", outline, len(tt.wantTitles))
+			}
+			for index, section := range outline {
+				if section.Title != tt.wantTitles[index] || section.ID != tt.wantIDs[index] {
+					t.Fatalf("outline[%d] = %+v, want id=%q title=%q", index, section, tt.wantIDs[index], tt.wantTitles[index])
+				}
+			}
+			if tt.checkLengths && (len([]rune(outline[0].Title)) != dailyreport.MaxTitleLength || len([]rune(outline[0].Instruction)) != dailyreport.MaxInstructionLength) {
+				t.Fatalf("long fields were not truncated: title=%d instruction=%d", len([]rune(outline[0].Title)), len([]rune(outline[0].Instruction)))
+			}
+		})
+	}
+}
+
+func TestDailyReportOutlineOptimizationRepairsMalformedResponseOnce(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		call := calls.Add(1)
+		var body map[string]interface{}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if call == 1 {
+			writeOpenAIResponseWithUsage(t, w, `{"result":"an unstructured draft"}`, 10, 2, 1)
+			return
+		}
+		joined := fmt.Sprint(body["messages"])
+		if !strings.Contains(joined, "untrusted draft") || !strings.Contains(joined, "an unstructured draft") {
+			t.Errorf("repair request did not contain the bounded untrusted draft contract: %s", joined)
+		}
+		writeOpenAIResponseWithUsage(t, w, `{"sections":[{"heading":"Repaired","requirement":"Recovered requirement"}]}`, 12, 3, 1)
+	}))
+	defer server.Close()
+
+	db := newDailyReportTestDB(t)
+	defer db.Close()
+	endpoint := strings.Replace(server.URL, "127.0.0.1", "0.0.0.0", 1)
+	profileID, err := db.CreateAIProfile(&models.AIProfile{Name: "Outline repair", Endpoint: endpoint, Model: "test-model", IsDefault: true})
+	if err != nil {
+		t.Fatalf("CreateAIProfile failed: %v", err)
+	}
+	usage := ai.NewUsageTracker(db)
+	usage.SetMinInterval(0)
+	generator := dailyreport.NewAIGenerator(db, usage, statistics.NewService(db), dailyreport.WithAIGeneratorRetryDelays(0))
+	generator.SetConsentVerifier(func(*models.DailyReportConfig, *dailyreport.ResolvedAIProvider) error { return nil })
+	outline, err := generator.OptimizeOutline(context.Background(), "AI", "en", &profileID)
+	if err != nil {
+		t.Fatalf("OptimizeOutline failed after repair: %v", err)
+	}
+	if calls.Load() != 2 || len(outline) != 1 || outline[0].Title != "Repaired" {
+		t.Fatalf("repair result=%+v calls=%d", outline, calls.Load())
+	}
+	currentUsage, err := usage.GetCurrentUsage()
+	if err != nil || currentUsage != 27 {
+		t.Fatalf("usage=%d err=%v, want 27", currentUsage, err)
+	}
+	stats, err := db.GetTotalStats()
+	if err != nil || stats["ai_daily_report"] != 1 {
+		t.Fatalf("ai_daily_report statistic=%v err=%v", stats, err)
+	}
+}
+
+func TestDailyReportOutlineOptimizationStopsAfterOneFailedRepair(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		writeOpenAIResponse(t, w, `{"unexpected":"still invalid"}`)
+	}))
+	defer server.Close()
+	db := newDailyReportTestDB(t)
+	defer db.Close()
+	endpoint := strings.Replace(server.URL, "127.0.0.1", "0.0.0.0", 1)
+	profileID, err := db.CreateAIProfile(&models.AIProfile{Name: "Invalid outline", Endpoint: endpoint, Model: "test-model", IsDefault: true})
+	if err != nil {
+		t.Fatalf("CreateAIProfile failed: %v", err)
+	}
+	usage := ai.NewUsageTracker(db)
+	usage.SetMinInterval(0)
+	generator := dailyreport.NewAIGenerator(db, usage, nil, dailyreport.WithAIGeneratorRetryDelays(0))
+	generator.SetConsentVerifier(func(*models.DailyReportConfig, *dailyreport.ResolvedAIProvider) error { return nil })
+	_, err = generator.OptimizeOutline(context.Background(), "AI", "en", &profileID)
+	var generationErr *dailyreport.GenerationError
+	if !errors.As(err, &generationErr) || generationErr.Code != "schema_invalid" || generationErr.Stage != "outline_repair" {
+		t.Fatalf("OptimizeOutline error=%v, want outline_repair/schema_invalid", err)
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("format repair calls=%d, want exactly 2", calls.Load())
+	}
+}
+
 func TestDailyReportAIGeneratorRequiresConsentBeforeNetworkAndHonorsLimit(t *testing.T) {
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -611,6 +803,12 @@ func TestDailyReportAIGeneratorRequiresConsentBeforeNetworkAndHonorsLimit(t *tes
 	if got := calls.Load(); got != 0 {
 		t.Fatalf("AI endpoint received %d requests without consent", got)
 	}
+	if _, err := generator.OptimizeOutline(context.Background(), "AI", "en", &profileID); err == nil {
+		t.Fatal("OptimizeOutline succeeded without consent")
+	}
+	if got := calls.Load(); got != 0 {
+		t.Fatalf("outline endpoint received %d requests without consent", got)
+	}
 
 	generator.SetConsentVerifier(nil)
 	if err := db.SetSetting("ai_usage_limit", "1"); err != nil {
@@ -621,6 +819,12 @@ func TestDailyReportAIGeneratorRequiresConsentBeforeNetworkAndHonorsLimit(t *tes
 	}
 	if got := calls.Load(); got != 0 {
 		t.Fatalf("AI endpoint received %d requests after token limit", got)
+	}
+	if _, err := generator.OptimizeOutline(context.Background(), "AI", "en", &profileID); !errors.Is(err, dailyreport.ErrAIUsageLimit) {
+		t.Fatalf("OptimizeOutline error = %v, want ErrAIUsageLimit", err)
+	}
+	if got := calls.Load(); got != 0 {
+		t.Fatalf("outline endpoint received %d requests after token limit", got)
 	}
 }
 

@@ -1404,7 +1404,7 @@ const en: TranslationMessages = {
       optimizeOutline: 'Optimize with AI',
       saveProfileBeforeOptimize:
         'The AI profile selection changed. Save settings before optimizing the outline.',
-      optimizing: 'Creating draft…',
+      optimizing: 'Generating outline…',
       emptyOutline: 'AI returned no valid outline',
       outlineErrors: {
         timeout: 'AI outline optimization timed out. Try again.',
@@ -1415,7 +1415,8 @@ const en: TranslationMessages = {
           'The AI service rejected the outline request. Check whether the model supports structured output.',
         empty_response: 'The AI service returned empty content. Retry or choose another model.',
         invalid_json: 'The AI response was not valid JSON. Retry or choose another model.',
-        schema_invalid: 'The AI response did not match the required outline structure. Try again.',
+        schema_invalid:
+          'The AI returned an invalid outline format twice. Choose another model or edit the outline manually.',
         network_error: 'Could not reach the AI service. Check the network and try again.',
         request_failed: 'The AI outline request failed. Try again.',
       },

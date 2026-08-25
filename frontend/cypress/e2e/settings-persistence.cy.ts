@@ -192,6 +192,7 @@ describe('Settings Persistence', () => {
   it('should require explicit cloud processing consent and support revocation', () => {
     let accepted = false;
     let optimizeCalls = 0;
+    let optimizeShouldFail = false;
     const config = {
       enabled: false,
       schedule_time: '08:00',
@@ -237,7 +238,27 @@ describe('Settings Persistence', () => {
     }).as('updateCloudConsent');
     cy.intercept('POST', '/api/daily-report/outline/optimize', (req) => {
       optimizeCalls += 1;
-      req.reply({ outline: [] });
+      if (optimizeShouldFail) {
+        req.reply({
+          delay: 150,
+          statusCode: 422,
+          body: {
+            error: {
+              code: 'schema_invalid',
+              message: 'outline repair still failed',
+            },
+          },
+        });
+        return;
+      }
+      req.reply({
+        delay: 250,
+        body: {
+          outline: [
+            { id: 'draft-news', title: 'Draft News', instruction: 'Prioritize key news.' },
+          ],
+        },
+      });
     }).as('optimizeDailyReportOutline');
     cy.intercept('GET', '/api/daily-report/status', {
       enabled: false,
@@ -315,6 +336,42 @@ describe('Settings Persistence', () => {
       'contain.text',
       'Cloud processing authorized'
     );
+
+    // The loading label must describe the actual action, prevent duplicate
+    // requests, and keep the current outline unchanged until confirmation.
+    cy.get('[data-testid="daily-report-config"] input[placeholder="Section title"]')
+      .first()
+      .should('have.value', 'Highlights');
+    cy.get('[data-testid="daily-report-optimize-outline"]').click();
+    cy.get('[data-testid="daily-report-optimize-outline"]')
+      .should('be.disabled')
+      .and('contain.text', 'Generating outline…')
+      .click({ force: true });
+    cy.wait('@optimizeDailyReportOutline');
+    cy.then(() => expect(optimizeCalls).to.eq(1));
+    cy.contains('AI outline draft (applied only after confirmation)').should('be.visible');
+    cy.contains('Draft News').should('be.visible');
+    cy.get('[data-testid="daily-report-config"] input[placeholder="Section title"]')
+      .first()
+      .should('have.value', 'Highlights');
+    cy.contains('button', 'Use this draft').click();
+    cy.get('[data-testid="daily-report-config"] input[placeholder="Section title"]')
+      .first()
+      .should('have.value', 'Draft News');
+
+    // A failed optimization keeps the confirmed outline and shows the stable,
+    // user-facing schema error instead of replacing it with an empty draft.
+    cy.then(() => {
+      optimizeShouldFail = true;
+    });
+    cy.get('[data-testid="daily-report-optimize-outline"]').click();
+    cy.wait('@optimizeDailyReportOutline');
+    cy.contains(
+      'The AI returned an invalid outline format twice. Choose another model or edit the outline manually.'
+    ).should('be.visible');
+    cy.get('[data-testid="daily-report-config"] input[placeholder="Section title"]')
+      .first()
+      .should('have.value', 'Draft News');
 
     // Revoking consent must pause the schedule without replacing unrelated
     // unsaved modal edits. A changed profile is handled by save-time consent

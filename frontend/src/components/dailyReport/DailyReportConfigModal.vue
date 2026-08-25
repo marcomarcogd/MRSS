@@ -156,6 +156,7 @@ function handleDrop(index: number): void {
 }
 
 async function requestOutlineDraft(): Promise<void> {
+  if (optimizing.value) return;
   if (form.value.ai_profile_id !== config.value.ai_profile_id) {
     window.showToast(t('dailyReport.config.saveProfileBeforeOptimize'), 'warning');
     return;
