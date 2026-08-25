@@ -35,6 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 同步上游 v1.3.27：桌面应用运行时在 `127.0.0.1:1234` 向本机集成提供 REST API，并限制为回环访问和受保护的跨域请求。
 - 构建基线升级到 Go 1.27 与 Wails v3 beta，并吸收设置保存、更新进度、活动栏布局、macOS 签名、空标签管理和重要文章清理等上游修复。
 - AI 搜索现在按标题、摘要和正文命中排序，显示匹配词、命中字段和安全的上下文片段；列表与卡片结果均可打开文章，并按当前搜索结果切换上一篇或下一篇。
+- AI 搜索、文章聊天、摘要、翻译和 AI Profile 测试现在统一返回简短、可本地化的错误原因，不再把服务商的长 JSON、鉴权信息或完整响应显示在页面；Toast 在窄窗口和连续长文本下也不会超出视口。
+- 文章 AI 对话会在发送前保存用户问题、成功后保存回答和思考内容；新建或切换对话后可重新打开刚才的历史，AI 请求失败时已发送的问题仍会保留，同秒创建的会话与消息使用稳定顺序。
+- 失败日报详情会在显示操作前用当前本地文章、配置和 AI 目标预检断点：有效时显示“从断点继续生成”，输入已变化或断点缺失时直接显示“从头重新生成”。点击后会再次校验，失效时不创建冗余记录；有效重试固定使用预检输入且不重新刷新订阅。
+- 撤销日报云端授权只会撤销许可并暂停定时任务，不再回读旧配置覆盖设置弹窗中尚未保存的 AI Profile、目录或订阅草稿。只有切换 AI Profile 或实际端点时需要重新授权，同一端点仅更换模型仍沿用已有授权。
 - AI 用量上限、进度和超限状态会随设置输入即时更新，保存后回读后端规范值；设置窗口打开期间会刷新实际用量。
 - 文章批量写入遇到 SQLite 忙或锁定时会整批回滚并有限重试，重试耗尽后向刷新和日报链路返回真实错误，不再提交部分数据后报告成功。
 - Windows 预发布测试同时提供安装包和带 `portable.txt`、许可证的独立便携 ZIP，避免便携测试误用安装版数据目录。
@@ -68,6 +72,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Synchronized upstream v1.3.27: while the desktop app is running, it exposes a REST API for local integrations on `127.0.0.1:1234`, restricted to loopback and protected cross-origin requests.
 - Raised the build baseline to Go 1.27 and Wails v3 beta, and incorporated upstream fixes for settings saves, update progress, activity-bar layout, macOS signing, empty tag management, and protected-article cleanup.
 - AI search now ranks title, summary, and body matches and explains each result with matched terms, matched fields, and a safe context excerpt. List and card results both open correctly, with previous/next navigation scoped to the active search.
+- AI search, article chat, summaries, translation, and AI Profile tests now return short, localizable failure reasons instead of rendering provider JSON, authentication details, or full responses. Toasts remain within the viewport even in narrow windows or with unbroken legacy error strings.
+- Article chat now saves the user's question before the request and persists the answer and thinking content after success. Newly created or switched conversations can reopen the previous history, failed requests retain the submitted question, and same-second sessions and messages have stable ordering.
+- Failed report details now preflight checkpoints against the current local articles, configuration, and AI destination before presenting an action. Valid checkpoints show Resume; changed inputs or missing checkpoints show Restart. The action is checked again before insertion, invalid attempts create no extra run, and accepted retries use frozen inputs without refreshing feeds again.
+- Revoking daily-report cloud consent now revokes permission and pauses scheduling without reloading saved settings over unsaved AI Profile, outline, feed, or notification edits. Reauthorization is required only when the selected AI Profile or actual endpoint changes; model-only changes at the same endpoint retain consent.
 - AI usage limits, progress, and exceeded state update immediately while editing; saved values are normalized by the backend and actual usage refreshes while Settings remains open.
 - Article batch writes now roll back and retry as a unit when SQLite is busy or locked. Exhausted retries propagate a real error to feed refresh and daily-report refresh instead of committing partial data and reporting success.
 - Windows pre-release artifacts now include both an installer and an isolated portable ZIP containing `portable.txt` and the required licenses.

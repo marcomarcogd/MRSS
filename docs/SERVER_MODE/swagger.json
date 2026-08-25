@@ -6169,6 +6169,9 @@
                 "article_content": {
                     "type": "string"
                 },
+                "article_id": {
+                    "type": "integer"
+                },
                 "article_title": {
                     "type": "string"
                 },
@@ -6183,17 +6186,29 @@
                     "items": {
                         "$ref": "#/definitions/chat.ChatMessage"
                     }
+                },
+                "session_id": {
+                    "type": "integer"
                 }
             }
         },
         "chat.ChatResponse": {
             "type": "object",
             "properties": {
+                "history_saved": {
+                    "type": "boolean"
+                },
                 "html": {
                     "description": "Rendered HTML version of markdown response",
                     "type": "string"
                 },
                 "response": {
+                    "type": "string"
+                },
+                "session_id": {
+                    "type": "integer"
+                },
+                "thinking": {
                     "type": "string"
                 }
             }
@@ -6404,6 +6419,9 @@
                 "error": {
                     "type": "string"
                 },
+                "error_code": {
+                    "type": "string"
+                },
                 "expanded_terms": {
                     "$ref": "#/definitions/handlers.SearchTerms"
                 },
@@ -6467,6 +6485,9 @@
                 "connection_success": {
                     "type": "boolean"
                 },
+                "error_code": {
+                    "type": "string"
+                },
                 "error_message": {
                     "type": "string"
                 },
@@ -6518,6 +6539,9 @@
                 },
                 "connection_success": {
                     "type": "boolean"
+                },
+                "error_code": {
+                    "type": "string"
                 },
                 "error_message": {
                     "type": "string"
@@ -7104,6 +7128,9 @@
             "type": "object",
             "properties": {
                 "error": {
+                    "type": "string"
+                },
+                "error_code": {
                     "type": "string"
                 },
                 "result": {
