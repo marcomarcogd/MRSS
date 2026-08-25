@@ -12,6 +12,7 @@ import DailyReportCloudConsentModal from './components/dailyReport/DailyReportCl
 import { useAppStore } from './stores/app';
 import { DailyReportAPIError, useDailyReports } from './composables/dailyReport/useDailyReports';
 import { setSettingsFromRawData } from './composables/core/useSettings';
+import { getAIErrorMessage } from './utils/aiError';
 import {
   getRecommendedFonts,
   resolveFontFamily,
@@ -30,6 +31,28 @@ describe('App', () => {
     expect(en.appName).toBe('MRSS');
     expect(en.setting.about.forkNotice).toContain('DevXDojo/MrRSS');
     expect(en.setting.about.licenseNotice).toContain('GPL-3.0');
+    expect(en.setting.about.forkNotice).not.toContain('2026');
+    expect(zh.setting.about.forkNotice).not.toContain('2026');
+    expect(en.setting.about).not.toHaveProperty('noWarranty');
+    expect(zh.setting.about).not.toHaveProperty('noWarranty');
+  });
+
+  it('maps provider failures to short messages and keeps toast content inside the viewport', () => {
+    const rawProviderError =
+      'OpenRouter 429 {"error":{"message":"VERY_LONG_PROVIDER_RESPONSE_WITH_SECRET_TOKEN"}}';
+    expect(getAIErrorMessage(rawProviderError)).toBe(en.aiErrors.rate_limited);
+    expect(
+      getAIErrorMessage({ error_code: 'authentication_failed', error: rawProviderError })
+    ).toBe(en.aiErrors.authentication_failed);
+    expect(getAIErrorMessage(undefined, 'unrecognized ' + 'x'.repeat(2000))).toBe(
+      en.aiErrors.request_failed
+    );
+
+    const toast = readFileSync('src/components/common/Toast.vue', 'utf8');
+    const chat = readFileSync('src/components/article/ArticleChatPanel.vue', 'utf8');
+    expect(toast).toContain('overflow-wrap: anywhere');
+    expect(toast).toContain('calc(100vw-2rem)');
+    expect(chat).not.toContain('v-html="msg.html || msg.content"');
   });
 
   it('provides a safe, bilingual daily report interface', () => {
@@ -165,6 +188,50 @@ describe('App', () => {
       expect(dailyReports.cloudProcessing.value.accepted).toBe(true);
     } finally {
       dailyReports.closeCloudConsentPrompt();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('revokes cloud consent without reloading and replacing an unsaved AI profile draft', async () => {
+    const dailyReports = useDailyReports();
+    dailyReports.config.value.ai_profile_id = 13;
+    dailyReports.config.value.enabled = true;
+    const revokedDisclosure = {
+      disclosure_version: 1,
+      required: true,
+      accepted: false,
+      accepted_version: null,
+      accepted_at: null,
+      destination: {
+        profile_id: 12,
+        profile_name: 'Saved Profile',
+        endpoint: 'https://saved.example.com',
+      },
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/daily-report/consent' && init?.method === 'POST') {
+        expect(JSON.parse(String(init.body))).toEqual({ action: 'revoke' });
+        return new Response(JSON.stringify({ cloud_processing: revokedDisclosure }), {
+          status: 200,
+        });
+      }
+      if (url === '/api/daily-report/status') {
+        return new Response(JSON.stringify(dailyReports.status.value), { status: 200 });
+      }
+      if (url === '/api/daily-report/config') {
+        throw new Error('Revocation must not reload the saved config');
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      await dailyReports.updateCloudProcessingConsent('revoke', { refreshConfig: false });
+      expect(dailyReports.config.value.ai_profile_id).toBe(13);
+      expect(dailyReports.config.value.enabled).toBe(false);
+      expect(fetchMock).not.toHaveBeenCalledWith('/api/daily-report/config', expect.anything());
+    } finally {
       vi.unstubAllGlobals();
     }
   });

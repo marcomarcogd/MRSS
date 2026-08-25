@@ -68,6 +68,7 @@ const en: TranslationMessages = {
       aiChatWelcome: 'Ask me anything about this article!',
       confirmDeleteSession: 'Are you sure you want to delete this chat session?',
       hideThinking: 'Hide Thinking',
+      historySaveFailed: 'The answer was generated but could not be saved to chat history.',
       newChat: 'New Chat',
       noSessions: 'No chat sessions yet',
       showThinking: 'Show Thinking',
@@ -150,6 +151,26 @@ const en: TranslationMessages = {
       summary: 'Summary match',
       content: 'Content match',
     },
+  },
+  aiErrors: {
+    configuration_invalid:
+      'The AI configuration is incomplete or invalid. Check the endpoint and model.',
+    usage_limit_reached:
+      'The AI usage limit configured in MRSS has been reached. Adjust it and try again.',
+    rate_limited: 'The AI service is receiving too many requests. Please try again later.',
+    authentication_failed: 'AI authentication failed. Check the API key and access permissions.',
+    payment_required:
+      'The AI service has insufficient quota or balance. Check the provider account.',
+    model_or_endpoint_not_found:
+      'The AI model or endpoint is unavailable. Check the configuration.',
+    request_too_large: 'The content sent to AI is too large. Shorten it or choose another model.',
+    timeout: 'The AI service response timed out. Please try again.',
+    network_error: 'Could not reach the AI service. Check the network, proxy, and endpoint.',
+    provider_unavailable: 'The AI service is temporarily unavailable. Please try again later.',
+    invalid_response: 'The AI service returned an invalid response. Retry or choose another model.',
+    provider_rejected_request:
+      'The AI service rejected the request. Check the model and endpoint settings.',
+    request_failed: 'The AI request failed. Check the AI configuration and try again.',
   },
   common: {
     cancel: 'Cancel',
@@ -551,11 +572,9 @@ const en: TranslationMessages = {
   },
   setting: {
     about: {
-      forkNotice:
-        'MRSS is an unofficial modified fork based on DevXDojo/MrRSS. This distribution was modified on August 17, 2026.',
+      forkNotice: 'MRSS is an unofficial modified fork based on DevXDojo/MrRSS.',
       licenseNotice:
         'Licensed under GPL-3.0. Source code and upstream attribution are available through the links below.',
-      noWarranty: 'Distributed without warranty; see the GPL-3.0 license for details.',
       sourceCode: 'MRSS Source Code',
       upstreamProject: 'Upstream Project',
       version: 'Version',
@@ -1338,6 +1357,9 @@ const en: TranslationMessages = {
       authorizationRequired: 'Authorization required',
       pausedUntilAuthorized:
         'Consent was revoked or the AI destination changed, so scheduled digests are paused until you authorize the current service.',
+      profileChanged: 'AI configuration changed',
+      profileChangedDescription:
+        'Save settings to review and authorize the newly selected AI configuration.',
       reviewAndAuthorize: 'Review and authorize',
       revoke: 'Revoke consent',
       revokeTitle: 'Revoke cloud processing consent',
@@ -1419,6 +1441,10 @@ const en: TranslationMessages = {
       generationStarted: 'Digest generation started',
       generationFailed: 'Failed to start digest generation',
       retryStarted: 'Digest generation restarted',
+      resumeStarted: 'Digest generation resumed from its checkpoint',
+      restartStarted: 'Digest generation restarted from the beginning',
+      checkpointChanged:
+        'Digest inputs changed. No new record was created; restart from the beginning.',
       retryFailed: 'Retry failed',
       localFallbackStarted: 'Created a local summary linked to the failed AI run',
       localFallbackFailed: 'Failed to create a local summary',

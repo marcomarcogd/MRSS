@@ -210,7 +210,6 @@ function openUpstreamRepo() {
     <!-- Copyright information at the bottom -->
     <div class="mt-auto pt-4 text-center">
       <p class="text-text-secondary text-xs">© 2026 marcomarcogd and MRSS contributors.</p>
-      <p class="text-text-secondary text-xs">{{ t('setting.about.noWarranty') }}</p>
     </div>
   </div>
 </template>
