@@ -234,6 +234,18 @@ describe('Article Operations', () => {
     cy.intercept('GET', '/api/progress', { statusCode: 200, body: { is_running: false } });
     cy.intercept('POST', '/api/ai/search', (req) => {
       const noResults = req.body?.query === 'nothing matches';
+      if (req.body?.query === 'rate limited') {
+        req.reply({
+          statusCode: 200,
+          body: {
+            success: false,
+            error_code: 'rate_limited',
+            error:
+              'OpenRouter 429 {"error":{"message":"RAW_PROVIDER_RESPONSE_MUST_NOT_RENDER"}}',
+          },
+        });
+        return;
+      }
       req.reply({
         statusCode: 200,
         body: {
@@ -297,6 +309,20 @@ describe('Article Operations', () => {
     cy.wait('@aiSearch');
     cy.contains('No articles found matching your search').should('be.visible');
 
+    cy.contains('button', /^Clear$/).click();
+    cy.get('input[placeholder="Describe what you want to find..."]').type('rate limited');
+    cy.contains('button', /^AI Search$/).click();
+    cy.wait('@aiSearch');
+    cy.contains('The AI service is receiving too many requests. Please try again later.').should(
+      'be.visible'
+    );
+    cy.contains('RAW_PROVIDER_RESPONSE_MUST_NOT_RENDER').should('not.exist');
+    cy.get('.toast').should(($toast) => {
+      const rect = $toast[0].getBoundingClientRect();
+      expect(rect.left).to.be.at.least(0);
+      expect(rect.right).to.be.at.most(Cypress.config('viewportWidth'));
+    });
+
     // Card mode uses ArticleDetailModal, which must use the same navigation
     // context instead of hiding navigation for off-page search results.
     cy.then(() => {
@@ -314,6 +340,168 @@ describe('Article Operations', () => {
     cy.get('button[title="Next Article"]').should('be.visible').click();
     cy.wait('@searchArticleContent');
     cy.contains('Body for search result 102').should('be.visible');
+  });
+
+  it('should preserve AI chat history across new conversations and keep provider errors concise', () => {
+    const settingsState: Record<string, string> = {
+      language: 'en-US',
+      theme: 'light',
+      layout_mode: 'normal',
+      default_view_mode: 'rendered',
+      ai_chat_enabled: 'true',
+      translation_mode: 'off',
+      summary_enabled: 'false',
+      full_text_fetch_enabled: 'false',
+      update_check_enabled: 'false',
+    };
+    const feed = {
+      id: 1,
+      title: 'Chat Feed',
+      url: 'https://example.com/chat.xml',
+      category: '',
+      article_view_mode: 'global',
+    };
+    const article = {
+      id: 1,
+      feed_id: 1,
+      feed_title: feed.title,
+      title: 'Chat article',
+      url: 'https://example.com/chat/article',
+      published_at: '2026-08-25T00:00:00Z',
+      is_read: false,
+      is_favorite: false,
+      is_hidden: false,
+      is_read_later: false,
+    };
+    let nextSessionID = 1;
+    const sessions: Array<Record<string, unknown>> = [];
+    const messages = new Map<number, Array<Record<string, unknown>>>();
+    const timestamp = () => new Date().toISOString();
+
+    cy.intercept('/api/**', { statusCode: 200, body: {} });
+    cy.intercept('GET', '/api/settings', { statusCode: 200, body: settingsState });
+    cy.intercept('GET', '/api/feeds', { statusCode: 200, body: [feed] }).as('chatFeeds');
+    cy.intercept('GET', '/api/tags', { statusCode: 200, body: [] });
+    cy.intercept('GET', '/api/saved-filters', { statusCode: 200, body: [] });
+    cy.intercept(
+      { method: 'GET', pathname: '/api/articles' },
+      { statusCode: 200, body: [article] }
+    ).as('chatArticles');
+    cy.intercept('GET', '/api/articles/unread-counts', { statusCode: 200, body: {} });
+    cy.intercept('GET', '/api/articles/filter-counts', { statusCode: 200, body: {} });
+    // Keep the initial refresh poll active so its normal completion reload does
+    // not remount ArticleContent while the chat history flow is under test.
+    cy.intercept('GET', '/api/progress', {
+      statusCode: 200,
+      body: { is_running: true, pool_task_count: 0, queue_task_count: 0 },
+    });
+    cy.intercept('GET', '/api/articles/content*', {
+      statusCode: 200,
+      body: { content: '<p>Article context for AI chat</p>', cached: true },
+    }).as('chatArticleContent');
+    cy.intercept('POST', '/api/articles/read*', { statusCode: 200, body: { success: true } });
+    cy.intercept('GET', '/api/ai/chat/sessions*', (req) => {
+      req.reply({ statusCode: 200, body: sessions });
+    }).as('chatSessions');
+    cy.intercept('GET', '/api/ai/chat/messages*', (req) => {
+      req.reply({ statusCode: 200, body: messages.get(Number(req.query.session_id)) || [] });
+    }).as('chatMessages');
+    cy.intercept('POST', '/api/ai/chat/session/create', (req) => {
+      const id = nextSessionID++;
+      const session = {
+        id,
+        article_id: 1,
+        title: req.body.title,
+        created_at: timestamp(),
+        updated_at: timestamp(),
+        message_count: 0,
+      };
+      sessions.unshift(session);
+      messages.set(id, []);
+      req.reply({ statusCode: 200, body: session });
+    }).as('createChatSession');
+    cy.intercept('POST', '/api/ai-chat', (req) => {
+      const lastMessage = req.body.messages.at(-1)?.content || '';
+      let sessionID = Number(req.body.session_id || 0);
+      if (!sessionID) {
+        sessionID = nextSessionID++;
+        sessions.unshift({
+          id: sessionID,
+          article_id: 1,
+          title: lastMessage.slice(0, 60),
+          created_at: timestamp(),
+          updated_at: timestamp(),
+          message_count: 0,
+        });
+      }
+      const stored = messages.get(sessionID) || [];
+      const userMessage = {
+        id: stored.length + 1,
+        role: 'user',
+        content: lastMessage,
+        created_at: timestamp(),
+      };
+      stored.push(userMessage);
+      if (lastMessage === 'trigger rate limit') {
+        messages.set(sessionID, stored);
+        req.reply({
+          statusCode: 429,
+          body: {
+            success: false,
+            error_code: 'rate_limited',
+            error: 'RAW_CHAT_PROVIDER_JSON_MUST_NOT_RENDER',
+            session_id: sessionID,
+          },
+        });
+        return;
+      }
+      stored.push({
+        id: stored.length + 1,
+        role: 'assistant',
+        content: 'Persisted answer',
+        created_at: timestamp(),
+      });
+      messages.set(sessionID, stored);
+      const session = sessions.find((item) => item.id === sessionID);
+      if (session) session.message_count = stored.length;
+      req.reply({
+        statusCode: 200,
+        body: {
+          response: 'Persisted answer',
+          session_id: sessionID,
+          history_saved: true,
+        },
+      });
+    }).as('aiChat');
+
+    cy.reload();
+    cy.wait('@chatFeeds');
+    cy.wait('@chatArticles');
+    cy.get('[data-article-id="1"]').click();
+    cy.wait('@chatArticleContent');
+    cy.get('button[title="AI Chat"]').click();
+    cy.wait('@chatSessions');
+
+    cy.get('input[placeholder="Type a message..."]').type('First question{enter}');
+    cy.wait('@aiChat');
+    cy.contains('.chat-panel', 'Persisted answer').should('be.visible');
+
+    cy.get('[data-testid="chat-new-session"]').click();
+    cy.wait('@createChatSession');
+    cy.wait('@chatMessages');
+    cy.contains('.chat-panel', 'Persisted answer').should('not.exist');
+    cy.get('[data-testid="chat-session-switcher"]').click();
+    cy.get('.chat-panel [data-session-id="1"]').click();
+    cy.wait('@chatMessages');
+    cy.contains('.chat-panel', 'Persisted answer').should('be.visible');
+
+    cy.get('input[placeholder="Type a message..."]').type('trigger rate limit{enter}');
+    cy.wait('@aiChat');
+    cy.contains('.chat-panel', 'trigger rate limit').should('be.visible');
+    cy.contains('The AI service is receiving too many requests. Please try again later.').should(
+      'be.visible'
+    );
+    cy.contains('RAW_CHAT_PROVIDER_JSON_MUST_NOT_RENDER').should('not.exist');
   });
 
   it('should translate only on demand in manual mode and respect off mode', () => {

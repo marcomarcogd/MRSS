@@ -13,6 +13,7 @@ import {
   PhPencil,
 } from '@phosphor-icons/vue';
 import type { Article } from '@/types/models';
+import { getAIErrorMessage, readAIError } from '@/utils/aiError';
 
 interface ChatMessage {
   id: number;
@@ -86,7 +87,8 @@ async function loadSessions() {
   }
 }
 
-async function selectSession(sessionId: number) {
+async function selectSession(sessionId: number, force = false) {
+  if (isLoading.value && !force) return;
   try {
     const response = await fetch(`/api/ai/chat/messages?session_id=${sessionId}`);
     if (response.ok) {
@@ -106,6 +108,7 @@ async function selectSession(sessionId: number) {
 }
 
 async function createNewSession() {
+  if (isLoading.value) return;
   try {
     const response = await fetch('/api/ai/chat/session/create', {
       method: 'POST',
@@ -131,6 +134,7 @@ async function createNewSession() {
 
 async function deleteSession(sessionId: number, e: Event) {
   e.stopPropagation();
+  if (isLoading.value) return;
   const confirmed = await window.showConfirm({
     title: t('common.confirm'),
     message: t('article.chat.confirmDeleteSession'),
@@ -158,6 +162,7 @@ async function deleteSession(sessionId: number, e: Event) {
 
 function startEditSession(session: ChatSession, e: Event) {
   e.stopPropagation();
+  if (isLoading.value) return;
   editingSessionId.value = session.id;
   editingSessionTitle.value = session.title;
 }
@@ -277,50 +282,34 @@ async function sendMessage() {
         created_at: new Date().toISOString(),
       });
 
-      if (data.session_id && data.session_id !== currentSessionId.value) {
+      if (data.session_id) {
         currentSessionId.value = data.session_id;
         await loadSessions();
       }
 
-      isFirstMessage.value = false;
-    } else {
-      const errorText = await response.text();
-      console.error('AI chat error response:', response.status, errorText);
-
-      let errorMessage = t('article.chat.aiChatError');
-      try {
-        const errorData = JSON.parse(errorText);
-        // Extract error message from various possible formats
-        if (typeof errorData.error === 'string') {
-          errorMessage = errorData.error;
-        } else if (errorData.error?.message) {
-          errorMessage = errorData.error.message;
-        } else if (errorData.message) {
-          errorMessage = errorData.message;
-        } else if (typeof errorData === 'string') {
-          errorMessage = errorData;
-        } else {
-          errorMessage = t('article.chat.aiChatError');
-        }
-      } catch {
-        errorMessage = errorText || t('article.chat.aiChatError');
+      if (data.history_saved === false) {
+        window.showToast(t('article.chat.historySaveFailed'), 'warning');
       }
 
-      messages.value.push({
-        id: 0,
-        role: 'assistant',
-        content: errorMessage,
-        created_at: new Date().toISOString(),
-      });
+      isFirstMessage.value = false;
+    } else {
+      const parsedError = await readAIError(response);
+      const payload =
+        parsedError.payload && typeof parsedError.payload === 'object'
+          ? (parsedError.payload as Record<string, unknown>)
+          : null;
+      const persistedSessionID = Number(payload?.session_id || 0);
+      if (persistedSessionID > 0) {
+        currentSessionId.value = persistedSessionID;
+        await loadSessions();
+        await selectSession(persistedSessionID, true);
+      }
+      console.error('AI chat request failed:', parsedError.code);
+      window.showToast(parsedError.message, 'error');
     }
   } catch (e) {
     console.error('AI chat error:', e);
-    messages.value.push({
-      id: 0,
-      role: 'assistant',
-      content: t('article.chat.aiChatError'),
-      created_at: new Date().toISOString(),
-    });
+    window.showToast(getAIErrorMessage(e), 'error');
   } finally {
     isLoading.value = false;
     await nextTick();
@@ -367,8 +356,10 @@ const currentSessionTitle = computed(() => {
             <PhChatCircleText :size="20" class="text-accent" />
             <button
               class="flex items-center gap-1 text-sm font-medium hover:text-accent transition-colors"
+              :disabled="isLoading"
               :title="t('article.chat.switchSession')"
-              @click="showSessions = !showSessions"
+              data-testid="chat-session-switcher"
+              @click.stop="showSessions = !showSessions"
             >
               <span>{{ currentSessionTitle }}</span>
               <PhClockCounterClockwise :size="16" />
@@ -377,8 +368,10 @@ const currentSessionTitle = computed(() => {
           <div class="flex items-center gap-1">
             <button
               class="p-1 hover:bg-bg-tertiary rounded-lg transition-colors"
+              :disabled="isLoading"
               :title="t('article.chat.newChat')"
-              @click="createNewSession"
+              data-testid="chat-new-session"
+              @click.stop="createNewSession"
             >
               <PhPlus :size="18" class="text-text-secondary" />
             </button>
@@ -412,8 +405,12 @@ const currentSessionTitle = computed(() => {
                 v-for="session in sessions"
                 :key="session.id"
                 class="flex items-center gap-2 p-2 rounded-lg hover:bg-bg-tertiary cursor-pointer group"
-                :class="{ 'bg-bg-tertiary': session.id === currentSessionId }"
-                @click="selectSession(session.id)"
+                :class="{
+                  'bg-bg-tertiary': session.id === currentSessionId,
+                  'pointer-events-none opacity-60': isLoading,
+                }"
+                :data-session-id="session.id"
+                @click.stop="selectSession(session.id)"
               >
                 <PhChatCircleText :size="16" class="text-text-secondary" />
                 <div v-if="editingSessionId === session.id" class="flex-1 flex items-center gap-1">
@@ -490,9 +487,9 @@ const currentSessionTitle = computed(() => {
               </div>
               <!-- Message content with pre-rendered HTML from backend -->
               <div
-                v-if="msg.role === 'assistant'"
+                v-if="msg.role === 'assistant' && msg.html"
                 class="prose prose-sm max-w-none"
-                v-html="msg.html || msg.content"
+                v-html="msg.html"
               ></div>
               <div v-else class="whitespace-pre-wrap break-words">{{ msg.content }}</div>
             </div>
