@@ -1,7 +1,5 @@
 # MRSS
 
-![MRSS 界面截图](imgs/og1.png)
-
 <p>
   <a href="README.md">English</a> | <strong>简体中文</strong>
 </p>
