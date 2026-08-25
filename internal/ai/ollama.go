@@ -75,9 +75,19 @@ func (h *OllamaHandler) BuildRequest(config RequestConfig) (map[string]interface
 		request["options"] = options
 	}
 
-	// Add format for structured outputs (JSON schema)
-	if config.ResponseFormat != nil {
-		request["format"] = config.ResponseFormat
+	// Ollama expects either the raw JSON schema object or the string "json";
+	// it does not accept OpenAI's response_format wrapper.
+	if kind, schema := responseFormatParts(config.ResponseFormat); kind != "" {
+		switch kind {
+		case "json_schema":
+			if schema != nil {
+				request["format"] = schema
+			}
+		case "json_object":
+			request["format"] = "json"
+		default:
+			request["format"] = config.ResponseFormat
+		}
 	}
 
 	return request, nil

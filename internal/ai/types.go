@@ -28,13 +28,32 @@ type RequestConfig struct {
 	MaxCompletionTokens int                    // OpenAI: new parameter for max completion tokens
 	ReasoningEffort     string                 // OpenAI: reasoning effort for o-series models ("none", "minimal", "low", "medium", "high")
 	ReasoningConfig     map[string]interface{} // OpenRouter: provider-neutral reasoning controls
-	ResponseFormat      map[string]interface{} // OpenAI/Ollama: JSON schema for structured outputs
+	ResponseFormat      map[string]interface{} // Canonical OpenAI-style response format; native handlers translate it as needed
 	ThinkingConfig      map[string]interface{} // Gemini: thinking configuration
 	PresencePenalty     float64                // OpenAI/Gemini: presence penalty
 	FrequencyPenalty    float64                // OpenAI/Gemini: frequency penalty
 	TopP                float64                // Top-p sampling
 	TopK                int                    // Top-k sampling (Gemini/Ollama)
 	Seed                int                    // Seed for reproducible outputs
+}
+
+// responseFormatParts unwraps the canonical OpenAI-style response format used
+// by callers. Provider-specific handlers use the returned schema to build the
+// native request shape expected by Gemini, Anthropic, and Ollama.
+func responseFormatParts(format map[string]interface{}) (string, map[string]interface{}) {
+	if len(format) == 0 {
+		return "", nil
+	}
+	kind, _ := format["type"].(string)
+	if kind != "json_schema" {
+		return kind, nil
+	}
+	definition, _ := format["json_schema"].(map[string]interface{})
+	schema, _ := definition["schema"].(map[string]interface{})
+	if schema == nil {
+		schema, _ = format["schema"].(map[string]interface{})
+	}
+	return kind, schema
 }
 
 // ResponseResult holds the result from an AI API call

@@ -348,23 +348,19 @@ async function confirmGenerate(): Promise<void> {
   }
 }
 
-async function handleRetry(run: DailyReportRun, action: 'resume' | 'restart'): Promise<void> {
+async function handleRetry(
+  run: DailyReportRun,
+  action: 'resume' | 'restart' = 'resume'
+): Promise<void> {
   if (retryingRunId.value !== null) return;
   retryingRunId.value = run.id;
   try {
     const retried = await retryRun(run.id, action === 'restart');
     await selectReport(retried.id);
-    window.showToast(
-      action === 'restart'
-        ? t('dailyReport.toast.restartStarted')
-        : t('dailyReport.toast.resumeStarted'),
-      'success'
-    );
   } catch (error) {
     if (await promptCloudConsent(error, () => handleRetry(run, action))) return;
     if (error instanceof Error && 'code' in error && error.code === 'checkpoint_invalidated') {
       await fetchDetail(run.id);
-      window.showToast(t('dailyReport.toast.checkpointChanged'), 'warning');
       return;
     }
     console.error('Failed to retry daily report:', error);
@@ -380,7 +376,6 @@ async function handleLocalFallback(run: DailyReportRun): Promise<void> {
   try {
     const fallback = await createLocalFallback(run.id);
     await selectReport(fallback.id);
-    window.showToast(t('dailyReport.toast.localFallbackStarted'), 'success');
   } catch (error) {
     console.error('Failed to create local daily report fallback:', error);
     window.showToast(t('dailyReport.toast.localFallbackFailed'), 'error');
@@ -744,13 +739,6 @@ async function openSource(source: DailyReportSource): Promise<void> {
                   <PhWarningCircle :size="20" class="shrink-0" />
                   <div class="min-w-0">
                     <p>{{ displayError }}</p>
-                    <p v-if="selectedDetail.run.failure_code" class="mt-1 text-xs opacity-80">
-                      {{
-                        t('dailyReport.detail.failureCode', {
-                          code: selectedDetail.run.failure_code,
-                        })
-                      }}
-                    </p>
                   </div>
                 </div>
                 <div v-if="canRecoverAI" class="mt-4 flex flex-wrap gap-2 pl-8">

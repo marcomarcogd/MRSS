@@ -14,34 +14,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 新增独立的“日报”中心，可按本地时间每天汇总上一个计划边界至当前边界之间的订阅文章；首次启用后的首份定时日报覆盖完整 24 小时，并正确处理夏令时造成的 23/25 小时周期。
 - 支持全部订阅或指定订阅、关注重点、AI Profile、报告语言、标题模板和 1–12 个可编辑栏目；AI 目录草案必须由用户确认后才会保存。
 - 生成前会刷新所选订阅；单个订阅失败或超时不会丢弃本地数据，报告会以“部分完成”状态继续生成。无文章时不会调用 AI。
-- AI 生成采用严格结构化输出、分批提取、递归合并和后端校验来源引用，并优先记录服务商返回的实际 Token 用量。每个成功阶段都会保存断点；网络、解析或结构校验失败后可从未完成阶段继续，不重复消耗已完成批次。
-- 外部 AI 已经开始调用后若最终失败，会保留错误阶段、实际用量和断点，不再用本地内容冒充 AI 报告。未配置外部 AI、首次请求前已达到上限、本地预览或用户主动选择降级时，才生成明确标记的本地摘要。
+- AI 生成会按文章数量分段处理，校验来源引用并优先记录服务商返回的实际 Token 用量；生成中断后可以继续，不会重复处理已经完成的内容。
+- 外部 AI 已经开始调用后若最终失败，不再用本地内容冒充 AI 报告。用户可以继续生成，或主动改用明确标记的本地摘要；未配置外部 AI、首次请求前已达到上限或本地预览时会直接使用本地摘要。
 - 本地摘要会清洗 RSS HTML，并依据关注重点、栏目标题和栏目要求计算文章相关度；文章只进入最相关栏目，无匹配内容的栏目会如实显示为空，不再按文章顺序轮流填充。
 - 云端内容处理默认关闭。每个用户首次启用定时日报、手动开始 AI 生成或使用 AI 优化目录前，都必须在授权弹窗中确认实际 AI Profile 和脱敏端点，并明确同意发送标题、RSS 摘要、本地正文缓存、关注重点和目录要求；未授权时不会发出任何 AI 网络请求。
-- AI 优化目录现在明确约束栏目结构，并兼容常见字段别名、直接数组、Markdown 包裹和不支持结构化输出的服务；首次格式异常时会在同一授权、用量和安全限制下自动修复一次，仍失败时提示更换模型或手动编辑，且不会覆盖现有目录。
+- AI 优化目录会自动处理常见返回格式；格式异常时会自动修正一次，仍失败则提示更换模型或手动编辑，并保留现有目录。
 - 授权可随时撤销；切换 AI Profile 或端点会立即使旧授权失效并暂停定时日报，只有同一端点的模型变化无需重复授权。未配置可用 AI 服务时仅执行本地降级生成，不尝试默认远程地址。
 - 日报不会逐篇访问原网页。云端生成由客户端直接连接用户选择的 AI 服务，可能产生对应服务的 Token 费用并受第三方数据保留政策约束；MRSS 不运营中转服务器，API Key、自定义鉴权值和端点查询密钥不会写入日报历史、日志或配置快照。
 
 #### 历史、漏跑与通知
 
-- 新增日报历史列表与结构化详情，支持状态筛选、分页、已读状态、从断点继续 AI、主动改用本地摘要、删除、复制 Markdown 和下载 Markdown；栏目内来源引用可打开现存 MRSS 文章，文章已清理时仍保留标题、订阅、作者、时间和 URL 快照。详情页和 Markdown 文末不再重复罗列全部来源。
-- 生成中的日报详情现在显示当前阶段、批次、文章数量、输入/输出 Token 和推算进度；生成失败、完成或中断后会立即切换为最新结果，不再出现左侧状态已变化而右侧仍停留在旧快照的问题。
-- 新增独立调度器，不受订阅刷新模式影响；同一周期通过数据库约束和进程互斥防止重复生成，应用退出时会把未完成任务标记为已中断。
+- 新增日报历史列表与结构化详情，支持状态筛选、分页、已读状态、继续 AI 生成、主动改用本地摘要、删除、复制 Markdown 和下载 Markdown；栏目内来源引用可打开现存 MRSS 文章，文章已清理时仍保留标题、订阅、作者、时间和 URL 快照。详情页和 Markdown 文末不再重复罗列全部来源。
+- 生成中的日报详情现在显示当前阶段、分析进度、文章数量、输入/输出 Token 和总体进度；生成失败、完成或中断后会立即切换为最新结果，不再出现左侧状态已变化而右侧仍停留在旧内容的问题。
+- 新增独立调度器，不受订阅刷新模式影响；同一周期不会重复生成，应用退出时会妥善停止尚未完成的任务。
 - 应用关闭期间漏跑后，可选择补最近一期、补齐全部或全部跳过；跨过单期睡眠会自动补跑，跨过多期会保留提示直到用户明确处理。
 - 新增应用内提醒、系统通知和无内容提醒选项。系统通知只在用户主动启用时请求权限；拒绝授权或发送失败会写入日志并回退到应用内状态，不影响报告保存。服务器模式继续生成日报，但不发送桌面系统通知。
 
 #### 数据与兼容性
 
-- 新增独立日报配置、运行记录和来源快照，并为文章记录不可变的首次收录时间；旧文章优先按发布时间回填，缺少发布时间时使用迁移时间。
+- 日报配置、历史和来源信息单独保存，并为文章记录不可变的首次收录时间；旧文章优先按发布时间回填，缺少发布时间时使用迁移时间。
 - 默认排除隐藏文章，但包含已读和未读文章。自动日报不会重复引用已被成功定时报告收录的文章，手动日报允许再次选择同一周期。
 - 同步上游 v1.3.27：桌面应用运行时在 `127.0.0.1:1234` 向本机集成提供 REST API，并限制为回环访问和受保护的跨域请求。
 - 构建基线升级到 Go 1.27 与 Wails v3 beta，并吸收设置保存、更新进度、活动栏布局、macOS 签名、空标签管理和重要文章清理等上游修复。
 - AI 搜索现在按标题、摘要和正文命中排序，显示匹配词、命中字段和安全的上下文片段；列表与卡片结果均可打开文章，并按当前搜索结果切换上一篇或下一篇。
-- AI 搜索、文章聊天、摘要、翻译和 AI Profile 测试现在统一返回简短、可本地化的错误原因，不再把服务商的长 JSON、鉴权信息或完整响应显示在页面；Toast 在窄窗口和连续长文本下也不会超出视口。
+- AI 搜索、文章聊天、摘要、翻译、AI Profile 测试及订阅和第三方集成功能现在只显示简短、可本地化的错误原因，不再把服务商 JSON、鉴权信息或完整响应显示在页面；Toast 在窄窗口和连续长文本下也不会超出视口。
 - 文章 AI 对话会在发送前保存用户问题、成功后保存回答和思考内容；新建或切换对话后可重新打开刚才的历史，AI 请求失败时已发送的问题仍会保留，同秒创建的会话与消息使用稳定顺序。
-- 失败日报详情会在显示操作前用当前本地文章、配置和 AI 目标预检断点：有效时显示“从断点继续生成”，输入已变化或断点缺失时直接显示“从头重新生成”。点击后会再次校验，失效时保持原记录不变；有效重试会复用原日报记录和预检输入，不新增历史项，也不重新刷新订阅。
+- 失败日报会先检查当前内容和设置是否仍可继续：可以继续时显示“继续生成”，内容或设置变化时显示“重新生成”。重试会更新当前日报，不会在列表中产生重复日报。
 - 撤销日报云端授权只会撤销许可并暂停定时任务，不再回读旧配置覆盖设置弹窗中尚未保存的 AI Profile、目录或订阅草稿。只有切换 AI Profile 或实际端点时需要重新授权，同一端点仅更换模型仍沿用已有授权。
 - AI 用量上限、进度和超限状态会随设置输入即时更新，保存后回读后端规范值；设置窗口打开期间会刷新实际用量。
+- AI 配置测试会在密钥未修改时使用安全保存的真实密钥，输入新密钥时测试当前表单值，避免把掩码当作密钥造成鉴权误报。
+- 日报生成会适配 DeepSeek、Gemini、Claude、Ollama 及 OpenAI 兼容接口的结构化输出协议，并在服务能力不足时依次改用 JSON 模式和普通 JSON 提示词；诊断日志只记录安全的 HTTP 状态和生成阶段，不记录密钥、文章内容或服务商响应正文。
 - 文章批量写入遇到 SQLite 忙或锁定时会整批回滚并有限重试，重试耗尽后向刷新和日报链路返回真实错误，不再提交部分数据后报告成功。
 - Windows 预发布测试同时提供安装包和带 `portable.txt`、许可证的独立便携 ZIP，避免便携测试误用安装版数据目录。
 - Windows 安装包和便携包仍未使用 Authenticode 证书签名，Publisher 可能显示为未知，Microsoft Defender SmartScreen 仍可能提示。本版本不会绕过 UAC、Defender 或 SmartScreen。
@@ -53,34 +55,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added a dedicated Daily Reports center that summarizes feed entries between adjacent local-time schedule boundaries. The first scheduled report after enabling covers a complete prior 24-hour window, while daylight-saving transitions correctly produce 23- or 25-hour periods.
 - Reports can cover all feeds or selected feeds and support a focus prompt, AI Profile, report language, title template, and 1–12 editable outline sections. AI-generated outline drafts are never saved until the user confirms them.
 - Selected feeds are refreshed before generation. A feed failure or timeout does not discard locally available entries; the report continues with a partial status. Empty periods do not call an AI service.
-- AI generation uses strict structured output, batched extraction, recursive merging, and server-validated source references, while preferring actual token usage reported by the provider. Every validated stage is checkpointed so a failed network, parse, or schema stage can resume without paying for completed batches again.
-- If an external AI call has started and generation ultimately fails, MRSS preserves the failed stage, actual usage, and checkpoint instead of presenting local content as an AI report. Local summaries are used only when no external profile exists, the limit is reached before the first request, for local preview, or after the user explicitly chooses fallback.
+- AI generation processes larger input in manageable groups, validates source references, and prefers actual token usage reported by the provider. Interrupted generation can continue without repeating completed work.
+- If an external AI call has started and generation ultimately fails, MRSS no longer presents local content as an AI report. Users can continue generation or explicitly switch to a clearly labeled local summary; local summaries are used directly when no external profile exists, the limit is reached before the first request, or for local preview.
 - Local summaries sanitize RSS HTML and score articles against the focus, section titles, and section instructions. Each article is assigned to its most relevant section; unrelated sections remain explicitly empty instead of being filled round-robin.
 - Cloud processing is off by default. Before scheduled reports, manual AI generation, or AI outline optimization can contact a provider, every user must review the actual AI Profile and redacted endpoint and explicitly consent to sending titles, RSS summaries, locally cached bodies, focus instructions, and outline requirements. No AI network request is made without that consent.
-- AI outline optimization now enforces an explicit section contract and accepts common field aliases, direct arrays, Markdown-wrapped JSON, and providers without structured-output support. One format-repair call is made under the same consent, usage, and safety limits; if that still fails, MRSS suggests another model or manual editing without replacing the existing outline.
+- AI outline optimization now handles common response formats automatically. If the format is invalid, MRSS makes one repair attempt, then suggests another model or manual editing while preserving the existing outline.
 - Consent can be revoked at any time. Changing the AI Profile or endpoint invalidates the prior grant and pauses scheduling; changing only the model at the same endpoint does not require consent again. With no usable AI service configured, MRSS uses local fallback generation and never tries a default remote endpoint.
 - Reports do not fetch each original web page. The client connects directly to the user-selected AI service, which may charge tokens and apply its own data-retention policy; MRSS operates no relay server. API keys, custom authorization values, and endpoint query secrets are never written to report history, logs, or configuration snapshots.
 
 #### History, missed runs, and notifications
 
-- Added paginated report history and structured details with status filters, read state, checkpoint resume, explicit local fallback, delete, Markdown copy, and Markdown download. Inline source references open existing MRSS articles and retain title, feed, author, timestamp, and URL snapshots after an article is removed. The detail view and Markdown no longer append a duplicate full source list.
-- Active digest details now show the current stage, batch, article count, input/output tokens, and derived progress. Failed, completed, or interrupted runs immediately switch to their latest state instead of leaving the right pane on a stale snapshot.
-- Added an independent scheduler that is unaffected by feed refresh mode. Database uniqueness and process locking prevent duplicate periods, and unfinished work is marked interrupted on application shutdown.
+- Added paginated report history and structured details with status filters, read state, continued AI generation, explicit local fallback, delete, Markdown copy, and Markdown download. Inline source references open existing MRSS articles and retain title, feed, author, timestamp, and URL snapshots after an article is removed. The detail view and Markdown no longer append a duplicate full source list.
+- Active digest details now show the current stage, analysis progress, article count, input/output tokens, and overall progress. Failed, completed, or interrupted runs immediately switch to their latest state instead of leaving the right pane on stale content.
+- Added an independent scheduler that is unaffected by feed refresh mode. The same period is not generated twice, and unfinished work stops cleanly when the application exits.
 - After missed periods, users can backfill the latest period, backfill all periods, or skip all. A single period crossed during sleep is backfilled automatically; multiple periods keep prompting until explicitly handled.
 - Added in-app reminders, system notifications, and an optional empty-period notification. Permission is requested only when system notifications are enabled. Denied permissions or delivery failures are logged and fall back to in-app state without affecting the saved report. Server mode continues generating reports without desktop notifications.
 
 #### Data and compatibility
 
-- Added dedicated report configuration, run history, and source snapshot storage, plus an immutable first-seen timestamp for articles. Existing articles are backfilled from their publication time when available, otherwise from migration time.
+- Report configuration, history, and source information are stored independently, with an immutable first-seen timestamp for articles. Existing articles are backfilled from their publication time when available, otherwise from migration time.
 - Hidden articles are excluded by default, while both read and unread articles are included. Successful scheduled reports do not reuse already reported articles; manual reports may intentionally cover the same period again.
 - Synchronized upstream v1.3.27: while the desktop app is running, it exposes a REST API for local integrations on `127.0.0.1:1234`, restricted to loopback and protected cross-origin requests.
 - Raised the build baseline to Go 1.27 and Wails v3 beta, and incorporated upstream fixes for settings saves, update progress, activity-bar layout, macOS signing, empty tag management, and protected-article cleanup.
 - AI search now ranks title, summary, and body matches and explains each result with matched terms, matched fields, and a safe context excerpt. List and card results both open correctly, with previous/next navigation scoped to the active search.
-- AI search, article chat, summaries, translation, and AI Profile tests now return short, localizable failure reasons instead of rendering provider JSON, authentication details, or full responses. Toasts remain within the viewport even in narrow windows or with unbroken legacy error strings.
+- AI search, article chat, summaries, translation, AI Profile tests, feeds, and third-party integrations now show short, localizable failure reasons instead of rendering provider JSON, authentication details, or full responses. Toasts remain within the viewport even in narrow windows or with unbroken legacy error strings.
 - Article chat now saves the user's question before the request and persists the answer and thinking content after success. Newly created or switched conversations can reopen the previous history, failed requests retain the submitted question, and same-second sessions and messages have stable ordering.
-- Failed report details now preflight checkpoints against the current local articles, configuration, and AI destination before presenting an action. Valid checkpoints show Resume; changed inputs or missing checkpoints show Restart. The action is checked again before mutation, invalid attempts leave the original record unchanged, and accepted retries reuse that same record and frozen inputs without adding history entries or refreshing feeds again.
+- Failed reports first check whether the current content and settings can still continue. The interface shows Continue generation when possible and Regenerate after content or settings change. Retrying updates the current report instead of adding duplicates to the list.
 - Revoking daily-report cloud consent now revokes permission and pauses scheduling without reloading saved settings over unsaved AI Profile, outline, feed, or notification edits. Reauthorization is required only when the selected AI Profile or actual endpoint changes; model-only changes at the same endpoint retain consent.
 - AI usage limits, progress, and exceeded state update immediately while editing; saved values are normalized by the backend and actual usage refreshes while Settings remains open.
+- AI Profile tests now use the securely saved key when it is unchanged and the current form value when a new key is entered, preventing masked keys from causing false authentication failures.
+- Daily-report generation now adapts structured output requests for DeepSeek, Gemini, Claude, Ollama, and OpenAI-compatible endpoints, then falls back to JSON mode and prompt-guided JSON when stricter capabilities are unavailable. Diagnostics record only the safe HTTP status and generation stage, never keys, article content, or provider response bodies.
 - Article batch writes now roll back and retry as a unit when SQLite is busy or locked. Exhausted retries propagate a real error to feed refresh and daily-report refresh instead of committing partial data and reporting success.
 - Windows pre-release artifacts now include both an installer and an isolated portable ZIP containing `portable.txt` and the required licenses.
 - Windows installer and portable artifacts remain unsigned with Authenticode. Publisher may appear as unknown and Microsoft Defender SmartScreen may still warn. This release does not bypass UAC, Defender, or SmartScreen.

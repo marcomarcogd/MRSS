@@ -334,10 +334,13 @@ func TestDailyReportAIGeneratorRetryPolicyAndSourceValidation(t *testing.T) {
 		failures   int32
 		wantCalls  int32
 		wantError  bool
+		wantCode   string
 	}{
 		{name: "429 is retried twice", statusCode: http.StatusTooManyRequests, failures: 2, wantCalls: 4},
 		{name: "5xx is retried twice", statusCode: http.StatusServiceUnavailable, failures: 2, wantCalls: 4},
-		{name: "ordinary 4xx is not retried", statusCode: http.StatusBadRequest, failures: 1, wantCalls: 1, wantError: true},
+		{name: "payment failure is not retried", statusCode: http.StatusPaymentRequired, failures: 1, wantCalls: 1, wantError: true, wantCode: "payment_required"},
+		{name: "missing model is not retried", statusCode: http.StatusNotFound, failures: 1, wantCalls: 1, wantError: true, wantCode: "model_or_endpoint_not_found"},
+		{name: "oversized request is not retried", statusCode: http.StatusRequestEntityTooLarge, failures: 1, wantCalls: 1, wantError: true, wantCode: "request_too_large"},
 	}
 
 	for _, tt := range tests {
@@ -396,7 +399,11 @@ func TestDailyReportAIGeneratorRetryPolicyAndSourceValidation(t *testing.T) {
 			}})
 			if tt.wantError {
 				if generateErr == nil {
-					t.Fatal("Generate succeeded, want an ordinary 4xx error")
+					t.Fatal("Generate succeeded, want a non-format 4xx error")
+				}
+				var generationErr *dailyreport.GenerationError
+				if !errors.As(generateErr, &generationErr) || generationErr.Code != tt.wantCode {
+					t.Fatalf("Generate error = %v, want code %q", generateErr, tt.wantCode)
 				}
 			} else {
 				if generateErr != nil {
@@ -536,7 +543,7 @@ func TestDailyReportLocalFallbackMatchesOutlineAndCleansHTML(t *testing.T) {
 	}
 }
 
-func TestDailyReportStructuredOutputFallsBackOnlyWhenUnsupported(t *testing.T) {
+func TestDailyReportStructuredOutputFallsBackToJSONObjectWhenSchemaIsUnsupported(t *testing.T) {
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		call := calls.Add(1)
@@ -555,8 +562,9 @@ func TestDailyReportStructuredOutputFallsBackOnlyWhenUnsupported(t *testing.T) {
 			writeOpenAIResponseWithUsage(t, w, `{"sections":[{"id":"highlights","title":"Highlights","summary":"done","source_ids":[1]}]}`, 20, 3, 1)
 			return
 		}
-		if _, ok := body["response_format"]; ok {
-			t.Error("schema fallback request still contained response_format")
+		format, ok := body["response_format"].(map[string]interface{})
+		if !ok || format["type"] != "json_object" {
+			t.Errorf("schema fallback did not use JSON object mode: %#v", body["response_format"])
 		}
 		writeOpenAIResponseWithUsage(t, w, `{"insights":[{"summary":"done","source_ids":[1]}]}`, 10, 2, 1)
 	}))
@@ -579,6 +587,95 @@ func TestDailyReportStructuredOutputFallsBackOnlyWhenUnsupported(t *testing.T) {
 	}
 	if result.InputTokens != 30 || result.OutputTokens != 5 {
 		t.Fatalf("unsupported schema response was incorrectly counted: %+v", result)
+	}
+}
+
+func TestDailyReportStructuredOutputFallsBackToPromptJSONWhenFormatsAreUnsupported(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		var body map[string]interface{}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if format, ok := body["response_format"].(map[string]interface{}); ok {
+			status := http.StatusBadRequest
+			if format["type"] == "json_object" {
+				status = http.StatusUnprocessableEntity
+			}
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(`{"error":{"message":"invalid request"}}`))
+			return
+		}
+		joined := fmt.Sprint(body["messages"])
+		if strings.Contains(joined, "Fill the requested outline") {
+			writeOpenAIResponse(t, w, `{"sections":[{"id":"highlights","title":"Highlights","summary":"done","source_ids":[1]}]}`)
+			return
+		}
+		writeOpenAIResponse(t, w, `{"insights":[{"summary":"done","source_ids":[1]}]}`)
+	}))
+	defer server.Close()
+
+	db := newDailyReportTestDB(t)
+	defer db.Close()
+	endpoint := strings.Replace(server.URL, "127.0.0.1", "0.0.0.0", 1)
+	profileID, err := db.CreateAIProfile(&models.AIProfile{
+		Name: "Prompt JSON fallback", Endpoint: endpoint, Model: "test-model", IsDefault: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateAIProfile failed: %v", err)
+	}
+	generator := dailyreport.NewAIGenerator(db, ai.NewUsageTracker(db), nil, dailyreport.WithAIGeneratorRetryDelays(0))
+	generator.SetConsentVerifier(func(*models.DailyReportConfig, *dailyreport.ResolvedAIProvider) error { return nil })
+	result, err := generator.Generate(context.Background(), dailyReportGeneratorConfig(profileID), []models.DailyReportCandidate{{ArticleID: 1, Title: "Title"}})
+	if err != nil {
+		t.Fatalf("prompt JSON compatibility fallback failed: %v", err)
+	}
+	if calls.Load() != 6 {
+		t.Fatalf("format fallback calls = %d, want 6", calls.Load())
+	}
+	if len(result.Content.Sections) != 1 || result.Content.Sections[0].Summary != "done" {
+		t.Fatalf("unexpected report result: %+v", result.Content)
+	}
+}
+
+func TestDailyReportDeepSeekStartsWithNativeJSONMode(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode request: %v", err)
+			return
+		}
+		format, _ := body["response_format"].(map[string]interface{})
+		if format["type"] != "json_object" {
+			t.Errorf("DeepSeek format = %#v, want json_object", body["response_format"])
+		}
+		joined := fmt.Sprint(body["messages"])
+		if strings.Contains(joined, "Fill the requested outline") {
+			writeOpenAIResponse(t, w, `{"sections":[{"id":"highlights","title":"Highlights","summary":"done","source_ids":[1]}]}`)
+			return
+		}
+		writeOpenAIResponse(t, w, `{"insights":[{"summary":"done","source_ids":[1]}]}`)
+	}))
+	defer server.Close()
+
+	db := newDailyReportTestDB(t)
+	defer db.Close()
+	endpoint := strings.Replace(server.URL, "127.0.0.1", "0.0.0.0", 1) + "/deepseek/v1/chat/completions"
+	profileID, err := db.CreateAIProfile(&models.AIProfile{
+		Name: "DeepSeek native JSON", Endpoint: endpoint, Model: "deepseek-test", IsDefault: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateAIProfile failed: %v", err)
+	}
+	generator := dailyreport.NewAIGenerator(db, ai.NewUsageTracker(db), nil, dailyreport.WithAIGeneratorRetryDelays(0))
+	generator.SetConsentVerifier(func(*models.DailyReportConfig, *dailyreport.ResolvedAIProvider) error { return nil })
+	result, err := generator.Generate(context.Background(), dailyReportGeneratorConfig(profileID), []models.DailyReportCandidate{{ArticleID: 1, Title: "Title"}})
+	if err != nil {
+		t.Fatalf("DeepSeek JSON-mode generation failed: %v", err)
+	}
+	if calls.Load() != 2 || len(result.Content.Sections) != 1 {
+		t.Fatalf("DeepSeek result=%+v calls=%d", result.Content, calls.Load())
 	}
 }
 

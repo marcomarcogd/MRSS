@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -50,6 +51,77 @@ func TestDeepSeekFormatEndpointNormalizesBaseURLs(t *testing.T) {
 				t.Fatalf("FormatEndpoint(%q) = %q, want %q", tt.endpoint, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestNativeHandlersTranslateCanonicalResponseFormats(t *testing.T) {
+	schema := map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"summary": map[string]interface{}{"type": "string"},
+		},
+		"required": []string{"summary"},
+	}
+	strictFormat := map[string]interface{}{
+		"type": "json_schema",
+		"json_schema": map[string]interface{}{
+			"name":   "daily_report",
+			"schema": schema,
+		},
+	}
+	base := RequestConfig{
+		Model: "test-model", UserPrompt: "Return JSON", MaxTokens: 128, ResponseFormat: strictFormat,
+	}
+
+	ollamaRequest, err := NewOllamaHandler().BuildRequest(base)
+	if err != nil {
+		t.Fatalf("build Ollama request: %v", err)
+	}
+	if !reflect.DeepEqual(ollamaRequest["format"], schema) {
+		t.Fatalf("Ollama format = %#v, want raw schema", ollamaRequest["format"])
+	}
+
+	geminiRequest, err := NewGeminiHandler().BuildRequest(base)
+	if err != nil {
+		t.Fatalf("build Gemini request: %v", err)
+	}
+	geminiConfig, _ := geminiRequest["generationConfig"].(map[string]interface{})
+	if geminiConfig["responseMimeType"] != "application/json" || !reflect.DeepEqual(geminiConfig["responseJsonSchema"], schema) {
+		t.Fatalf("Gemini generationConfig = %#v", geminiConfig)
+	}
+
+	anthropicRequest, err := (&AnthropicHandler{}).BuildRequest(base)
+	if err != nil {
+		t.Fatalf("build Anthropic request: %v", err)
+	}
+	outputConfig, _ := anthropicRequest["output_config"].(map[string]interface{})
+	anthropicFormat, _ := outputConfig["format"].(map[string]interface{})
+	if anthropicFormat["type"] != "json_schema" || !reflect.DeepEqual(anthropicFormat["schema"], schema) {
+		t.Fatalf("Anthropic output_config = %#v", outputConfig)
+	}
+
+	deepSeekRequest, err := (&DeepSeekHandler{}).BuildRequest(base)
+	if err != nil {
+		t.Fatalf("build DeepSeek request: %v", err)
+	}
+	if !reflect.DeepEqual(deepSeekRequest["response_format"], strictFormat) {
+		t.Fatalf("DeepSeek response_format = %#v, want canonical format", deepSeekRequest["response_format"])
+	}
+
+	jsonObject := base
+	jsonObject.ResponseFormat = map[string]interface{}{"type": "json_object"}
+	ollamaRequest, _ = NewOllamaHandler().BuildRequest(jsonObject)
+	if ollamaRequest["format"] != "json" {
+		t.Fatalf("Ollama JSON mode = %#v, want json", ollamaRequest["format"])
+	}
+	geminiRequest, _ = NewGeminiHandler().BuildRequest(jsonObject)
+	geminiConfig, _ = geminiRequest["generationConfig"].(map[string]interface{})
+	if geminiConfig["responseMimeType"] != "application/json" {
+		t.Fatalf("Gemini JSON mode = %#v", geminiConfig)
+	}
+	anthropicRequest, _ = (&AnthropicHandler{}).BuildRequest(jsonObject)
+	if _, exists := anthropicRequest["output_config"]; exists {
+		t.Fatalf("Anthropic received unsupported schema-free JSON mode: %#v", anthropicRequest["output_config"])
 	}
 }
 

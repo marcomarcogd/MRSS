@@ -366,11 +366,11 @@ describe('Application Smoke Tests', () => {
       expect($progress.text()).to.include('234');
       expect($progress.text()).to.include('56');
       expect($progress.text()).to.include('12');
-      expect($progress.find('[data-testid="daily-report-detail-progress-value"]').text()).to.include(
-        '65%'
-      );
+      expect(
+        $progress.find('[data-testid="daily-report-detail-progress-value"]').text()
+      ).to.include('65%');
       expect($progress.find('[data-testid="daily-report-progress-step"]').text()).to.match(
-        /batch 2 of 4|第 2\/4 批/
+        /group 2 of 4|第 2\/4 组/
       );
     });
 
@@ -379,6 +379,9 @@ describe('Application Smoke Tests', () => {
     cy.get('[data-testid="daily-report-detail-progress"]').should('not.exist');
     cy.get('.report-list-item').should('contain.text', 'Failed');
     cy.contains('AI digest generation did not finish').should('be.visible');
+    cy.contains(/Error code:|错误代码：|No new record|未创建新记录|checkpoint|断点/i).should(
+      'not.exist'
+    );
 
     cy.then(() => {
       const callsAfterFailure = detailCalls;

@@ -376,6 +376,8 @@ const en: TranslationMessages = {
       dragToReorder: 'Drag to reorder or move to another category',
       duplicateFeedURL: 'A feed with this URL already exists',
       duplicateFeedSelected: 'Opened the existing feed',
+      xpathConfigInvalid:
+        'The XPath configuration is invalid. Check the item selector and page structure.',
       editFeed: 'Edit Feed',
       editSubscription: 'Edit Subscription',
       email: 'Email Newsletter',
@@ -1249,8 +1251,8 @@ const en: TranslationMessages = {
       download: 'Download Markdown',
       markRead: 'Mark as read',
       markUnread: 'Mark as unread',
-      resumeAI: 'Resume AI from checkpoint',
-      restartAI: 'Restart AI generation from the beginning',
+      resumeAI: 'Continue generation',
+      restartAI: 'Regenerate',
       useLocalFallback: 'Use local summary instead',
     },
     header: {
@@ -1280,12 +1282,12 @@ const en: TranslationMessages = {
         queued: 'Waiting for the generation task to start…',
         refreshing: 'Refreshing the selected feeds…',
         collecting: 'Collecting and filtering articles for this period…',
-        generating: 'Preparing the AI generation task…',
-        extracting: 'Extracting article insights from batch {current} of {total}…',
-        merging: 'Merge pass {round}, batch {current} of {total}…',
-        finalizing: 'Generating the final section content…',
-        saving: 'Saving the digest, sources, and usage details…',
-        completed: 'Content generation is complete; preparing to save…',
+        generating: 'Generating the digest…',
+        extracting: 'Analyzing article group {current} of {total}…',
+        merging: 'Organizing the analysis…',
+        finalizing: 'Writing the digest…',
+        saving: 'Finishing the digest…',
+        completed: 'Digest generated.',
       },
     },
     empty: {
@@ -1308,11 +1310,10 @@ const en: TranslationMessages = {
       localFallbackNoProvider:
         'No external AI profile was available, so this digest is explicitly marked as a local summary.',
       checkpointInvalidated:
-        'Articles or digest settings changed after the checkpoint was created. Restart AI generation from the beginning or use a local summary.',
+        'The digest content or settings changed. Regenerate it or use a local summary.',
       interruptedError: 'Digest generation was interrupted when the app stopped. You can retry it.',
       failedError:
-        'AI digest generation did not finish. Completed stages and actual token usage were preserved; resume it or explicitly choose a local summary.',
-      failureCode: 'Error code: {code}',
+        'AI digest generation did not finish. Continue generation or use a local summary.',
     },
     preview: {
       title: 'Confirm digest generation',
@@ -1320,7 +1321,7 @@ const en: TranslationMessages = {
       articles: 'Articles',
       batches: 'Estimated AI batches',
       costHint:
-        'Generation may use your configured AI service and consume tokens. A local summary is used only when no provider exists or the limit is reached before the first request; failures after AI starts preserve a checkpoint instead of masquerading as a completed report.',
+        'Generation may use your configured AI service and consume tokens. A local summary is used when no provider is available or the limit is reached before generation; after a failure, you can continue or choose a local summary.',
       confirm: 'Start generation',
     },
     delete: {
@@ -1332,7 +1333,7 @@ const en: TranslationMessages = {
       description:
         '{count} scheduled periods were missed while the app was closed or asleep. Choose how to handle them.',
       closeHint:
-        'Closing this dialog does not record a decision. MRSS will ask again on startup or when you open the digest center.',
+        'Closing this dialog leaves these digests unhandled. MRSS will ask again on startup or when you open the digest center.',
       latest: 'Generate latest',
       all: 'Generate all',
       skipAll: 'Skip all',
@@ -1429,11 +1430,12 @@ const en: TranslationMessages = {
         provider_unavailable: 'The AI service is temporarily unavailable. Try again later.',
         authentication_failed: 'AI authentication failed. Check the selected profile and API key.',
         provider_rejected_request:
-          'The AI service rejected the outline request. Check whether the model supports structured output.',
+          'The AI service could not generate this outline. Try another model.',
         empty_response: 'The AI service returned empty content. Retry or choose another model.',
-        invalid_json: 'The AI response was not valid JSON. Retry or choose another model.',
+        invalid_json:
+          'The AI outline format could not be recognized. Retry or choose another model.',
         schema_invalid:
-          'The AI returned an invalid outline format twice. Choose another model or edit the outline manually.',
+          'The AI outline format did not meet the requirements. Choose another model or edit the outline manually.',
         network_error: 'Could not reach the AI service. Check the network and try again.',
         request_failed: 'The AI outline request failed. Try again.',
       },
@@ -1459,12 +1461,7 @@ const en: TranslationMessages = {
       generationStarted: 'Digest generation started',
       generationFailed: 'Failed to start digest generation',
       retryStarted: 'Digest generation restarted',
-      resumeStarted: 'Digest generation resumed from its checkpoint',
-      restartStarted: 'Digest generation restarted from the beginning',
-      checkpointChanged:
-        'Digest inputs changed. No new record was created; restart from the beginning.',
       retryFailed: 'Retry failed',
-      localFallbackStarted: 'Created a local summary linked to the failed AI run',
       localFallbackFailed: 'Failed to create a local summary',
       deleted: 'Digest deleted',
       deleteFailed: 'Failed to delete digest',

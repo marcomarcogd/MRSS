@@ -493,6 +493,14 @@ type structuredRequest struct {
 	Schema       map[string]interface{}
 }
 
+type responseFormatMode string
+
+const (
+	responseFormatNone       responseFormatMode = "none"
+	responseFormatJSONObject responseFormatMode = "json_object"
+	responseFormatJSONSchema responseFormatMode = "json_schema"
+)
+
 func (g *AIGenerator) requestWithRetry(ctx context.Context, client *ai.Client, provider *ResolvedAIProvider, request structuredRequest, guard func() error) (string, int64, int64, bool, error) {
 	var inputTotal, outputTotal int64
 	inputEstimate := ai.EstimateTokens(request.SystemPrompt + "\n" + request.UserPrompt)
@@ -500,7 +508,10 @@ func (g *AIGenerator) requestWithRetry(ctx context.Context, client *ai.Client, p
 	if len(delays) == 0 {
 		delays = []time.Duration{0}
 	}
-	schemaEnabled := request.Schema != nil
+	formatMode := responseFormatNone
+	if request.Schema != nil {
+		formatMode = initialResponseFormatMode(provider.Endpoint)
+	}
 	attempt := 0
 	attemptedAny := false
 	skipDelay := false
@@ -540,14 +551,17 @@ func (g *AIGenerator) requestWithRetry(ctx context.Context, client *ai.Client, p
 			Model: provider.Model, SystemPrompt: request.SystemPrompt, UserPrompt: request.UserPrompt,
 			Temperature: 0.2, MaxTokens: requestMaxTokens,
 		}
-		if schemaEnabled {
+		switch formatMode {
+		case responseFormatJSONSchema:
 			requestConfig.ResponseFormat = strictJSONSchema(request.SchemaName, request.Schema)
+		case responseFormatJSONObject:
+			requestConfig.ResponseFormat = map[string]interface{}{"type": "json_object"}
 		}
 		if isOpenRouterEndpoint(provider.Endpoint) {
 			requestConfig.ReasoningConfig = map[string]interface{}{"effort": "low"}
 		}
 		started := time.Now()
-		log.Printf("daily report: AI stage=%s attempt=%d schema=%t started", request.Stage, attempt+1, schemaEnabled)
+		log.Printf("daily report: AI stage=%s attempt=%d format=%s started", request.Stage, attempt+1, formatMode)
 		response, err := client.RequestWithConfigContext(ctx, ai.RequestConfig{
 			Model: requestConfig.Model, SystemPrompt: requestConfig.SystemPrompt, UserPrompt: requestConfig.UserPrompt,
 			Temperature: requestConfig.Temperature, MaxTokens: requestConfig.MaxTokens,
@@ -570,12 +584,13 @@ func (g *AIGenerator) requestWithRetry(ctx context.Context, client *ai.Client, p
 			_ = g.usage.AddUsage(inputUsed + outputUsed)
 		}
 		if err == nil {
-			log.Printf("daily report: AI stage=%s attempt=%d completed duration_ms=%d input_tokens=%d output_tokens=%d reasoning_tokens=%d", request.Stage, attempt+1, time.Since(started).Milliseconds(), inputUsed, outputUsed, response.ReasoningTokens)
+			log.Printf("daily report: AI stage=%s attempt=%d format=%s completed duration_ms=%d input_tokens=%d output_tokens=%d reasoning_tokens=%d", request.Stage, attempt+1, formatMode, time.Since(started).Milliseconds(), inputUsed, outputUsed, response.ReasoningTokens)
 			return response.Content, inputTotal, outputTotal, attemptedAny, nil
 		}
-		if schemaEnabled && isSchemaUnsupportedError(err) {
-			log.Printf("daily report: AI stage=%s schema unsupported; retrying without response_format", request.Stage)
-			schemaEnabled = false
+		if formatMode != responseFormatNone && shouldDowngradeResponseFormat(err) {
+			nextMode := nextResponseFormatMode(formatMode, provider.Endpoint)
+			log.Printf("daily report: AI stage=%s format=%s unsupported http_status=%d; retrying format=%s", request.Stage, formatMode, aiHTTPStatus(err), nextMode)
+			formatMode = nextMode
 			skipDelay = true
 			continue
 		}
@@ -583,7 +598,7 @@ func (g *AIGenerator) requestWithRetry(ctx context.Context, client *ai.Client, p
 			return "", inputTotal, outputTotal, attemptedAny, generationFailure(request.Stage, aiErrorCode(ctx.Err()), ctx.Err())
 		}
 		code := aiErrorCode(err)
-		log.Printf("daily report: AI stage=%s attempt=%d failed duration_ms=%d code=%s", request.Stage, attempt+1, time.Since(started).Milliseconds(), code)
+		log.Printf("daily report: AI stage=%s attempt=%d format=%s failed duration_ms=%d http_status=%d code=%s", request.Stage, attempt+1, formatMode, time.Since(started).Milliseconds(), aiHTTPStatus(err), code)
 		if !retryableAIError(err) || attempt == len(delays)-1 {
 			return "", inputTotal, outputTotal, attemptedAny, generationFailure(request.Stage, code, safeAIRequestError(err))
 		}
@@ -599,19 +614,40 @@ func strictJSONSchema(name string, schema map[string]interface{}) map[string]int
 	}
 }
 
+func initialResponseFormatMode(endpoint string) responseFormatMode {
+	if ai.DetectAPIProvider(endpoint) == "deepseek" {
+		return responseFormatJSONObject
+	}
+	return responseFormatJSONSchema
+}
+
+func nextResponseFormatMode(current responseFormatMode, endpoint string) responseFormatMode {
+	if current == responseFormatJSONSchema {
+		if ai.DetectAPIProvider(endpoint) == "anthropic" {
+			return responseFormatNone
+		}
+		return responseFormatJSONObject
+	}
+	return responseFormatNone
+}
+
 func isOpenRouterEndpoint(endpoint string) bool {
 	parsed, err := url.Parse(endpoint)
 	return err == nil && strings.EqualFold(parsed.Hostname(), "openrouter.ai")
 }
 
-func isSchemaUnsupportedError(err error) bool {
+func shouldDowngradeResponseFormat(err error) bool {
 	var statusErr *ai.HTTPStatusError
-	if !errors.As(err, &statusErr) || statusErr.StatusCode != http.StatusBadRequest {
-		return false
+	return errors.As(err, &statusErr) &&
+		(statusErr.StatusCode == http.StatusBadRequest || statusErr.StatusCode == http.StatusUnprocessableEntity)
+}
+
+func aiHTTPStatus(err error) int {
+	var statusErr *ai.HTTPStatusError
+	if errors.As(err, &statusErr) {
+		return statusErr.StatusCode
 	}
-	message := strings.ToLower(err.Error())
-	return strings.Contains(message, "response_format") || strings.Contains(message, "json_schema") ||
-		strings.Contains(message, "structured output") || strings.Contains(message, "unsupported parameter")
+	return 0
 }
 
 func retryableAIError(err error) bool {
@@ -645,6 +681,14 @@ func aiErrorCode(err error) string {
 	var statusErr *ai.HTTPStatusError
 	if errors.As(err, &statusErr) {
 		switch {
+		case statusErr.StatusCode == http.StatusRequestTimeout:
+			return "timeout"
+		case statusErr.StatusCode == http.StatusPaymentRequired:
+			return "payment_required"
+		case statusErr.StatusCode == http.StatusNotFound:
+			return "model_or_endpoint_not_found"
+		case statusErr.StatusCode == http.StatusRequestEntityTooLarge:
+			return "request_too_large"
 		case statusErr.StatusCode == http.StatusTooManyRequests:
 			return "rate_limited"
 		case statusErr.StatusCode >= 500:

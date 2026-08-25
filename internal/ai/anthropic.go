@@ -93,6 +93,18 @@ func (h *AnthropicHandler) BuildRequest(config RequestConfig) (map[string]interf
 		}
 	}
 
+	// Anthropic's native Messages API expects output_config.format and the raw
+	// schema. Generic JSON-object mode is intentionally left to prompt fallback
+	// because the native API does not define an equivalent schema-free switch.
+	if kind, schema := responseFormatParts(config.ResponseFormat); kind == "json_schema" && schema != nil {
+		request["output_config"] = map[string]interface{}{
+			"format": map[string]interface{}{
+				"type":   "json_schema",
+				"schema": schema,
+			},
+		}
+	}
+
 	// Stop sequences
 	if stopSeq, ok := config.ResponseFormat["stop_sequences"].([]string); ok && len(stopSeq) > 0 {
 		request["stop_sequences"] = stopSeq

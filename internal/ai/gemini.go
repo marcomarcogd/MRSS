@@ -99,6 +99,20 @@ func (h *GeminiHandler) BuildRequest(config RequestConfig) (map[string]interface
 		genConfig["seed"] = config.Seed
 	}
 
+	// Gemini uses generationConfig.responseMimeType and a raw response JSON
+	// schema instead of OpenAI's response_format object.
+	if kind, schema := responseFormatParts(config.ResponseFormat); kind != "" {
+		switch kind {
+		case "json_schema":
+			genConfig["responseMimeType"] = "application/json"
+			if schema != nil {
+				genConfig["responseJsonSchema"] = schema
+			}
+		case "json_object":
+			genConfig["responseMimeType"] = "application/json"
+		}
+	}
+
 	// Add system instruction if provided (Gemini-specific)
 	// Note: systemInstruction does NOT have a "role" field in Gemini API
 	if config.SystemPrompt != "" {
