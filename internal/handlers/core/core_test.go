@@ -151,8 +151,13 @@ func TestDailyReportCloudConsentTracksCurrentDestination(t *testing.T) {
 	}
 	config.AIProfileID = &profileID
 	config.Enabled = false
-	if _, err := h.DailyReportService.SaveConfig(config); err != nil {
-		t.Fatalf("SaveConfig failed: %v", err)
+	if _, err := h.DailyReportService.SaveConfig(config); err == nil {
+		t.Fatal("changing the AI profile should require consent even while scheduling is disabled")
+	} else {
+		var consentErr *dailyreport.CloudConsentRequiredError
+		if !errors.As(err, &consentErr) {
+			t.Fatalf("SaveConfig error = %v, want consent required", err)
+		}
 	}
 
 	cloud, err := h.DailyReportService.GetCloudProcessing(config)
@@ -246,8 +251,13 @@ func TestDailyReportCloudConsentPersistsPendingDestinationBeforeGrant(t *testing
 		t.Fatalf("GetConfig failed: %v", err)
 	}
 	config.AIProfileID = &firstProfileID
-	if _, err := h.DailyReportService.SaveConfig(config); err != nil {
-		t.Fatalf("SaveConfig(first) failed: %v", err)
+	if _, err := h.DailyReportService.SaveConfig(config); err == nil {
+		t.Fatal("selecting the first cloud profile should require consent")
+	} else {
+		var firstConsentErr *dailyreport.CloudConsentRequiredError
+		if !errors.As(err, &firstConsentErr) {
+			t.Fatalf("SaveConfig(first) error = %v, want consent required", err)
+		}
 	}
 	if _, err := h.DailyReportService.GrantCloudProcessingConsent(1); err != nil {
 		t.Fatalf("GrantCloudProcessingConsent(first) failed: %v", err)
@@ -1082,6 +1092,127 @@ func (failedDailyReportGenerator) Generate(context.Context, *models.DailyReportC
 
 func (failedDailyReportGenerator) OptimizeOutline(context.Context, string, string, *int64) ([]dailyreport.OutlineSection, error) {
 	return nil, nil
+}
+
+type retryInspectionGenerator struct {
+	mu             sync.Mutex
+	state          dailyreport.RetryState
+	resumeCalls    int
+	lastHash       string
+	lastCheckpoint string
+}
+
+func (g *retryInspectionGenerator) Generate(context.Context, *models.DailyReportConfig, []models.DailyReportCandidate) (dailyreport.AIResult, error) {
+	return dailyreport.AIResult{}, errors.New("retry test expected resumable generation")
+}
+
+func (g *retryInspectionGenerator) GenerateResumable(_ context.Context, _ *models.DailyReportConfig, candidates []models.DailyReportCandidate, hash, checkpoint string, _ dailyreport.CheckpointSaver) (dailyreport.AIResult, error) {
+	g.mu.Lock()
+	g.resumeCalls++
+	g.lastHash = hash
+	g.lastCheckpoint = checkpoint
+	g.mu.Unlock()
+	return dailyreport.AIResult{
+		Content: dailyreport.ReportContent{Sections: []dailyreport.ReportSection{{
+			ID: "overview", Title: "Overview", Summary: "Recovered report", SourceIDs: []int{1},
+		}}},
+		Markdown: "# Recovered report",
+	}, nil
+}
+
+func (*retryInspectionGenerator) OptimizeOutline(context.Context, string, string, *int64) ([]dailyreport.OutlineSection, error) {
+	return nil, nil
+}
+
+func (g *retryInspectionGenerator) InspectCheckpoint(context.Context, *models.DailyReportConfig, []models.DailyReportCandidate, string, string) (dailyreport.RetryState, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.state, nil
+}
+
+func (g *retryInspectionGenerator) setState(state dailyreport.RetryState) {
+	g.mu.Lock()
+	g.state = state
+	g.mu.Unlock()
+}
+
+type countingDailyReportRefresher struct{ calls atomic.Int32 }
+
+func (r *countingDailyReportRefresher) Refresh(context.Context, []int64) []dailyreport.RefreshResult {
+	r.calls.Add(1)
+	return nil
+}
+
+func TestDailyReportRetryPreflightDoesNotCreateDuplicateRuns(t *testing.T) {
+	db := newDailyReportTestDB(t)
+	defer db.Close()
+	feedID, err := db.AddFeed(&models.Feed{Title: "Retry Feed", URL: "https://example.com/retry", Type: "rss"})
+	if err != nil {
+		t.Fatalf("AddFeed failed: %v", err)
+	}
+	now := time.Now().UTC()
+	if err := db.SaveArticle(&models.Article{
+		FeedID: feedID, Title: "Retry candidate", URL: "https://example.com/retry/article",
+		OriginalSummary: "Summary", PublishedAt: now.Add(-time.Hour), FirstSeenAt: now.Add(-time.Hour), HasValidPublishedTime: true,
+	}); err != nil {
+		t.Fatalf("SaveArticle failed: %v", err)
+	}
+	original := &models.DailyReportRun{
+		Kind: dailyreport.RunKindManual, Status: dailyreport.RunStatusFailed,
+		PeriodStart: now.Add(-2 * time.Hour), PeriodEnd: now,
+		GenerationMode: "ai", GenerationHash: "checkpoint-fingerprint",
+		CheckpointJSON: `{"version":1,"stage":"merging"}`, ConfigSnapshot: `{}`,
+	}
+	originalID, err := db.CreateDailyReportRun(original)
+	if err != nil {
+		t.Fatalf("CreateDailyReportRun failed: %v", err)
+	}
+	original.ID = originalID
+
+	generator := &retryInspectionGenerator{}
+	refresher := &countingDailyReportRefresher{}
+	service := dailyreport.NewService(db, refresher, generator, dailyreport.NoopNotifier{}, dailyreport.RealClock(), time.UTC)
+	generator.setState(dailyreport.RetryState{
+		Action: dailyreport.RetryActionRestart, Reason: dailyreport.RetryReasonInputsChanged,
+	})
+	state, err := service.InspectRetry(context.Background(), original)
+	if err != nil || state.Action != dailyreport.RetryActionRestart || state.Reason != dailyreport.RetryReasonInputsChanged {
+		t.Fatalf("InspectRetry = %+v, err=%v", state, err)
+	}
+	if _, err := service.Retry(context.Background(), originalID); err == nil {
+		t.Fatal("resume should be rejected after inputs changed")
+	} else {
+		var generationErr *dailyreport.GenerationError
+		if !errors.As(err, &generationErr) || generationErr.Code != "checkpoint_invalidated" {
+			t.Fatalf("Retry error = %v, want checkpoint_invalidated", err)
+		}
+	}
+	if _, total, err := db.ListDailyReportRuns(models.DailyReportRunFilter{Limit: 10}); err != nil || total != 1 {
+		t.Fatalf("invalid retry created a run: total=%d err=%v", total, err)
+	}
+
+	generator.setState(dailyreport.RetryState{
+		Action: dailyreport.RetryActionResume, Reason: dailyreport.RetryReasonCheckpointValid,
+	})
+	retryRun, err := service.Retry(context.Background(), originalID)
+	if err != nil {
+		t.Fatalf("Retry from checkpoint failed: %v", err)
+	}
+	completed := waitForDailyReportRunStatus(t, db, retryRun.ID, dailyreport.RunStatusCompleted)
+	if completed.RetryOfID == nil || *completed.RetryOfID != originalID {
+		t.Fatalf("retry relation = %+v, want %d", completed.RetryOfID, originalID)
+	}
+	if _, total, err := db.ListDailyReportRuns(models.DailyReportRunFilter{Limit: 10}); err != nil || total != 2 {
+		t.Fatalf("successful retry count = %d, err=%v", total, err)
+	}
+	if refresher.calls.Load() != 0 {
+		t.Fatalf("retry refreshed feeds %d times, want 0", refresher.calls.Load())
+	}
+	generator.mu.Lock()
+	defer generator.mu.Unlock()
+	if generator.resumeCalls != 1 || generator.lastHash != "checkpoint-fingerprint" || generator.lastCheckpoint != original.CheckpointJSON {
+		t.Fatalf("resume call = count:%d hash:%q checkpoint:%q", generator.resumeCalls, generator.lastHash, generator.lastCheckpoint)
+	}
 }
 
 func TestDailyReportAIFailureRequiresExplicitLocalFallback(t *testing.T) {

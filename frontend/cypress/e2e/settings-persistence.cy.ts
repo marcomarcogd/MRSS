@@ -286,6 +286,13 @@ describe('Settings Persistence', () => {
     // Optimizing with an unsaved profile must not call the backend or open the
     // consent prompt for the previously saved destination.
     cy.get('[data-testid="daily-report-profile-select"]').select('13');
+    cy.get('[data-testid="daily-report-consent-status"]').should(
+      'contain.text',
+      'AI configuration changed'
+    );
+    cy.get('[data-testid="daily-report-consent-status"]')
+      .contains('button', /Revoke consent|撤销授权/)
+      .should('not.exist');
     cy.get('[data-testid="daily-report-optimize-outline"]').click();
     cy.contains(
       /The AI profile selection changed\. Save settings before optimizing the outline\.|AI 配置选择已更改，请先保存设置，再优化目录/
@@ -309,6 +316,14 @@ describe('Settings Persistence', () => {
       'Cloud processing authorized'
     );
 
+    // Revoking consent must pause the schedule without replacing unrelated
+    // unsaved modal edits. A changed profile is handled by save-time consent
+    // instead of exposing the old destination's revoke action.
+    cy.get('[data-testid="daily-report-config"] textarea[maxlength="2000"]')
+      .last()
+      .scrollIntoView()
+      .clear()
+      .type('Unsaved digest focus');
     cy.contains('button', /Revoke consent|撤销授权/).click();
     cy.get('[data-modal-open="true"]')
       .last()
@@ -319,6 +334,16 @@ describe('Settings Persistence', () => {
       'contain.text',
       'Authorization required'
     );
+    cy.get('[data-testid="daily-report-config"] textarea[maxlength="2000"]')
+      .last()
+      .scrollIntoView()
+      .should('have.value', 'Unsaved digest focus');
+    cy.get('[data-testid="daily-report-profile-select"]').select('13');
+    cy.get('[data-testid="daily-report-consent-status"]').should(
+      'contain.text',
+      'AI configuration changed'
+    );
+    cy.get('[data-testid="daily-report-profile-select"]').should('have.value', '13');
   });
 
   it('should persist update interval changes', () => {

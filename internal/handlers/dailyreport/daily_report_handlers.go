@@ -384,7 +384,14 @@ func HandleHistory(h *core.Handler, w http.ResponseWriter, r *http.Request) {
 				writeError(w, err)
 				return
 			}
-			response.JSON(w, map[string]interface{}{"run": toRunDTO(run), "sources": toSourceDTOs(sources)})
+			retryState, err := service.InspectRetry(r.Context(), run)
+			if err != nil {
+				writeError(w, err)
+				return
+			}
+			response.JSON(w, map[string]interface{}{
+				"run": toRunDTO(run), "sources": toSourceDTOs(sources), "retry_state": retryState,
+			})
 		case http.MethodDelete:
 			if err := service.Delete(id); err != nil {
 				writeError(w, err)
@@ -631,7 +638,7 @@ func writeError(w http.ResponseWriter, err error) {
 	var generationErr *report.GenerationError
 	if errors.As(err, &generationErr) {
 		status := http.StatusBadGateway
-		if generationErr.Code == "usage_limit_reached" || generationErr.Code == "consent_required" {
+		if generationErr.Code == "usage_limit_reached" || generationErr.Code == "consent_required" || generationErr.Code == "checkpoint_invalidated" {
 			status = http.StatusConflict
 		}
 		w.Header().Set("Content-Type", "application/json")

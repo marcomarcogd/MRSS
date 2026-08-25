@@ -71,6 +71,12 @@ const allVisibleSelected = computed(
     visibleFeedIds.value.length > 0 &&
     visibleFeedIds.value.every((id) => form.value.feed_ids.includes(id))
 );
+const aiProfileChanged = computed(() => form.value.ai_profile_id !== config.value.ai_profile_id);
+const selectedAIProfileName = computed(
+  () =>
+    profiles.value.find((profile) => profile.id === form.value.ai_profile_id)?.name ||
+    t('dailyReport.config.defaultProfile')
+);
 
 onMounted(async () => {
   await Promise.allSettled([
@@ -273,8 +279,10 @@ async function revokeCloudProcessing(): Promise<void> {
   });
   if (!confirmed) return;
   try {
-    await updateCloudProcessingConsent('revoke');
-    form.value = cloneConfig(config.value);
+    await updateCloudProcessingConsent('revoke', { refreshConfig: false });
+    // Revoking pauses scheduled reports but must not replace unsaved profile,
+    // outline, feed, or notification edits in this modal.
+    form.value.enabled = false;
     window.showToast(t('dailyReport.consent.revokedToast'), 'success');
   } catch (error) {
     console.error('Failed to revoke cloud processing consent:', error);
@@ -357,14 +365,17 @@ async function revokeCloudProcessing(): Promise<void> {
                 <span
                   :class="[
                     'h-2.5 w-2.5 rounded-full',
-                    !cloudProcessing.destination
-                      ? 'bg-text-secondary'
-                      : cloudProcessing.accepted
-                        ? 'bg-green-500'
-                        : 'bg-amber-500',
+                    aiProfileChanged
+                      ? 'bg-amber-500'
+                      : !cloudProcessing.destination
+                        ? 'bg-text-secondary'
+                        : cloudProcessing.accepted
+                          ? 'bg-green-500'
+                          : 'bg-amber-500',
                   ]"
                 ></span>
-                <span v-if="!cloudProcessing.destination">{{
+                <span v-if="aiProfileChanged">{{ t('dailyReport.consent.profileChanged') }}</span>
+                <span v-else-if="!cloudProcessing.destination">{{
                   t('dailyReport.consent.localOnly')
                 }}</span>
                 <span v-else-if="cloudProcessing.accepted">{{
@@ -372,7 +383,15 @@ async function revokeCloudProcessing(): Promise<void> {
                 }}</span>
                 <span v-else>{{ t('dailyReport.consent.authorizationRequired') }}</span>
               </div>
-              <template v-if="cloudProcessing.destination">
+              <template v-if="aiProfileChanged">
+                <p class="mt-2 truncate text-xs text-text-secondary">
+                  {{ selectedAIProfileName }}
+                </p>
+                <p class="mt-2 text-xs leading-5 text-amber-600 dark:text-amber-300">
+                  {{ t('dailyReport.consent.profileChangedDescription') }}
+                </p>
+              </template>
+              <template v-else-if="cloudProcessing.destination">
                 <p class="mt-2 truncate text-xs text-text-secondary">
                   {{ cloudProcessing.destination.profile_name }} ·
                   <span class="font-mono">{{ cloudProcessing.destination.endpoint }}</span>
@@ -389,7 +408,7 @@ async function revokeCloudProcessing(): Promise<void> {
               </p>
             </div>
             <button
-              v-if="cloudProcessing.destination && cloudProcessing.accepted"
+              v-if="!aiProfileChanged && cloudProcessing.destination && cloudProcessing.accepted"
               class="report-secondary-button text-red-600 dark:text-red-300"
               type="button"
               @click="revokeCloudProcessing"
@@ -397,7 +416,7 @@ async function revokeCloudProcessing(): Promise<void> {
               {{ t('dailyReport.consent.revoke') }}
             </button>
             <button
-              v-else-if="cloudProcessing.destination"
+              v-else-if="!aiProfileChanged && cloudProcessing.destination"
               class="report-primary-button"
               type="button"
               @click="openCloudConsentPrompt()"

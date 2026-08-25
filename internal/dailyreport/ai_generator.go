@@ -101,6 +101,39 @@ func (g *AIGenerator) SetConsentVerifier(verifier func(*models.DailyReportConfig
 	g.consentVerifier = verifier
 }
 
+// InspectCheckpoint compares current local inputs with a saved checkpoint. It
+// resolves only local configuration and never sends article data to a provider.
+func (g *AIGenerator) InspectCheckpoint(
+	_ context.Context,
+	config *models.DailyReportConfig,
+	candidates []models.DailyReportCandidate,
+	resumeFingerprint string,
+	resumeJSON string,
+) (RetryState, error) {
+	if strings.TrimSpace(resumeFingerprint) == "" || strings.TrimSpace(resumeJSON) == "" {
+		return RetryState{Action: RetryActionRestart, Reason: RetryReasonCheckpointMissing}, nil
+	}
+	var checkpoint generationCheckpoint
+	if err := json.Unmarshal([]byte(resumeJSON), &checkpoint); err != nil || checkpoint.Version != 1 {
+		return RetryState{Action: RetryActionRestart, Reason: RetryReasonCheckpointMissing}, nil
+	}
+	provider, err := g.resolver.Resolve(config)
+	if err != nil {
+		return RetryState{}, err
+	}
+	if provider == nil {
+		return RetryState{Action: RetryActionRestart, Reason: RetryReasonInputsChanged}, nil
+	}
+	fingerprint, err := generationFingerprint(config, candidates, provider)
+	if err != nil {
+		return RetryState{}, err
+	}
+	if fingerprint != resumeFingerprint {
+		return RetryState{Action: RetryActionRestart, Reason: RetryReasonInputsChanged}, nil
+	}
+	return RetryState{Action: RetryActionResume, Reason: RetryReasonCheckpointValid}, nil
+}
+
 func (g *AIGenerator) Generate(ctx context.Context, config *models.DailyReportConfig, candidates []models.DailyReportCandidate) (result AIResult, err error) {
 	return g.GenerateResumable(ctx, config, candidates, "", "", nil)
 }

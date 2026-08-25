@@ -91,7 +91,10 @@ const displayError = computed(() => {
   if (run.generation_mode === 'local' && run.failure_code === 'no_ai_provider') {
     return t('dailyReport.detail.localFallbackNoProvider');
   }
-  if (run.failure_code === 'checkpoint_invalidated') {
+  if (
+    run.failure_code === 'checkpoint_invalidated' ||
+    selectedDetail.value?.retry_state.reason === 'inputs_changed'
+  ) {
     return t('dailyReport.detail.checkpointInvalidated');
   }
   if (run.status === 'partial') return t('dailyReport.detail.partialError');
@@ -101,12 +104,13 @@ const displayError = computed(() => {
 const canRecoverAI = computed(() => {
   const run = selectedDetail.value?.run;
   return Boolean(
-    run && run.generation_mode === 'ai' && ['failed', 'interrupted'].includes(run.status)
+    run &&
+    run.generation_mode === 'ai' &&
+    ['failed', 'interrupted'].includes(run.status) &&
+    selectedDetail.value?.retry_state.action !== 'none'
   );
 });
-const checkpointInvalidated = computed(
-  () => selectedDetail.value?.run.failure_code === 'checkpoint_invalidated'
-);
+const retryAction = computed(() => selectedDetail.value?.retry_state.action || 'none');
 const sourcesById = computed(() => {
   const map = new Map<number, DailyReportSource>();
   selectedDetail.value?.sources.forEach((source) => map.set(source.source_index, source));
@@ -230,15 +234,25 @@ async function confirmGenerate(): Promise<void> {
   }
 }
 
-async function handleRetry(run: DailyReportRun, restart = false): Promise<void> {
+async function handleRetry(run: DailyReportRun, action: 'resume' | 'restart'): Promise<void> {
   if (retryingRunId.value !== null) return;
   retryingRunId.value = run.id;
   try {
-    const retried = await retryRun(run.id, restart);
+    const retried = await retryRun(run.id, action === 'restart');
     await selectReport(retried.id);
-    window.showToast(t('dailyReport.toast.retryStarted'), 'success');
+    window.showToast(
+      action === 'restart'
+        ? t('dailyReport.toast.restartStarted')
+        : t('dailyReport.toast.resumeStarted'),
+      'success'
+    );
   } catch (error) {
-    if (await promptCloudConsent(error, () => handleRetry(run, restart))) return;
+    if (await promptCloudConsent(error, () => handleRetry(run, action))) return;
+    if (error instanceof Error && 'code' in error && error.code === 'checkpoint_invalidated') {
+      await fetchDetail(run.id);
+      window.showToast(t('dailyReport.toast.checkpointChanged'), 'warning');
+      return;
+    }
     console.error('Failed to retry daily report:', error);
     window.showToast(t('dailyReport.toast.retryFailed'), 'error');
   } finally {
@@ -585,7 +599,12 @@ async function openSource(source: DailyReportSource): Promise<void> {
                   <button
                     class="report-action primary"
                     :disabled="retryingRunId !== null || fallbackRunId !== null"
-                    @click="handleRetry(selectedDetail.run, checkpointInvalidated)"
+                    @click="
+                      handleRetry(
+                        selectedDetail.run,
+                        retryAction === 'restart' ? 'restart' : 'resume'
+                      )
+                    "
                   >
                     <PhCircleNotch
                       v-if="retryingRunId === selectedDetail.run.id"
@@ -594,7 +613,7 @@ async function openSource(source: DailyReportSource): Promise<void> {
                     />
                     <PhRepeat v-else :size="17" />
                     {{
-                      checkpointInvalidated
+                      retryAction === 'restart'
                         ? t('dailyReport.action.restartAI')
                         : t('dailyReport.action.resumeAI')
                     }}

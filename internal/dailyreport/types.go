@@ -91,6 +91,30 @@ type GenerationProgress struct {
 
 type CheckpointSaver func(GenerationProgress) error
 
+const (
+	RetryActionResume  = "resume"
+	RetryActionRestart = "restart"
+	RetryActionNone    = "none"
+
+	RetryReasonCheckpointValid   = "checkpoint_valid"
+	RetryReasonInputsChanged     = "inputs_changed"
+	RetryReasonCheckpointMissing = "checkpoint_missing"
+	RetryReasonNotRecoverable    = "not_recoverable"
+)
+
+// RetryState tells the UI which recovery action is safe without exposing the
+// persisted generation fingerprint or checkpoint payload.
+type RetryState struct {
+	Action string `json:"action"`
+	Reason string `json:"reason"`
+}
+
+// CheckpointInspector validates a persisted checkpoint against current local
+// inputs without performing an AI network request.
+type CheckpointInspector interface {
+	InspectCheckpoint(context.Context, *models.DailyReportConfig, []models.DailyReportCandidate, string, string) (RetryState, error)
+}
+
 // ResumableReportGenerator is implemented by cloud generators that can resume
 // already completed extraction and merge batches after a retry or restart.
 type ResumableReportGenerator interface {

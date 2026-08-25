@@ -92,6 +92,12 @@ export interface DailyReportSource {
 export interface DailyReportDetail {
   run: DailyReportRun;
   sources: DailyReportSource[];
+  retry_state: DailyReportRetryState;
+}
+
+export interface DailyReportRetryState {
+  action: 'resume' | 'restart' | 'none';
+  reason: 'checkpoint_valid' | 'inputs_changed' | 'checkpoint_missing' | 'not_recoverable';
 }
 
 export interface DailyReportStatusResponse {

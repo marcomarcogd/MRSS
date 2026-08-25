@@ -182,6 +182,9 @@ async function fetchDetail(id: number): Promise<DailyReportDetail> {
   try {
     const detail = await request<DailyReportDetail>(`/api/daily-report/history/${id}`);
     detail.sources = Array.isArray(detail.sources) ? detail.sources : [];
+    if (!detail.retry_state) {
+      detail.retry_state = { action: 'none', reason: 'not_recoverable' };
+    }
     if (requestSequence === detailRequestSequence && selectedRunId.value === id) {
       selectedDetail.value = detail;
     }
@@ -300,7 +303,8 @@ async function fetchCloudProcessing(): Promise<DailyReportCloudProcessing> {
 }
 
 async function updateCloudProcessingConsent(
-  action: 'grant' | 'revoke'
+  action: 'grant' | 'revoke',
+  options: { refreshConfig?: boolean } = {}
 ): Promise<DailyReportCloudProcessing> {
   const body = action === 'grant' ? { action, version: 1 } : { action };
   const data = await request<{ cloud_processing: DailyReportCloudProcessing }>(
@@ -312,7 +316,12 @@ async function updateCloudProcessingConsent(
     }
   );
   if (data.cloud_processing) cloudProcessing.value = data.cloud_processing;
-  await Promise.allSettled([fetchConfig(), fetchStatus()]);
+  if (options.refreshConfig === false) {
+    if (action === 'revoke') config.value.enabled = false;
+    await fetchStatus();
+  } else {
+    await Promise.allSettled([fetchConfig(), fetchStatus()]);
+  }
   return cloudProcessing.value;
 }
 

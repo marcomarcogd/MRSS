@@ -13,10 +13,15 @@ import (
 )
 
 var (
-	ErrAlreadyRunning  = errors.New("a daily report is already running")
-	ErrRunNotFound     = errors.New("daily report run not found")
-	ErrServiceStopping = errors.New("daily report service is stopping")
+	ErrAlreadyRunning        = errors.New("a daily report is already running")
+	ErrRunNotFound           = errors.New("daily report run not found")
+	ErrServiceStopping       = errors.New("daily report service is stopping")
+	ErrCheckpointInvalidated = errors.New("daily report inputs changed after the checkpoint was created")
 )
+
+type preparedRunInputs struct {
+	candidates []models.DailyReportCandidate
+}
 
 type Service struct {
 	store     Store
@@ -165,9 +170,15 @@ func (s *Service) SaveConfig(config *models.DailyReportConfig) (*models.DailyRep
 			return nil, fmt.Errorf("ai_profile_id is invalid")
 		}
 	}
-	if _, err := s.invalidateStaleCloudConsent(config); err != nil {
+	consentInvalidated, err := s.invalidateStaleCloudConsent(config)
+	if err != nil {
 		return nil, err
 	}
+	var previousProfileID *int64
+	if previous != nil {
+		previousProfileID = previous.AIProfileID
+	}
+	profileSelectionChanged := !sameOptionalInt64(previousProfileID, config.AIProfileID)
 	if config.FeedScope == "selected" {
 		feeds, feedErr := s.store.GetFeeds()
 		if feedErr != nil {
@@ -192,7 +203,7 @@ func (s *Service) SaveConfig(config *models.DailyReportConfig) (*models.DailyRep
 		}
 	}
 	var consentErr error
-	if config.Enabled {
+	if config.Enabled || consentInvalidated || profileSelectionChanged {
 		consentErr = s.ensureCloudProcessingConsent(config)
 		if consentErr != nil {
 			// Persist the user's new destination and the rest of the draft safely
@@ -231,6 +242,13 @@ func (s *Service) SaveConfig(config *models.DailyReportConfig) (*models.DailyRep
 		return nil, consentErr
 	}
 	return s.GetConfig()
+}
+
+func sameOptionalInt64(left, right *int64) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
 }
 
 func (s *Service) OptimizeOutline(ctx context.Context, focus, language string, profileID *int64) ([]OutlineSection, error) {
@@ -288,6 +306,9 @@ func (s *Service) Retry(ctx context.Context, id int64, restart ...bool) (*models
 	if original == nil {
 		return nil, ErrRunNotFound
 	}
+	if original.Status != RunStatusFailed && original.Status != RunStatusInterrupted {
+		return nil, fmt.Errorf("only failed or interrupted reports can be retried")
+	}
 	config, err := s.GetConfig()
 	if err != nil {
 		return nil, err
@@ -295,11 +316,29 @@ func (s *Service) Retry(ctx context.Context, id int64, restart ...bool) (*models
 	if err := s.ensureCloudProcessingConsent(config); err != nil {
 		return nil, err
 	}
+	candidates, err := s.candidates(config, original.PeriodStart, original.PeriodEnd, RunKindManual)
+	if err != nil {
+		return nil, err
+	}
+
+	restartRequested := len(restart) > 0 && restart[0]
+	if !restartRequested {
+		state, inspectErr := s.inspectRetry(ctx, original, config, candidates)
+		if inspectErr != nil {
+			return nil, inspectErr
+		}
+		if state.Action != RetryActionResume {
+			return nil, generationFailure("preparing", "checkpoint_invalidated", ErrCheckpointInvalidated)
+		}
+	}
 	mode := ""
-	if len(restart) > 0 && restart[0] {
+	if restartRequested {
 		mode = "ai"
 	}
-	return s.startOneMode(ctx, config, RunKindManual, original.PeriodStart, original.PeriodEnd, &id, mode)
+	return s.startOneModePrepared(
+		ctx, config, RunKindManual, original.PeriodStart, original.PeriodEnd, &id, mode,
+		&preparedRunInputs{candidates: append([]models.DailyReportCandidate(nil), candidates...)},
+	)
 }
 
 // UseLocalFallback creates a separate, auditable local report for a failed AI
@@ -328,6 +367,10 @@ func (s *Service) startOne(ctx context.Context, config *models.DailyReportConfig
 }
 
 func (s *Service) startOneMode(ctx context.Context, config *models.DailyReportConfig, kind string, start, end time.Time, retryOf *int64, mode string) (*models.DailyReportRun, error) {
+	return s.startOneModePrepared(ctx, config, kind, start, end, retryOf, mode, nil)
+}
+
+func (s *Service) startOneModePrepared(ctx context.Context, config *models.DailyReportConfig, kind string, start, end time.Time, retryOf *int64, mode string, prepared *preparedRunInputs) (*models.DailyReportRun, error) {
 	if err := s.claimRun(); err != nil {
 		return nil, err
 	}
@@ -355,7 +398,7 @@ func (s *Service) startOneMode(ctx context.Context, config *models.DailyReportCo
 	go func() {
 		defer stop()
 		defer s.releaseRun()
-		s.execute(runCtx, config, run)
+		s.executePrepared(runCtx, config, run, prepared)
 	}()
 	return run, nil
 }
@@ -373,6 +416,10 @@ func (s *Service) runScheduled(ctx context.Context, kind string, start, end time
 }
 
 func (s *Service) execute(ctx context.Context, config *models.DailyReportConfig, run *models.DailyReportRun) {
+	s.executePrepared(ctx, config, run, nil)
+}
+
+func (s *Service) executePrepared(ctx context.Context, config *models.DailyReportConfig, run *models.DailyReportRun, prepared *preparedRunInputs) {
 	now := s.clock.Now()
 	run.StartedAt = &now
 	run.Status = RunStatusRefreshing
@@ -394,7 +441,7 @@ func (s *Service) execute(ctx context.Context, config *models.DailyReportConfig,
 	}
 	partial := false
 	var refreshErrors []RefreshResult
-	if s.refresher != nil && len(feedIDs) > 0 {
+	if prepared == nil && s.refresher != nil && len(feedIDs) > 0 {
 		refreshCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 		refreshErrors = s.refresher.Refresh(refreshCtx, feedIDs)
 		cancel()
@@ -413,10 +460,15 @@ func (s *Service) execute(ctx context.Context, config *models.DailyReportConfig,
 	run.Progress = 40
 	run.CurrentStep = "collecting"
 	s.updateRun(run)
-	candidates, err := s.candidates(config, run.PeriodStart, run.PeriodEnd, run.Kind)
-	if err != nil {
-		s.failRun(run, err)
-		return
+	var candidates []models.DailyReportCandidate
+	if prepared != nil {
+		candidates = append([]models.DailyReportCandidate(nil), prepared.candidates...)
+	} else {
+		candidates, err = s.candidates(config, run.PeriodStart, run.PeriodEnd, run.Kind)
+		if err != nil {
+			s.failRun(run, err)
+			return
+		}
 	}
 	run.ArticleCount = len(candidates)
 	run.Title = formatTitle(config.TitleTemplate, run.PeriodStart, run.PeriodEnd, len(candidates))
@@ -798,6 +850,32 @@ func (s *Service) GetHistory(id int64) (*models.DailyReportRun, []models.DailyRe
 	}
 	sources, err := s.store.GetDailyReportSources(id)
 	return run, sources, err
+}
+
+// InspectRetry determines the safe recovery action for a failed AI run using
+// current local inputs only. It never creates a run or calls an AI endpoint.
+func (s *Service) InspectRetry(ctx context.Context, run *models.DailyReportRun) (RetryState, error) {
+	if run == nil || run.GenerationMode != "ai" ||
+		(run.Status != RunStatusFailed && run.Status != RunStatusInterrupted) {
+		return RetryState{Action: RetryActionNone, Reason: RetryReasonNotRecoverable}, nil
+	}
+	config, err := s.GetConfig()
+	if err != nil {
+		return RetryState{}, err
+	}
+	candidates, err := s.candidates(config, run.PeriodStart, run.PeriodEnd, RunKindManual)
+	if err != nil {
+		return RetryState{}, err
+	}
+	return s.inspectRetry(ctx, run, config, candidates)
+}
+
+func (s *Service) inspectRetry(ctx context.Context, run *models.DailyReportRun, config *models.DailyReportConfig, candidates []models.DailyReportCandidate) (RetryState, error) {
+	inspector, ok := s.generator.(CheckpointInspector)
+	if !ok {
+		return RetryState{Action: RetryActionRestart, Reason: RetryReasonCheckpointMissing}, nil
+	}
+	return inspector.InspectCheckpoint(ctx, config, candidates, run.GenerationHash, run.CheckpointJSON)
 }
 
 func (s *Service) MarkRead(id int64, read bool) (*models.DailyReportRun, error) {
