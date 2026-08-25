@@ -1271,6 +1271,24 @@ const en: TranslationMessages = {
       interrupted: 'Interrupted',
     },
     history: { total: '{count} total' },
+    progress: {
+      title: 'Digest generation progress',
+      articles: 'Articles collected',
+      inputTokens: 'Input tokens',
+      outputTokens: 'Output tokens',
+      autoRefresh: 'Generation status and detailed progress refresh automatically every 2 seconds.',
+      stages: {
+        queued: 'Waiting for the generation task to start…',
+        refreshing: 'Refreshing the selected feeds…',
+        collecting: 'Collecting and filtering articles for this period…',
+        generating: 'Preparing the AI generation task…',
+        extracting: 'Extracting article insights from batch {current} of {total}…',
+        merging: 'Merge pass {round}, batch {current} of {total}…',
+        finalizing: 'Generating the final section content…',
+        saving: 'Saving the digest, sources, and usage details…',
+        completed: 'Content generation is complete; preparing to save…',
+      },
+    },
     empty: {
       title: 'No digests yet',
       description:

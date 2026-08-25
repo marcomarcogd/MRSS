@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### 历史、漏跑与通知
 
 - 新增日报历史列表与结构化详情，支持状态筛选、分页、已读状态、从断点继续 AI、主动改用本地摘要、删除、复制 Markdown 和下载 Markdown；栏目内来源引用可打开现存 MRSS 文章，文章已清理时仍保留标题、订阅、作者、时间和 URL 快照。详情页和 Markdown 文末不再重复罗列全部来源。
+- 生成中的日报详情现在显示当前阶段、批次、文章数量、输入/输出 Token 和推算进度，并每 2 秒静默刷新详情、历史列表与运行状态；生成失败、完成或中断后会立即切换为最新结果，不再出现左侧状态已变化而右侧仍停留在旧快照的问题。
 - 新增独立调度器，不受订阅刷新模式影响；同一周期通过数据库约束和进程互斥防止重复生成，应用退出时会把未完成任务标记为已中断。
 - 应用关闭期间漏跑后，可选择补最近一期、补齐全部或全部跳过；跨过单期睡眠会自动补跑，跨过多期会保留提示直到用户明确处理。
 - 新增应用内提醒、系统通知和无内容提醒选项。系统通知只在用户主动启用时请求权限；拒绝授权或发送失败会写入日志并回退到应用内状态，不影响报告保存。服务器模式继续生成日报，但不发送桌面系统通知。
@@ -63,6 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### History, missed runs, and notifications
 
 - Added paginated report history and structured details with status filters, read state, checkpoint resume, explicit local fallback, delete, Markdown copy, and Markdown download. Inline source references open existing MRSS articles and retain title, feed, author, timestamp, and URL snapshots after an article is removed. The detail view and Markdown no longer append a duplicate full source list.
+- Active digest details now show the current stage, batch, article count, input/output tokens, and derived progress. The detail, history list, and run status refresh silently every two seconds, then immediately switch to the final failed, completed, or interrupted state instead of leaving the right pane on a stale snapshot.
 - Added an independent scheduler that is unaffected by feed refresh mode. Database uniqueness and process locking prevent duplicate periods, and unfinished work is marked interrupted on application shutdown.
 - After missed periods, users can backfill the latest period, backfill all periods, or skip all. A single period crossed during sleep is backfilled automatically; multiple periods keep prompting until explicitly handled.
 - Added in-app reminders, system notifications, and an optional empty-period notification. Permission is requested only when system notifications are enabled. Denied permissions or delivery failures are logged and fall back to in-app state without affecting the saved report. Server mode continues generating reports without desktop notifications.

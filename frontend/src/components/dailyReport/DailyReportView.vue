@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Clipboard } from '@wailsio/runtime';
 import {
@@ -50,6 +50,7 @@ const {
   fetchStatus,
   fetchHistory,
   fetchDetail,
+  refreshSelectedRun,
   markRead,
   retryRun,
   createLocalFallback,
@@ -68,6 +69,11 @@ const starting = ref(false);
 const retryingRunId = ref<number | null>(null);
 const fallbackRunId = ref<number | null>(null);
 const mobileDetail = ref(false);
+const activeRunStatuses: DailyReportStatus[] = ['queued', 'refreshing', 'generating'];
+const detailPollInterval = 2_000;
+let detailPollTimer: ReturnType<typeof setTimeout> | null = null;
+let detailPollInFlight = false;
+let detailPollingDisposed = false;
 
 const statuses: Array<DailyReportStatus | ''> = [
   '',
@@ -82,6 +88,15 @@ const statuses: Array<DailyReportStatus | ''> = [
 ];
 
 const sections = computed(() => parseContent(selectedDetail.value?.run.content));
+const isSelectedRunActive = computed(() =>
+  selectedDetail.value ? activeRunStatuses.includes(selectedDetail.value.run.status) : false
+);
+const selectedProgress = computed(() =>
+  selectedDetail.value ? runProgress(selectedDetail.value.run) : 0
+);
+const selectedStepLabel = computed(() =>
+  selectedDetail.value ? progressStepLabel(selectedDetail.value.run) : ''
+);
 const displayError = computed(() => {
   const run = selectedDetail.value?.run;
   if (!run?.error) return '';
@@ -129,6 +144,21 @@ onMounted(async () => {
   }
 });
 
+onBeforeUnmount(() => {
+  detailPollingDisposed = true;
+  stopDetailPolling();
+});
+
+watch(
+  [
+    selectedRunId,
+    () => selectedDetail.value?.run.status,
+    () => selectedDetail.value?.run.current_step,
+  ],
+  () => syncDetailPolling(),
+  { flush: 'post' }
+);
+
 watch(historyStatus, async () => {
   try {
     await fetchHistory(1);
@@ -160,6 +190,90 @@ function statusClass(value: DailyReportStatus): string {
   if (value === 'failed') return 'status-error';
   if (value === 'no_content') return 'status-neutral';
   return 'status-running';
+}
+
+function runProgress(run: DailyReportRun): number {
+  const stored = Math.max(0, Math.min(100, Math.round(run.progress || 0)));
+  const step = run.current_step || '';
+  const extraction = step.match(/^extracting:(\d+)\/(\d+)$/);
+  if (extraction) {
+    const current = Number(extraction[1]);
+    const total = Math.max(1, Number(extraction[2]));
+    return Math.max(stored, Math.min(75, 55 + Math.round((current / total) * 20)));
+  }
+  const merge = step.match(/^merging:(\d+):(\d+)\/(\d+)$/);
+  if (merge) {
+    const current = Number(merge[2]);
+    const total = Math.max(1, Number(merge[3]));
+    return Math.max(stored, Math.min(86, 76 + Math.round((current / total) * 10)));
+  }
+  if (step === 'finalizing') return Math.max(stored, 88);
+  if (step === 'saving' || step === 'completed') return Math.max(stored, 90);
+  return stored;
+}
+
+function progressStepLabel(run: DailyReportRun): string {
+  const step = run.current_step || run.status;
+  const extraction = step.match(/^extracting:(\d+)\/(\d+)$/);
+  if (extraction) {
+    return t('dailyReport.progress.stages.extracting', {
+      current: Number(extraction[1]),
+      total: Number(extraction[2]),
+    });
+  }
+  const merge = step.match(/^merging:(\d+):(\d+)\/(\d+)$/);
+  if (merge) {
+    return t('dailyReport.progress.stages.merging', {
+      round: Number(merge[1]),
+      current: Number(merge[2]),
+      total: Number(merge[3]),
+    });
+  }
+  const knownStep = [
+    'queued',
+    'refreshing',
+    'collecting',
+    'generating',
+    'finalizing',
+    'saving',
+    'completed',
+  ].includes(step)
+    ? step
+    : 'generating';
+  return t(`dailyReport.progress.stages.${knownStep}`);
+}
+
+function formatNumber(value?: number): string {
+  return new Intl.NumberFormat(locale.value).format(value || 0);
+}
+
+function stopDetailPolling(): void {
+  if (detailPollTimer) clearTimeout(detailPollTimer);
+  detailPollTimer = null;
+}
+
+function syncDetailPolling(): void {
+  stopDetailPolling();
+  if (detailPollingDisposed || !selectedRunId.value || !isSelectedRunActive.value) return;
+  detailPollTimer = setTimeout(() => void pollSelectedDetail(), detailPollInterval);
+}
+
+async function pollSelectedDetail(): Promise<void> {
+  stopDetailPolling();
+  const runId = selectedRunId.value;
+  if (!runId || !isSelectedRunActive.value || detailPollInFlight) {
+    syncDetailPolling();
+    return;
+  }
+  detailPollInFlight = true;
+  try {
+    await refreshSelectedRun(runId);
+  } catch (error) {
+    console.error('Failed to refresh active daily report detail:', error);
+  } finally {
+    detailPollInFlight = false;
+    syncDetailPolling();
+  }
 }
 
 function formatDate(value?: string | null, options?: Intl.DateTimeFormatOptions): string {
@@ -451,7 +565,7 @@ async function openSource(source: DailyReportSource): Promise<void> {
             >
               <div
                 class="h-full bg-accent transition-all"
-                :style="{ width: `${Math.max(2, run.progress)}%` }"
+                :style="{ width: `${Math.max(2, runProgress(run))}%` }"
               ></div>
             </div>
           </button>
@@ -579,7 +693,54 @@ async function openSource(source: DailyReportSource): Promise<void> {
               </p>
 
               <div
-                v-if="selectedDetail.run.error"
+                v-if="isSelectedRunActive"
+                class="report-progress-card"
+                data-testid="daily-report-detail-progress"
+              >
+                <div class="flex items-start gap-3">
+                  <PhCircleNotch :size="24" class="mt-0.5 shrink-0 animate-spin text-accent" />
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center justify-between gap-4">
+                      <h3 class="font-semibold">{{ t('dailyReport.progress.title') }}</h3>
+                      <strong data-testid="daily-report-detail-progress-value">
+                        {{ selectedProgress }}%
+                      </strong>
+                    </div>
+                    <p
+                      class="mt-1 text-sm text-text-secondary"
+                      data-testid="daily-report-progress-step"
+                    >
+                      {{ selectedStepLabel }}
+                    </p>
+                    <div class="mt-4 h-2 overflow-hidden rounded-full bg-bg-tertiary">
+                      <div
+                        class="h-full rounded-full bg-accent transition-all duration-300"
+                        :style="{ width: `${Math.max(2, selectedProgress)}%` }"
+                      ></div>
+                    </div>
+                  </div>
+                </div>
+                <dl class="mt-5 grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+                  <div class="progress-metric">
+                    <dt>{{ t('dailyReport.progress.articles') }}</dt>
+                    <dd>{{ formatNumber(selectedDetail.run.article_count) }}</dd>
+                  </div>
+                  <div class="progress-metric">
+                    <dt>{{ t('dailyReport.progress.inputTokens') }}</dt>
+                    <dd>{{ formatNumber(selectedDetail.run.input_tokens) }}</dd>
+                  </div>
+                  <div class="progress-metric">
+                    <dt>{{ t('dailyReport.progress.outputTokens') }}</dt>
+                    <dd>{{ formatNumber(selectedDetail.run.output_tokens) }}</dd>
+                  </div>
+                </dl>
+                <p class="mt-4 text-xs text-text-secondary">
+                  {{ t('dailyReport.progress.autoRefresh') }}
+                </p>
+              </div>
+
+              <div
+                v-if="!isSelectedRunActive && selectedDetail.run.error"
                 class="mt-5 rounded-xl border border-red-400/30 bg-red-500/10 p-4 text-sm text-red-600 dark:text-red-300"
               >
                 <div class="flex gap-3">
@@ -635,14 +796,14 @@ async function openSource(source: DailyReportSource): Promise<void> {
               </div>
 
               <div
-                v-if="selectedDetail.run.status === 'no_content'"
+                v-if="!isSelectedRunActive && selectedDetail.run.status === 'no_content'"
                 class="mt-10 text-center text-text-secondary"
               >
                 <PhCheckCircle :size="42" class="mx-auto mb-3" />
                 <p>{{ t('dailyReport.detail.noContent') }}</p>
               </div>
 
-              <div v-else-if="sections.length" class="mt-8 space-y-10">
+              <div v-else-if="!isSelectedRunActive && sections.length" class="mt-8 space-y-10">
                 <section v-for="section in sections" :key="section.id" class="report-section">
                   <h3>{{ section.title }}</h3>
                   <p>{{ section.summary }}</p>
@@ -664,7 +825,7 @@ async function openSource(source: DailyReportSource): Promise<void> {
                   </div>
                 </section>
               </div>
-              <p v-else class="mt-10 text-center text-text-secondary">
+              <p v-else-if="!isSelectedRunActive" class="mt-10 text-center text-text-secondary">
                 {{ t('dailyReport.detail.contentUnavailable') }}
               </p>
             </div>
@@ -762,6 +923,18 @@ async function openSource(source: DailyReportSource): Promise<void> {
 }
 .report-mode-local {
   @apply inline-flex shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300;
+}
+.report-progress-card {
+  @apply mt-6 rounded-2xl border border-accent/25 bg-accent/5 p-5;
+}
+.progress-metric {
+  @apply rounded-xl bg-bg-secondary px-4 py-3;
+}
+.progress-metric dt {
+  @apply text-xs text-text-secondary;
+}
+.progress-metric dd {
+  @apply mt-1 font-semibold tabular-nums text-text-primary;
 }
 .status-success {
   @apply bg-green-500/10 text-green-600 dark:text-green-300;

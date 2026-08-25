@@ -49,6 +49,7 @@ const consentDismissalSequence = ref(0);
 let pendingConsentAction: (() => void | Promise<void>) | null = null;
 let retryingAfterConsent = false;
 let detailRequestSequence = 0;
+let detailLoadingSequence = 0;
 let pollingTimer: ReturnType<typeof setInterval> | null = null;
 let removeCompletedListener: (() => void) | null = null;
 let removeOpenListener: (() => void) | null = null;
@@ -156,8 +157,11 @@ async function fetchStatus(options: { promptMissed?: boolean } = {}): Promise<vo
   if (options.promptMissed && data.missed_count > 0) missedPromptVisible.value = true;
 }
 
-async function fetchHistory(page = historyPage.value): Promise<void> {
-  loadingHistory.value = true;
+async function fetchHistory(
+  page = historyPage.value,
+  options: { silent?: boolean } = {}
+): Promise<void> {
+  if (!options.silent) loadingHistory.value = true;
   try {
     const params = new URLSearchParams({
       page: String(page),
@@ -171,13 +175,17 @@ async function fetchHistory(page = historyPage.value): Promise<void> {
     historyTotal.value = data.total || 0;
     historyPage.value = data.page || page;
   } finally {
-    loadingHistory.value = false;
+    if (!options.silent) loadingHistory.value = false;
   }
 }
 
-async function fetchDetail(id: number): Promise<DailyReportDetail> {
+async function fetchDetail(
+  id: number,
+  options: { silent?: boolean } = {}
+): Promise<DailyReportDetail> {
   const requestSequence = ++detailRequestSequence;
-  loadingDetail.value = true;
+  const loadingSequence = options.silent ? 0 : ++detailLoadingSequence;
+  if (!options.silent) loadingDetail.value = true;
   selectedRunId.value = id;
   try {
     const detail = await request<DailyReportDetail>(`/api/daily-report/history/${id}`);
@@ -190,8 +198,17 @@ async function fetchDetail(id: number): Promise<DailyReportDetail> {
     }
     return detail;
   } finally {
-    if (requestSequence === detailRequestSequence) loadingDetail.value = false;
+    if (!options.silent && loadingSequence === detailLoadingSequence) {
+      loadingDetail.value = false;
+    }
   }
+}
+
+async function refreshSelectedRun(id = selectedRunId.value): Promise<DailyReportDetail | null> {
+  if (!id) return null;
+  const detail = await fetchDetail(id, { silent: true });
+  await Promise.all([fetchHistory(historyPage.value, { silent: true }), fetchStatus()]);
+  return detail;
 }
 
 async function markRead(id: number, read: boolean): Promise<void> {
@@ -403,6 +420,7 @@ function closeMissedPrompt(): void {
 
 function selectRun(id: number | null): void {
   detailRequestSequence += 1;
+  detailLoadingSequence += 1;
   selectedRunId.value = id;
   if (id === null) selectedDetail.value = null;
   loadingDetail.value = false;
@@ -447,12 +465,19 @@ function startPolling(): void {
   if (pollingTimer) return;
   pollingTimer = setInterval(() => {
     const wasRunning = status.value.is_running;
+    const selectedWasRunning = Boolean(
+      selectedDetail.value &&
+      ['queued', 'refreshing', 'generating'].includes(selectedDetail.value.run.status)
+    );
     void fetchStatus()
       .then(async () => {
-        if (!wasRunning && !status.value.is_running) return;
-        await fetchHistory(historyPage.value);
-        if (selectedRunId.value === status.value.current_run_id && selectedRunId.value) {
-          await fetchDetail(selectedRunId.value);
+        if (!wasRunning && !status.value.is_running && !selectedWasRunning) return;
+        await fetchHistory(historyPage.value, { silent: true });
+        if (
+          selectedRunId.value &&
+          (selectedWasRunning || selectedRunId.value === status.value.current_run_id)
+        ) {
+          await fetchDetail(selectedRunId.value, { silent: true });
         }
       })
       .catch((error) => console.error('Failed to poll daily report status:', error));
@@ -517,6 +542,7 @@ export function useDailyReports() {
     fetchStatus,
     fetchHistory,
     fetchDetail,
+    refreshSelectedRun,
     markRead,
     retryRun,
     createLocalFallback,

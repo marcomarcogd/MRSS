@@ -293,6 +293,73 @@ describe('App', () => {
     }
   });
 
+  it('silently refreshes an active daily report detail into its terminal state', async () => {
+    const dailyReports = useDailyReports();
+    const failedRun = {
+      id: 9,
+      kind: 'manual' as const,
+      status: 'failed' as const,
+      period_start: '2026-08-24T00:00:00Z',
+      period_end: '2026-08-25T00:00:00Z',
+      progress: 100,
+      current_step: 'failed',
+      title: 'Failed digest',
+      content: { sections: [] },
+      markdown: '',
+      input_tokens: 120,
+      output_tokens: 20,
+      article_count: 4,
+      is_read: true,
+      error: 'generation failed',
+      failure_code: 'timeout',
+      generation_mode: 'ai' as const,
+      created_at: '2026-08-25T00:00:00Z',
+      completed_at: '2026-08-25T00:01:00Z',
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/daily-report/history/9') {
+        return new Response(JSON.stringify({ run: failedRun, sources: [] }), { status: 200 });
+      }
+      if (url.startsWith('/api/daily-report/history?')) {
+        return new Response(
+          JSON.stringify({ items: [failedRun], total: 1, page: 1, page_size: 20 }),
+          { status: 200 }
+        );
+      }
+      if (url === '/api/daily-report/status') {
+        return new Response(
+          JSON.stringify({
+            enabled: true,
+            is_running: false,
+            progress: 0,
+            unread_count: 0,
+            missed_count: 0,
+            notification_authorization: 'not_determined',
+          }),
+          { status: 200 }
+        );
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      const refresh = dailyReports.refreshSelectedRun(9);
+      expect(dailyReports.loadingDetail.value).toBe(false);
+      const detail = await refresh;
+
+      expect(detail?.run.status).toBe('failed');
+      expect(dailyReports.selectedDetail.value?.run.failure_code).toBe('timeout');
+      expect(dailyReports.history.value[0]?.status).toBe('failed');
+      expect(dailyReports.loadingHistory.value).toBe(false);
+    } finally {
+      dailyReports.selectRun(null);
+      dailyReports.history.value = [];
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('uses bundled fonts only for the Windows system default', () => {
     expect(resolveFontFamily('system', 'windows')).toBe(WINDOWS_SYSTEM_FONT_STACK);
     expect(resolveFontFamily('system', 'darwin')).toBe(SYSTEM_FONT_STACK);

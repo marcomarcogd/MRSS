@@ -286,6 +286,106 @@ describe('Application Smoke Tests', () => {
     cy.get('button[title="Mark as read"], button[title="标为已读"]').should('exist');
   });
 
+  it('should show detailed generation progress and refresh the selected digest to failure', () => {
+    let detailCalls = 0;
+    const running = {
+      id: 33,
+      kind: 'manual',
+      status: 'generating',
+      period_start: '2026-08-24T08:00:00+08:00',
+      period_end: '2026-08-25T08:00:00+08:00',
+      progress: 55,
+      current_step: 'extracting:2/4',
+      title: 'Digest in progress',
+      content: { sections: [] },
+      markdown: '',
+      input_tokens: 234,
+      output_tokens: 56,
+      article_count: 12,
+      is_read: true,
+      error: '',
+      generation_mode: 'ai',
+      created_at: '2026-08-25T08:01:00+08:00',
+      started_at: '2026-08-25T08:01:01+08:00',
+    };
+    const failed = {
+      ...running,
+      status: 'failed',
+      progress: 100,
+      current_step: 'failed',
+      error: 'daily report generation failed at extracting:2/4 (timeout)',
+      failure_code: 'timeout',
+      completed_at: '2026-08-25T08:02:00+08:00',
+    };
+    const currentRun = () => (detailCalls >= 2 ? failed : running);
+
+    cy.intercept('GET', '/api/daily-report/config', {
+      config: {
+        enabled: true,
+        schedule_time: '08:00',
+        feed_scope: 'all',
+        feed_ids: [],
+        include_hidden: false,
+        ai_profile_id: 1,
+        focus: '',
+        outline: [],
+        language: 'auto',
+        title_template: '24-Hour AI Digest · {{date}}',
+        in_app_notification: true,
+        system_notification: false,
+        notify_on_empty: false,
+      },
+    });
+    cy.intercept('GET', '/api/daily-report/status', (req) => {
+      const active = detailCalls < 2;
+      req.reply({
+        enabled: true,
+        is_running: active,
+        current_run_id: active ? 33 : null,
+        progress: active ? 55 : 0,
+        unread_count: 0,
+        missed_count: 0,
+        notification_authorization: 'not_determined',
+      });
+    });
+    cy.intercept('GET', '/api/daily-report/history?*', (req) =>
+      req.reply({ items: [currentRun()], total: 1, page: 1, page_size: 20 })
+    );
+    cy.intercept('GET', '/api/daily-report/history/33', (req) => {
+      detailCalls += 1;
+      req.reply({ run: currentRun(), sources: [] });
+    }).as('getActiveDigestDetail');
+    cy.reload();
+
+    cy.get('button[title="24-Hour AI Digest"], button[title="24 小时 AI 日报"]').click({
+      force: true,
+    });
+    cy.wait('@getActiveDigestDetail');
+    cy.get('[data-testid="daily-report-detail-progress"]').should(($progress) => {
+      expect($progress).to.be.visible;
+      expect($progress.text()).to.include('234');
+      expect($progress.text()).to.include('56');
+      expect($progress.text()).to.include('12');
+      expect($progress.find('[data-testid="daily-report-detail-progress-value"]').text()).to.include(
+        '65%'
+      );
+      expect($progress.find('[data-testid="daily-report-progress-step"]').text()).to.match(
+        /batch 2 of 4|第 2\/4 批/
+      );
+    });
+
+    cy.wait(2_200);
+    cy.wait('@getActiveDigestDetail');
+    cy.get('[data-testid="daily-report-detail-progress"]').should('not.exist');
+    cy.get('.report-list-item').should('contain.text', 'Failed');
+    cy.contains('AI digest generation did not finish').should('be.visible');
+
+    cy.then(() => {
+      const callsAfterFailure = detailCalls;
+      cy.wait(2_200).then(() => expect(detailCalls).to.eq(callsAfterFailure));
+    });
+  });
+
   it('should request cloud consent once and retry manual generation', () => {
     let accepted = false;
     let startCalls = 0;
