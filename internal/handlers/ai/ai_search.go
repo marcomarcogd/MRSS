@@ -29,6 +29,7 @@ type AISearchResponse struct {
 	SearchTerms   string           `json:"search_terms,omitempty"`
 	ExpandedTerms *SearchTerms     `json:"expanded_terms,omitempty"`
 	Error         string           `json:"error,omitempty"`
+	ErrorCode     string           `json:"error_code,omitempty"`
 	TotalCount    int              `json:"total_count"`
 }
 
@@ -176,16 +177,18 @@ func HandleAISearch(h *core.Handler, w http.ResponseWriter, r *http.Request) {
 	var req AISearchRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.JSON(w, AISearchResponse{
-			Success: false,
-			Error:   "Invalid request format",
+			Success:   false,
+			Error:     "Invalid search request",
+			ErrorCode: ai.ErrorCodeProviderRejectedRequest,
 		})
 		return
 	}
 
 	if strings.TrimSpace(req.Query) == "" {
 		response.JSON(w, AISearchResponse{
-			Success: false,
-			Error:   "Search query is required",
+			Success:   false,
+			Error:     "Search query is required",
+			ErrorCode: ai.ErrorCodeProviderRejectedRequest,
 		})
 		return
 	}
@@ -225,8 +228,9 @@ func HandleAISearch(h *core.Handler, w http.ResponseWriter, r *http.Request) {
 	// Validate AI configuration
 	if endpoint == "" || model == "" {
 		response.JSON(w, AISearchResponse{
-			Success: false,
-			Error:   "AI is not configured. Please configure AI settings first.",
+			Success:   false,
+			Error:     ai.UserFacingErrorForCode(ai.ErrorCodeConfigurationInvalid).Message,
+			ErrorCode: ai.ErrorCodeConfigurationInvalid,
 		})
 		return
 	}
@@ -234,9 +238,11 @@ func HandleAISearch(h *core.Handler, w http.ResponseWriter, r *http.Request) {
 	// Create AI client
 	httpClient, err := createHTTPClientWithProxy(h)
 	if err != nil {
+		publicErr := ai.ClassifyUserFacingError(err)
 		response.JSON(w, AISearchResponse{
-			Success: false,
-			Error:   fmt.Sprintf("Failed to create HTTP client: %v", err),
+			Success:   false,
+			Error:     publicErr.Message,
+			ErrorCode: publicErr.Code,
 		})
 		return
 	}
@@ -254,9 +260,12 @@ func HandleAISearch(h *core.Handler, w http.ResponseWriter, r *http.Request) {
 	systemPrompt := buildAISearchPrompt()
 	aiResponse, err := client.Request(systemPrompt, req.Query)
 	if err != nil {
+		publicErr := ai.ClassifyUserFacingError(err)
+		log.Printf("[AI Search] Request failed code=%s status=%d", publicErr.Code, publicErr.HTTPStatus)
 		response.JSON(w, AISearchResponse{
-			Success: false,
-			Error:   fmt.Sprintf("AI request failed: %v", err),
+			Success:   false,
+			Error:     publicErr.Message,
+			ErrorCode: publicErr.Code,
 		})
 		return
 	}
@@ -264,9 +273,11 @@ func HandleAISearch(h *core.Handler, w http.ResponseWriter, r *http.Request) {
 	// Parse search terms from AI response
 	searchTerms, err := parseSearchTermsAdvanced(aiResponse)
 	if err != nil {
+		publicErr := ai.UserFacingErrorForCode(ai.ErrorCodeInvalidResponse)
 		response.JSON(w, AISearchResponse{
-			Success: false,
-			Error:   fmt.Sprintf("Failed to parse search terms: %v", err),
+			Success:   false,
+			Error:     publicErr.Message,
+			ErrorCode: publicErr.Code,
 		})
 		return
 	}
@@ -294,7 +305,8 @@ func HandleAISearch(h *core.Handler, w http.ResponseWriter, r *http.Request) {
 		log.Printf("[AI Search] Query error: %v", err)
 		response.JSON(w, AISearchResponse{
 			Success:     false,
-			Error:       fmt.Sprintf("Search query failed: %v", err),
+			Error:       "The article search could not be completed",
+			ErrorCode:   ai.ErrorCodeRequestFailed,
 			SearchTerms: strings.Join(allTerms, ", "),
 		})
 		return
