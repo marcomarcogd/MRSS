@@ -1,7 +1,5 @@
 # MRSS
 
-![MRSS screenshot](imgs/og1.png)
-
 <p>
   <strong>English</strong> | <a href="README_zh.md">简体中文</a>
 </p>
