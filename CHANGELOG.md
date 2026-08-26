@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 程序会先清洗 HTML、去重并按标题、RSS 原摘要、关注重点、栏目要求和来源多样性免费筛选文章；每栏最多选择 8 篇，总量控制在 16–40 篇范围内，不使用本地算法伪造 AI 摘要。
 - 默认“AI 摘要并保存”会复用来源、正文和 AI 配置均匹配的已有 AI 摘要，只为其余入选文章批量生成普通文本摘要，并立即写回文章缓存；随后打开单篇文章可直接复用，不再重复消耗 Token。
 - AI 生成中断后会保留已经成功写回的文章摘要和报告进度，继续生成不会重复处理已完成内容。AI 不可用、达到限额或返回错误时会暂停，不再静默降级为 TextRank。
+- 新生成的日报改为由程序将 AI 返回的普通文本、Markdown 或 HTML 清洗并转换成安全的段落、子标题和有序/无序列表；重复栏目标题、整份报告中串入的其他栏目、原始标签和重复内容会在保存前处理，旧版日报继续按原格式兼容显示且不会被重写。
+- 栏目内容按较小来源分块生成，并根据来源数量和剩余用量动态分配输出预算；识别 OpenAI/OpenRouter、DeepSeek、Claude、Gemini 和 Ollama 的长度截断后，MRSS 会保留最后完整句子并只续写未完成部分，最多自动续写三次。仍未完成时保留进度供用户继续，不把半截内容标记为完成或自动改成本地摘要。
+- 文章批量摘要遇到截断时会从每批 6 篇缩小到 3 篇，再缩小为单篇；已经成功保存的摘要和报告内容块不会重复生成。相同来源且高度相似的段落或列表项会去重，不同来源的相似观点仍会保留。
 - 日报设置新增独立的“文章摘要方式”。只有用户明确选择“本地 TextRank”时才执行离线本地摘要；该选择不受全局文章摘要来源影响。
 - 云端内容处理默认关闭。每个用户首次启用定时日报、手动开始 AI 生成或使用 AI 优化目录前，都必须在授权弹窗中确认实际 AI Profile 和脱敏端点，并明确同意发送标题、RSS 摘要、本地正文缓存、关注重点和目录要求；未授权时不会发出任何 AI 网络请求。
 - AI 优化目录会自动处理常见返回格式；格式异常时会自动修正一次，仍失败则提示更换模型或手动编辑，并保留现有目录。
@@ -30,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 新增独立调度器，不受订阅刷新模式影响；同一周期不会重复生成，应用退出时会妥善停止尚未完成的任务。
 - 应用关闭期间漏跑后，可选择补最近一期、补齐全部或全部跳过；跨过单期睡眠会自动补跑，跨过多期会保留提示直到用户明确处理。
 - 新增应用内提醒、系统通知和无内容提醒选项。系统通知只在用户主动启用时请求权限；拒绝授权或发送失败会写入日志并回退到应用内状态，不影响报告保存。服务器模式继续生成日报，但不发送桌面系统通知。
+- 每份完成日报现在最多发送一次 Windows 系统通知和一次 MRSS 应用内提醒。Windows 使用单一基础通知，正文优先显示“重点速览”的首条纯文本内容；重复完成回调和重复点击会按日报 ID 去重，点击通知只聚焦应用并打开对应日报一次，不再触发额外通知。
 
 #### 数据与兼容性
 
@@ -59,6 +63,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MRSS first sanitizes HTML, removes duplicates, and ranks articles locally from titles, original RSS summaries, focus instructions, section requirements, and source diversity. It selects up to eight articles per section and keeps the overall AI workload within 16–40 articles without using a local algorithm to imitate AI summaries.
 - The default “Generate and save AI summaries” mode reuses existing AI summaries only when provenance, article content, and AI configuration still match. Missing summaries are generated in portable plain-text batches and written back immediately, so opening those articles later does not spend tokens again.
 - Interrupted generation retains successfully cached article summaries and report progress. Provider failures or usage limits pause the report and never silently switch to TextRank.
+- Newly generated reports now convert AI plain text, Markdown, or HTML into program-owned safe paragraphs, subheadings, and ordered or unordered lists. Duplicate section headings, unrelated sections from an accidentally returned full report, raw tags, and repeated content are removed before saving. Existing reports keep their legacy rendering and are never rewritten.
+- Sections are generated in smaller source-based parts with an output budget derived from source count and remaining usage. When OpenAI/OpenRouter, DeepSeek, Claude, Gemini, or Ollama reports a length stop, MRSS keeps the last complete sentence and continues only the unfinished part for up to three automatic continuations. Persistently truncated work remains resumable and is never marked complete or silently replaced by local content.
+- Truncated article-summary batches shrink from six articles to three and then to individual articles. Successfully cached summaries and completed report blocks are not regenerated. Highly similar content is deduplicated only when it cites overlapping sources, while comparable views from independent sources are retained.
 - Daily Report settings now include an independent article-summary mode. Offline TextRank runs only when the user explicitly selects it and does not follow the global article-summary provider setting.
 - Cloud processing is off by default. Before scheduled reports, manual AI generation, or AI outline optimization can contact a provider, every user must review the actual AI Profile and redacted endpoint and explicitly consent to sending titles, RSS summaries, locally cached bodies, focus instructions, and outline requirements. No AI network request is made without that consent.
 - AI outline optimization now handles common response formats automatically. If the format is invalid, MRSS makes one repair attempt, then suggests another model or manual editing while preserving the existing outline.
@@ -72,6 +79,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added an independent scheduler that is unaffected by feed refresh mode. The same period is not generated twice, and unfinished work stops cleanly when the application exits.
 - After missed periods, users can backfill the latest period, backfill all periods, or skip all. A single period crossed during sleep is backfilled automatically; multiple periods keep prompting until explicitly handled.
 - Added in-app reminders, system notifications, and an optional empty-period notification. Permission is requested only when system notifications are enabled. Denied permissions or delivery failures are logged and fall back to in-app state without affecting the saved report. Server mode continues generating reports without desktop notifications.
+- Each completed report now emits at most one Windows system notification and one MRSS in-app reminder. Windows uses one basic notification whose body prefers the first plain-text highlight. Duplicate completion callbacks and notification clicks are deduplicated by report ID; clicking focuses MRSS and opens the matching report only once without causing another notification.
 
 #### Data and compatibility
 

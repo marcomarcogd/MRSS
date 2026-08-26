@@ -44,6 +44,21 @@ export interface DailyReportSection {
   title: string;
   summary: string;
   source_ids: number[];
+  blocks?: DailyReportBlock[];
+}
+
+export type DailyReportBlockType = 'paragraph' | 'heading' | 'unordered_list' | 'ordered_list';
+
+export interface DailyReportBlockItem {
+  text: string;
+  source_ids?: number[];
+}
+
+export interface DailyReportBlock {
+  type: DailyReportBlockType;
+  text?: string;
+  items?: DailyReportBlockItem[];
+  source_ids?: number[];
 }
 
 export interface DailyReportContent {

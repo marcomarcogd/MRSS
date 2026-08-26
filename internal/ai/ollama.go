@@ -101,8 +101,9 @@ func (h *OllamaHandler) ParseResponse(body []byte) (ResponseResult, error) {
 			Role    string `json:"role"`
 			Content string `json:"content"`
 		} `json:"message"`
-		Done  bool   `json:"done"`
-		Error string `json:"error,omitempty"`
+		Done       bool   `json:"done"`
+		DoneReason string `json:"done_reason"`
+		Error      string `json:"error,omitempty"`
 	}
 
 	if err := json.Unmarshal(body, &chatResponse); err == nil && chatResponse.Message.Content != "" {
@@ -122,16 +123,19 @@ func (h *OllamaHandler) ParseResponse(body []byte) (ResponseResult, error) {
 		}
 
 		return ResponseResult{
-			Content:    content,
-			FormatUsed: FormatTypeOllama,
+			Content:      content,
+			FormatUsed:   FormatTypeOllama,
+			FinishReason: chatResponse.DoneReason,
+			Truncated:    isTruncatedFinishReason(chatResponse.DoneReason),
 		}, nil
 	}
 
 	// Fallback to generate response format (old format)
 	var generateResponse struct {
-		Response string `json:"response"`
-		Done     bool   `json:"done"`
-		Error    string `json:"error,omitempty"`
+		Response   string `json:"response"`
+		Done       bool   `json:"done"`
+		DoneReason string `json:"done_reason"`
+		Error      string `json:"error,omitempty"`
 	}
 
 	if err := json.Unmarshal(body, &generateResponse); err != nil {
@@ -154,8 +158,10 @@ func (h *OllamaHandler) ParseResponse(body []byte) (ResponseResult, error) {
 	}
 
 	return ResponseResult{
-		Content:    content,
-		FormatUsed: FormatTypeOllama,
+		Content:      content,
+		FormatUsed:   FormatTypeOllama,
+		FinishReason: generateResponse.DoneReason,
+		Truncated:    isTruncatedFinishReason(generateResponse.DoneReason),
 	}, nil
 }
 

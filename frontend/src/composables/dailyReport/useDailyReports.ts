@@ -53,6 +53,8 @@ let detailLoadingSequence = 0;
 let pollingTimer: ReturnType<typeof setInterval> | null = null;
 let removeCompletedListener: (() => void) | null = null;
 let removeOpenListener: (() => void) | null = null;
+const completedEventRunIds = new Set<number>();
+const openedNotificationRunIds = new Set<number>();
 
 export class DailyReportAPIError extends Error {
   constructor(
@@ -445,6 +447,8 @@ function installEventListeners(
   try {
     removeCompletedListener = Events.On('daily-report:completed', (event) => {
       const runId = Number(event.data?.run_id || event.data?.id || event.data || 0) || undefined;
+      if (runId && completedEventRunIds.has(runId)) return;
+      if (runId) completedEventRunIds.add(runId);
       void refreshAfterCompletion(runId);
       onCompleted?.(
         runId,
@@ -455,6 +459,8 @@ function installEventListeners(
     });
     removeOpenListener = Events.On('daily-report:open', (event) => {
       const runId = Number(event.data?.run_id || event.data?.id || event.data || 0) || undefined;
+      if (runId && openedNotificationRunIds.has(runId)) return;
+      if (runId) openedNotificationRunIds.add(runId);
       onOpen(runId);
     });
   } catch (error) {

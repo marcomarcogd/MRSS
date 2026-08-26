@@ -99,6 +99,7 @@ func (h *OpenAIHandler) ParseResponse(body []byte) (ResponseResult, error) {
 				Content   string `json:"content"`
 				Reasoning string `json:"reasoning"`
 			} `json:"message"`
+			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
 		Usage struct {
 			PromptTokens      int64 `json:"prompt_tokens"`
@@ -136,6 +137,8 @@ func (h *OpenAIHandler) ParseResponse(body []byte) (ResponseResult, error) {
 		Content:         content,
 		Thinking:        strings.TrimSpace(response.Choices[0].Message.Reasoning),
 		FormatUsed:      FormatTypeOpenAI,
+		FinishReason:    response.Choices[0].FinishReason,
+		Truncated:       isTruncatedFinishReason(response.Choices[0].FinishReason),
 		InputTokens:     response.Usage.PromptTokens,
 		OutputTokens:    response.Usage.CompletionTokens,
 		ReasoningTokens: response.Usage.CompletionDetails.ReasoningTokens,

@@ -819,8 +819,80 @@ async function openSource(source: DailyReportSource): Promise<void> {
               <div v-else-if="!isSelectedRunActive && sections.length" class="mt-8 space-y-10">
                 <section v-for="section in sections" :key="section.id" class="report-section">
                   <h3>{{ section.title }}</h3>
-                  <p>{{ section.summary }}</p>
-                  <div v-if="section.source_ids?.length" class="mt-4 flex flex-wrap gap-2">
+
+                  <div v-if="section.blocks?.length" class="report-blocks">
+                    <template
+                      v-for="(block, blockIndex) in section.blocks"
+                      :key="`${section.id}-${blockIndex}`"
+                    >
+                      <h4 v-if="block.type === 'heading'" class="report-subheading">
+                        {{ block.text }}
+                        <span v-if="block.source_ids?.length" class="inline-sources">
+                          <button
+                            v-for="sourceId in block.source_ids"
+                            :key="sourceId"
+                            class="inline-source"
+                            :disabled="!sourcesById.get(sourceId)"
+                            :title="sourcesById.get(sourceId)?.title"
+                            @click="
+                              sourcesById.get(sourceId) && openSource(sourcesById.get(sourceId)!)
+                            "
+                          >
+                            [{{ sourceId }}]
+                          </button>
+                        </span>
+                      </h4>
+                      <component
+                        :is="block.type === 'ordered_list' ? 'ol' : 'ul'"
+                        v-else-if="block.type === 'ordered_list' || block.type === 'unordered_list'"
+                        :class="
+                          block.type === 'ordered_list'
+                            ? 'report-ordered-list'
+                            : 'report-unordered-list'
+                        "
+                      >
+                        <li v-for="(item, itemIndex) in block.items || []" :key="itemIndex">
+                          <span>{{ item.text }}</span>
+                          <span v-if="item.source_ids?.length" class="inline-sources">
+                            <button
+                              v-for="sourceId in item.source_ids"
+                              :key="sourceId"
+                              class="inline-source"
+                              :disabled="!sourcesById.get(sourceId)"
+                              :title="sourcesById.get(sourceId)?.title"
+                              @click="
+                                sourcesById.get(sourceId) && openSource(sourcesById.get(sourceId)!)
+                              "
+                            >
+                              [{{ sourceId }}]
+                            </button>
+                          </span>
+                        </li>
+                      </component>
+                      <p v-else>
+                        <span>{{ block.text }}</span>
+                        <span v-if="block.source_ids?.length" class="inline-sources">
+                          <button
+                            v-for="sourceId in block.source_ids"
+                            :key="sourceId"
+                            class="inline-source"
+                            :disabled="!sourcesById.get(sourceId)"
+                            :title="sourcesById.get(sourceId)?.title"
+                            @click="
+                              sourcesById.get(sourceId) && openSource(sourcesById.get(sourceId)!)
+                            "
+                          >
+                            [{{ sourceId }}]
+                          </button>
+                        </span>
+                      </p>
+                    </template>
+                  </div>
+                  <p v-else>{{ section.summary }}</p>
+                  <div
+                    v-if="!section.blocks?.length && section.source_ids?.length"
+                    class="mt-4 flex flex-wrap gap-2"
+                  >
                     <button
                       v-for="sourceId in section.source_ids"
                       :key="sourceId"
@@ -976,6 +1048,31 @@ async function openSource(source: DailyReportSource): Promise<void> {
 }
 .report-section p {
   @apply mt-3 whitespace-pre-wrap text-[15px] leading-8 text-text-primary;
+}
+.report-blocks {
+  @apply mt-3 space-y-4 text-[15px] leading-8 text-text-primary;
+}
+.report-blocks p {
+  @apply m-0 whitespace-pre-wrap;
+}
+.report-subheading {
+  @apply pt-2 text-base font-semibold leading-7 text-text-primary;
+}
+.report-unordered-list,
+.report-ordered-list {
+  @apply space-y-2 pl-6;
+}
+.report-unordered-list {
+  @apply list-disc;
+}
+.report-ordered-list {
+  @apply list-decimal;
+}
+.inline-sources {
+  @apply ml-1 inline-flex flex-wrap gap-1 align-baseline;
+}
+.inline-source {
+  @apply rounded px-0.5 text-xs font-medium text-accent hover:bg-accent/10 disabled:text-text-secondary disabled:opacity-50;
 }
 .source-chip {
   @apply max-w-full truncate rounded-full border border-border bg-bg-secondary px-3 py-1.5 text-xs text-text-secondary hover:border-accent hover:text-accent disabled:opacity-40;

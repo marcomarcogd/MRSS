@@ -125,6 +125,61 @@ func TestNativeHandlersTranslateCanonicalResponseFormats(t *testing.T) {
 	}
 }
 
+func TestNativeHandlersExposeCompletionReasonsAndTruncation(t *testing.T) {
+	tests := []struct {
+		name    string
+		handler FormatHandler
+		body    string
+		reason  string
+	}{
+		{
+			name:    "OpenAI length",
+			handler: NewOpenAIHandler(),
+			body:    `{"choices":[{"message":{"content":"partial"},"finish_reason":"length"}],"usage":{"prompt_tokens":2,"completion_tokens":3}}`,
+			reason:  "length",
+		},
+		{
+			name:    "DeepSeek length",
+			handler: &DeepSeekHandler{},
+			body:    `{"choices":[{"message":{"content":"partial"},"finish_reason":"length"}],"usage":{"prompt_tokens":2,"completion_tokens":3}}`,
+			reason:  "length",
+		},
+		{
+			name:    "Anthropic max tokens",
+			handler: &AnthropicHandler{},
+			body:    `{"content":[{"type":"text","text":"partial"}],"stop_reason":"max_tokens","usage":{"input_tokens":2,"output_tokens":3}}`,
+			reason:  "max_tokens",
+		},
+		{
+			name:    "Gemini max tokens",
+			handler: NewGeminiHandler(),
+			body:    `{"candidates":[{"content":{"parts":[{"text":"partial"}]},"finishReason":"MAX_TOKENS"}],"usageMetadata":{"promptTokenCount":2,"candidatesTokenCount":3,"thoughtsTokenCount":1}}`,
+			reason:  "MAX_TOKENS",
+		},
+		{
+			name:    "Ollama length",
+			handler: NewOllamaHandler(),
+			body:    `{"message":{"role":"assistant","content":"partial"},"done":true,"done_reason":"length"}`,
+			reason:  "length",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := tt.handler.ParseResponse([]byte(tt.body))
+			if err != nil {
+				t.Fatalf("ParseResponse failed: %v", err)
+			}
+			if result.FinishReason != tt.reason || !result.Truncated {
+				t.Fatalf("completion state = reason %q truncated=%v", result.FinishReason, result.Truncated)
+			}
+			if result.Content != "partial" {
+				t.Fatalf("content = %q", result.Content)
+			}
+		})
+	}
+}
+
 func TestClassifyUserFacingErrorDoesNotExposeProviderResponse(t *testing.T) {
 	const secret = `{"error":{"message":"provider detail sk-secret-value"}}`
 	tests := []struct {

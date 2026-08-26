@@ -158,6 +158,11 @@ func (h *GeminiHandler) ParseResponse(body []byte) (ResponseResult, error) {
 		PromptFeedback struct {
 			BlockReason string `json:"blockReason,omitempty"`
 		} `json:"promptFeedback"`
+		UsageMetadata struct {
+			PromptTokenCount     int64 `json:"promptTokenCount"`
+			CandidatesTokenCount int64 `json:"candidatesTokenCount"`
+			ThoughtsTokenCount   int64 `json:"thoughtsTokenCount"`
+		} `json:"usageMetadata"`
 	}
 
 	if err := json.Unmarshal(body, &response); err != nil {
@@ -191,10 +196,19 @@ func (h *GeminiHandler) ParseResponse(body []byte) (ResponseResult, error) {
 		return ResponseResult{}, fmt.Errorf("response blocked for image safety reasons")
 	}
 
-	content := strings.TrimSpace(candidate.Content.Parts[0].Text)
+	var contentBuilder strings.Builder
+	for _, part := range candidate.Content.Parts {
+		contentBuilder.WriteString(part.Text)
+	}
+	content := strings.TrimSpace(contentBuilder.String())
 	return ResponseResult{
-		Content:    content,
-		FormatUsed: FormatTypeGemini,
+		Content:         content,
+		FormatUsed:      FormatTypeGemini,
+		FinishReason:    candidate.FinishReason,
+		Truncated:       isTruncatedFinishReason(candidate.FinishReason),
+		InputTokens:     response.UsageMetadata.PromptTokenCount,
+		OutputTokens:    response.UsageMetadata.CandidatesTokenCount,
+		ReasoningTokens: response.UsageMetadata.ThoughtsTokenCount,
 	}, nil
 }
 

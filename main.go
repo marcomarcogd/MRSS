@@ -286,7 +286,8 @@ func main() {
 
 	// Set app instance to handler for browser integration
 	h.SetApp(app)
-	h.SetDailyReportNotifier(newDesktopDailyReportNotifier(notificationService, app, db))
+	dailyReportNotifier := newDesktopDailyReportNotifier(notificationService, app, db)
+	h.SetDailyReportNotifier(dailyReportNotifier)
 	log.Println("Browser integration enabled")
 
 	// Expose the API to local integrations such as the mrss-assistant skill.
@@ -395,6 +396,10 @@ func main() {
 		}
 		runID := dailyReportIDFromNotification(result)
 		if runID <= 0 {
+			return
+		}
+		if !dailyReportNotifier.claimOpen(runID) {
+			log.Printf("daily report: notification click skipped run=%d reason=duplicate", runID)
 			return
 		}
 		if mainWindow != nil {

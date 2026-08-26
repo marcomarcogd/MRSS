@@ -513,6 +513,11 @@ const (
 )
 
 func (g *AIGenerator) requestWithRetry(ctx context.Context, client *ai.Client, provider *ResolvedAIProvider, request structuredRequest, guard func() error) (string, int64, int64, bool, error) {
+	response, inputTokens, outputTokens, attempted, err := g.requestWithRetryDetailed(ctx, client, provider, request, guard)
+	return response.Content, inputTokens, outputTokens, attempted, err
+}
+
+func (g *AIGenerator) requestWithRetryDetailed(ctx context.Context, client *ai.Client, provider *ResolvedAIProvider, request structuredRequest, guard func() error) (ai.ResponseResult, int64, int64, bool, error) {
 	var inputTotal, outputTotal int64
 	inputEstimate := ai.EstimateTokens(request.SystemPrompt + "\n" + request.UserPrompt)
 	delays := g.retryDelays
@@ -530,12 +535,12 @@ func (g *AIGenerator) requestWithRetry(ctx context.Context, client *ai.Client, p
 		delay := delays[attempt]
 		if delay > 0 && !skipDelay {
 			if err := g.sleep(ctx, delay); err != nil {
-				return "", inputTotal, outputTotal, attemptedAny, generationFailure(request.Stage, aiErrorCode(err), err)
+				return ai.ResponseResult{}, inputTotal, outputTotal, attemptedAny, generationFailure(request.Stage, aiErrorCode(err), err)
 			}
 		}
 		skipDelay = false
 		if err := ctx.Err(); err != nil {
-			return "", inputTotal, outputTotal, attemptedAny, generationFailure(request.Stage, aiErrorCode(err), err)
+			return ai.ResponseResult{}, inputTotal, outputTotal, attemptedAny, generationFailure(request.Stage, aiErrorCode(err), err)
 		}
 		requestMaxTokens := request.MaxTokens
 		if g.usage != nil {
@@ -543,7 +548,7 @@ func (g *AIGenerator) requestWithRetry(ctx context.Context, client *ai.Client, p
 			current, _ := g.usage.GetCurrentUsage()
 			limit, _ := g.usage.GetUsageLimit()
 			if g.usage.IsLimitReached() || (limit > 0 && current+inputEstimate >= limit) {
-				return "", inputTotal, outputTotal, attemptedAny, generationFailure(request.Stage, "usage_limit_reached", ErrAIUsageLimit)
+				return ai.ResponseResult{}, inputTotal, outputTotal, attemptedAny, generationFailure(request.Stage, "usage_limit_reached", ErrAIUsageLimit)
 			}
 			if limit > 0 {
 				remainingOutput := limit - current - inputEstimate
@@ -554,7 +559,7 @@ func (g *AIGenerator) requestWithRetry(ctx context.Context, client *ai.Client, p
 		}
 		if guard != nil {
 			if err := guard(); err != nil {
-				return "", inputTotal, outputTotal, attemptedAny, generationFailure(request.Stage, "consent_required", err)
+				return ai.ResponseResult{}, inputTotal, outputTotal, attemptedAny, generationFailure(request.Stage, "consent_required", err)
 			}
 		}
 		attemptedAny = true
@@ -598,8 +603,14 @@ func (g *AIGenerator) requestWithRetry(ctx context.Context, client *ai.Client, p
 			_ = g.usage.AddUsage(inputUsed + outputUsed)
 		}
 		if err == nil {
+			if response.InputTokens <= 0 {
+				response.InputTokens = inputUsed
+			}
+			if response.OutputTokens <= 0 {
+				response.OutputTokens = outputUsed
+			}
 			log.Printf("daily report: AI stage=%s attempt=%d format=%s completed duration_ms=%d input_tokens=%d output_tokens=%d reasoning_tokens=%d", request.Stage, attempt+1, formatMode, time.Since(started).Milliseconds(), inputUsed, outputUsed, response.ReasoningTokens)
-			return response.Content, inputTotal, outputTotal, attemptedAny, nil
+			return response, inputTotal, outputTotal, attemptedAny, nil
 		}
 		if formatMode != responseFormatNone && shouldDowngradeResponseFormat(err) {
 			nextMode := nextResponseFormatMode(formatMode, provider.Endpoint)
@@ -609,16 +620,16 @@ func (g *AIGenerator) requestWithRetry(ctx context.Context, client *ai.Client, p
 			continue
 		}
 		if ctx.Err() != nil {
-			return "", inputTotal, outputTotal, attemptedAny, generationFailure(request.Stage, aiErrorCode(ctx.Err()), ctx.Err())
+			return ai.ResponseResult{}, inputTotal, outputTotal, attemptedAny, generationFailure(request.Stage, aiErrorCode(ctx.Err()), ctx.Err())
 		}
 		code := aiErrorCode(err)
 		log.Printf("daily report: AI stage=%s attempt=%d format=%s failed duration_ms=%d http_status=%d code=%s", request.Stage, attempt+1, formatMode, time.Since(started).Milliseconds(), aiHTTPStatus(err), code)
 		if !retryableAIError(err) || attempt == len(delays)-1 {
-			return "", inputTotal, outputTotal, attemptedAny, generationFailure(request.Stage, code, safeAIRequestError(err))
+			return ai.ResponseResult{}, inputTotal, outputTotal, attemptedAny, generationFailure(request.Stage, code, safeAIRequestError(err))
 		}
 		attempt++
 	}
-	return "", inputTotal, outputTotal, attemptedAny, generationFailure(request.Stage, "request_failed", fmt.Errorf("AI request failed"))
+	return ai.ResponseResult{}, inputTotal, outputTotal, attemptedAny, generationFailure(request.Stage, "request_failed", fmt.Errorf("AI request failed"))
 }
 
 func strictJSONSchema(name string, schema map[string]interface{}) map[string]interface{} {

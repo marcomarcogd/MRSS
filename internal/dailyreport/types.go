@@ -32,10 +32,32 @@ type OutlineSection struct {
 }
 
 type ReportSection struct {
-	ID        string `json:"id"`
-	Title     string `json:"title"`
-	Summary   string `json:"summary"`
-	SourceIDs []int  `json:"source_ids"`
+	ID        string        `json:"id"`
+	Title     string        `json:"title"`
+	Summary   string        `json:"summary"`
+	SourceIDs []int         `json:"source_ids"`
+	Blocks    []ReportBlock `json:"blocks,omitempty"`
+}
+
+const (
+	ReportBlockParagraph     = "paragraph"
+	ReportBlockHeading       = "heading"
+	ReportBlockUnorderedList = "unordered_list"
+	ReportBlockOrderedList   = "ordered_list"
+)
+
+// ReportBlock is a safe, program-owned representation of AI-authored content.
+// The frontend renders these fields as Vue text nodes and never as raw HTML.
+type ReportBlock struct {
+	Type      string            `json:"type"`
+	Text      string            `json:"text,omitempty"`
+	Items     []ReportBlockItem `json:"items,omitempty"`
+	SourceIDs []int             `json:"source_ids,omitempty"`
+}
+
+type ReportBlockItem struct {
+	Text      string `json:"text"`
+	SourceIDs []int  `json:"source_ids,omitempty"`
 }
 
 type ReportContent struct {

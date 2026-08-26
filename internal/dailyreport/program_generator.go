@@ -9,16 +9,19 @@ import (
 	"strconv"
 	"strings"
 
+	"MRSS/internal/ai"
 	"MRSS/internal/models"
 	articlesummary "MRSS/internal/summary"
 )
 
 const (
-	programCheckpointVersion   = 2
+	programCheckpointVersion   = 3
 	maxArticlesPerSection      = 8
 	minSelectedArticles        = 16
 	maxSelectedArticles        = 40
 	maxSummaryArticlesPerBatch = 6
+	maxSectionSourcesPerPart   = 3
+	maxSectionContinuations    = 3
 )
 
 type programSelection struct {
@@ -27,15 +30,19 @@ type programSelection struct {
 }
 
 type programCheckpoint struct {
-	Version      int                `json:"version"`
-	Stage        string             `json:"stage"`
-	Selected     []programSelection `json:"selected,omitempty"`
-	Summaries    map[int]string     `json:"summaries,omitempty"`
-	NextSummary  int                `json:"next_summary,omitempty"`
-	Sections     []ReportSection    `json:"sections,omitempty"`
-	NextSection  int                `json:"next_section,omitempty"`
-	InputTokens  int64              `json:"input_tokens,omitempty"`
-	OutputTokens int64              `json:"output_tokens,omitempty"`
+	Version          int                   `json:"version"`
+	Stage            string                `json:"stage"`
+	Selected         []programSelection    `json:"selected,omitempty"`
+	Summaries        map[int]string        `json:"summaries,omitempty"`
+	NextSummary      int                   `json:"next_summary,omitempty"`
+	Sections         []ReportSection       `json:"sections,omitempty"`
+	NextSection      int                   `json:"next_section,omitempty"`
+	SectionParts     map[int][]ReportBlock `json:"section_parts,omitempty"`
+	NextSectionPart  int                   `json:"next_section_part,omitempty"`
+	ActiveCompleted  string                `json:"active_completed,omitempty"`
+	ActiveUnfinished string                `json:"active_unfinished,omitempty"`
+	InputTokens      int64                 `json:"input_tokens,omitempty"`
+	OutputTokens     int64                 `json:"output_tokens,omitempty"`
 }
 
 var (
@@ -78,13 +85,16 @@ func (g *AIGenerator) generateProgramAssembled(
 		return result, generationFailure("preparing", "checkpoint_invalidated", fmt.Errorf("report inputs changed after the checkpoint was created"))
 	}
 
-	checkpoint := programCheckpoint{Version: programCheckpointVersion, Stage: "selecting", Summaries: map[int]string{}}
+	checkpoint := programCheckpoint{Version: programCheckpointVersion, Stage: "selecting", Summaries: map[int]string{}, SectionParts: map[int][]ReportBlock{}}
 	if resumeFingerprint == fingerprint && strings.TrimSpace(resumeJSON) != "" {
 		var persisted programCheckpoint
 		if json.Unmarshal([]byte(resumeJSON), &persisted) == nil && persisted.Version == programCheckpointVersion {
 			checkpoint = persisted
 			if checkpoint.Summaries == nil {
 				checkpoint.Summaries = map[int]string{}
+			}
+			if checkpoint.SectionParts == nil {
+				checkpoint.SectionParts = map[int][]ReportBlock{}
 			}
 		}
 	}
@@ -152,41 +162,23 @@ func (g *AIGenerator) generateProgramAssembled(
 			continue
 		}
 		stage := fmt.Sprintf("summarizing:%d/%d", checkpoint.NextSummary, len(checkpoint.Selected))
-		content, inputTokens, outputTokens, attempted, requestErr := g.requestWithRetry(ctx, client, provider, structuredRequest{
-			Stage: stage, SystemPrompt: articleSummarySystemPrompt(g.resolveLanguage(config.Language)),
-			UserPrompt: articleSummaryBatchPrompt(candidates, batchSelections), MaxTokens: 2400,
-		}, guard)
+		parsed, inputTokens, outputTokens, attempted, requestErr := g.requestArticleSummaryGroup(
+			ctx, client, provider, candidates, batchSelections, stage, g.resolveLanguage(config.Language), guard,
+		)
 		called = called || attempted
 		result.InputTokens += inputTokens
 		result.OutputTokens += outputTokens
-		if requestErr != nil {
-			checkpoint.Stage = stage
-			checkpoint.NextSummary = batchStart
-			_ = persist()
-			return result, requestErr
-		}
-		parsed := parseArticleSummaryBlocks(content)
 		for _, selection := range batchSelections {
+			if _, cached := checkpoint.Summaries[selection.CandidateIndex]; cached {
+				continue
+			}
 			candidate := candidates[selection.CandidateIndex]
 			summaryText := strings.TrimSpace(parsed[candidate.ArticleID])
-			if summaryText == "" {
-				var singleAttempted bool
-				summaryText, inputTokens, outputTokens, singleAttempted, requestErr = g.requestWithRetry(ctx, client, provider, structuredRequest{
-					Stage: stage, SystemPrompt: singleArticleSummarySystemPrompt(g.resolveLanguage(config.Language)),
-					UserPrompt: singleArticleSummaryPrompt(candidate), MaxTokens: 900,
-				}, guard)
-				called = called || singleAttempted
-				result.InputTokens += inputTokens
-				result.OutputTokens += outputTokens
-				if requestErr != nil {
-					checkpoint.Stage = stage
-					checkpoint.NextSummary = batchStart
-					_ = persist()
-					return result, requestErr
-				}
-			}
 			summaryText = cleanGeneratedSummary(summaryText)
 			if summaryText == "" {
+				if requestErr != nil {
+					continue
+				}
 				checkpoint.Stage = stage
 				checkpoint.NextSummary = batchStart
 				_ = persist()
@@ -209,6 +201,12 @@ func (g *AIGenerator) generateProgramAssembled(
 				return result, generationFailure(stage, "checkpoint_save_failed", err)
 			}
 		}
+		if requestErr != nil {
+			checkpoint.Stage = stage
+			checkpoint.NextSummary = batchStart
+			_ = persist()
+			return result, requestErr
+		}
 		checkpoint.Stage = stage
 		if err := persist(); err != nil {
 			return result, generationFailure(stage, "checkpoint_save_failed", err)
@@ -226,47 +224,101 @@ func (g *AIGenerator) generateProgramAssembled(
 		definition := outline[sectionIndex]
 		selected := selectionsBySection[sectionIndex]
 		if len(selected) == 0 {
+			blocks := []ReportBlock{{Type: ReportBlockParagraph, Text: localEmptySection(config.Language)}}
 			checkpoint.Sections = append(checkpoint.Sections, ReportSection{
-				ID: definition.ID, Title: definition.Title, Summary: localEmptySection(config.Language),
+				ID: definition.ID, Title: definition.Title, Summary: localEmptySection(config.Language), Blocks: blocks,
 			})
 			checkpoint.NextSection++
 			continue
 		}
-		stage := fmt.Sprintf("writing:%d/%d", sectionIndex+1, len(outline))
-		content, inputTokens, outputTokens, attempted, requestErr := g.requestWithRetry(ctx, client, provider, structuredRequest{
-			Stage: stage, SystemPrompt: sectionWriterSystemPrompt(g.resolveLanguage(config.Language)),
-			UserPrompt: sectionWriterPrompt(config.Focus, definition, candidates, selected, checkpoint.Summaries), MaxTokens: 1800,
-		}, guard)
-		called = called || attempted
-		result.InputTokens += inputTokens
-		result.OutputTokens += outputTokens
-		if requestErr != nil {
-			checkpoint.Stage = stage
-			_ = persist()
-			return result, requestErr
+		parts := chunkProgramSelections(selected, maxSectionSourcesPerPart)
+		if checkpoint.NextSectionPart < len(parts) {
+			part := parts[checkpoint.NextSectionPart]
+			stage := fmt.Sprintf("writing:%d/%d", sectionIndex+1, len(outline))
+			continuations := 0
+			for {
+				isContinuation := checkpoint.ActiveCompleted != "" || checkpoint.ActiveUnfinished != ""
+				prompt := sectionWriterPrompt(config.Focus, definition, candidates, part, checkpoint.Summaries)
+				if isContinuation {
+					prompt = continuationPrompt(definition, checkpoint.ActiveCompleted, checkpoint.ActiveUnfinished)
+				}
+				maxTokens := sectionOutputBudget(len(part))
+				response, inputTokens, outputTokens, attempted, requestErr := g.requestWithRetryDetailed(ctx, client, provider, structuredRequest{
+					Stage: stage, SystemPrompt: sectionWriterSystemPrompt(g.resolveLanguage(config.Language)),
+					UserPrompt: prompt, MaxTokens: maxTokens,
+				}, guard)
+				called = called || attempted
+				result.InputTokens += inputTokens
+				result.OutputTokens += outputTokens
+				if requestErr != nil {
+					checkpoint.Stage = stage
+					_ = persist()
+					return result, requestErr
+				}
+				truncated := looksLikeTruncatedOutput(response.Content, response.FinishReason, response.Truncated, response.OutputTokens, maxTokens)
+				if truncated {
+					merged := mergeGeneratedContinuation(checkpoint.ActiveUnfinished, response.Content)
+					complete, unfinished := splitCompleteGeneratedText(merged)
+					checkpoint.ActiveCompleted = mergeGeneratedContinuation(checkpoint.ActiveCompleted, complete)
+					checkpoint.ActiveUnfinished = unfinished
+					checkpoint.Stage = stage
+					if err := persist(); err != nil {
+						return result, generationFailure(stage, "checkpoint_save_failed", err)
+					}
+					if isContinuation {
+						continuations++
+					}
+					if continuations >= maxSectionContinuations {
+						return result, generationFailure(stage, "output_truncated", fmt.Errorf("AI output remained truncated after continuation attempts"))
+					}
+					continue
+				}
+
+				completedPart := mergeGeneratedContinuation(
+					checkpoint.ActiveCompleted,
+					mergeGeneratedContinuation(checkpoint.ActiveUnfinished, response.Content),
+				)
+				allowed := allowedSectionSources(part)
+				blocks := parseGeneratedSection(completedPart, definition, outline, allowed)
+				if len(blocks) == 0 {
+					checkpoint.Stage = stage
+					_ = persist()
+					return result, generationFailure(stage, "empty_response", fmt.Errorf("AI returned an empty report section"))
+				}
+				checkpoint.SectionParts[sectionIndex] = append(checkpoint.SectionParts[sectionIndex], blocks...)
+				checkpoint.NextSectionPart++
+				checkpoint.ActiveCompleted = ""
+				checkpoint.ActiveUnfinished = ""
+				checkpoint.Stage = stage
+				if err := persist(); err != nil {
+					return result, generationFailure(stage, "checkpoint_save_failed", err)
+				}
+				break
+			}
+			continue
 		}
-		summaryText := cleanGeneratedSummary(content)
+
+		blocks := deduplicateReportBlocks(checkpoint.SectionParts[sectionIndex])
+		summaryText := reportBlocksPlainText(blocks)
 		if summaryText == "" {
-			return result, generationFailure(stage, "empty_response", fmt.Errorf("AI returned an empty report section"))
+			return result, generationFailure("writing", "empty_response", fmt.Errorf("AI returned an empty report section"))
 		}
-		allowed := make(map[int]struct{}, len(selected))
-		fallbackIDs := make([]int, 0, len(selected))
-		for _, selection := range selected {
-			sourceID := selection.CandidateIndex + 1
-			allowed[sourceID] = struct{}{}
-			fallbackIDs = append(fallbackIDs, sourceID)
-		}
-		sourceIDs := validatedReferences(summaryText, allowed)
+		sourceIDs := reportBlockSourceIDs(blocks)
 		if len(sourceIDs) == 0 {
-			sourceIDs = fallbackIDs
+			for sourceID := range allowedSectionSources(selected) {
+				sourceIDs = append(sourceIDs, sourceID)
+			}
+			sort.Ints(sourceIDs)
 		}
 		checkpoint.Sections = append(checkpoint.Sections, ReportSection{
-			ID: definition.ID, Title: definition.Title, Summary: summaryText, SourceIDs: sourceIDs,
+			ID: definition.ID, Title: definition.Title, Summary: summaryText, SourceIDs: sourceIDs, Blocks: blocks,
 		})
+		delete(checkpoint.SectionParts, sectionIndex)
 		checkpoint.NextSection++
-		checkpoint.Stage = stage
+		checkpoint.NextSectionPart = 0
+		checkpoint.Stage = fmt.Sprintf("writing:%d/%d", sectionIndex+1, len(outline))
 		if err := persist(); err != nil {
-			return result, generationFailure(stage, "checkpoint_save_failed", err)
+			return result, generationFailure(checkpoint.Stage, "checkpoint_save_failed", err)
 		}
 	}
 
@@ -481,7 +533,167 @@ func parseArticleSummaryBlocks(raw string) map[int64]string {
 }
 
 func sectionWriterSystemPrompt(language string) string {
-	return "Write one RSS digest section in " + language + ". Use only the supplied summaries, never invent facts, and keep source markers such as [12]. Return plain text or lightweight Markdown, not JSON."
+	return "Write only the requested RSS digest section in " + language + ". Use only the supplied summaries, never invent facts, and keep source markers such as [12]. Do not repeat the section title, do not write another section, and do not write a full report. Complete every sentence. Plain text, lists, or lightweight Markdown are accepted; do not return JSON."
+}
+
+func (g *AIGenerator) requestArticleSummaryGroup(
+	ctx context.Context,
+	client *ai.Client,
+	provider *ResolvedAIProvider,
+	candidates []models.DailyReportCandidate,
+	selections []programSelection,
+	stage string,
+	language string,
+	guard func() error,
+) (map[int64]string, int64, int64, bool, error) {
+	response, inputTokens, outputTokens, attempted, err := g.requestWithRetryDetailed(ctx, client, provider, structuredRequest{
+		Stage: stage, SystemPrompt: articleSummarySystemPrompt(language),
+		UserPrompt: articleSummaryBatchPrompt(candidates, selections), MaxTokens: 2400,
+	}, guard)
+	if err != nil {
+		return nil, inputTokens, outputTokens, attempted, err
+	}
+	if looksLikeTruncatedOutput(response.Content, response.FinishReason, response.Truncated, response.OutputTokens, 2400) {
+		result := parseCompleteArticleSummaryBlocks(response.Content)
+		remaining := make([]programSelection, 0, len(selections))
+		for _, selection := range selections {
+			candidate := candidates[selection.CandidateIndex]
+			if strings.TrimSpace(result[candidate.ArticleID]) == "" {
+				remaining = append(remaining, selection)
+			}
+		}
+		groupSize := 1
+		if len(remaining) > 3 {
+			groupSize = 3
+		}
+		for _, group := range chunkProgramSelections(remaining, groupSize) {
+			var values map[int64]string
+			var groupInput, groupOutput int64
+			var groupAttempted bool
+			if len(group) == 1 {
+				candidate := candidates[group[0].CandidateIndex]
+				var summary string
+				summary, groupInput, groupOutput, groupAttempted, err = g.requestCompleteArticleSummary(ctx, client, provider, candidate, stage, language, guard)
+				if err == nil {
+					values = map[int64]string{candidate.ArticleID: summary}
+				}
+			} else {
+				values, groupInput, groupOutput, groupAttempted, err = g.requestArticleSummaryGroup(
+					ctx, client, provider, candidates, group, stage, language, guard,
+				)
+			}
+			inputTokens += groupInput
+			outputTokens += groupOutput
+			attempted = attempted || groupAttempted
+			for articleID, summary := range values {
+				result[articleID] = summary
+			}
+			if err != nil {
+				return result, inputTokens, outputTokens, attempted, err
+			}
+		}
+		return result, inputTokens, outputTokens, attempted, nil
+	}
+
+	result := parseArticleSummaryBlocks(response.Content)
+	for _, selection := range selections {
+		candidate := candidates[selection.CandidateIndex]
+		if strings.TrimSpace(result[candidate.ArticleID]) != "" {
+			continue
+		}
+		summary, singleInput, singleOutput, singleAttempted, singleErr := g.requestCompleteArticleSummary(
+			ctx, client, provider, candidate, stage, language, guard,
+		)
+		inputTokens += singleInput
+		outputTokens += singleOutput
+		attempted = attempted || singleAttempted
+		if singleErr != nil {
+			return result, inputTokens, outputTokens, attempted, singleErr
+		}
+		result[candidate.ArticleID] = summary
+	}
+	return result, inputTokens, outputTokens, attempted, nil
+}
+
+func parseCompleteArticleSummaryBlocks(raw string) map[int64]string {
+	result := parseArticleSummaryBlocks(raw)
+	matches := articleSummaryBlockPattern.FindAllStringSubmatch(raw, -1)
+	if len(matches) == 0 {
+		return result
+	}
+	last := matches[len(matches)-1]
+	for index := 1; index < len(last); index++ {
+		if last[index] == "" {
+			continue
+		}
+		if articleID, err := strconv.ParseInt(last[index], 10, 64); err == nil {
+			delete(result, articleID)
+			break
+		}
+	}
+	return result
+}
+
+func (g *AIGenerator) requestCompleteArticleSummary(
+	ctx context.Context,
+	client *ai.Client,
+	provider *ResolvedAIProvider,
+	candidate models.DailyReportCandidate,
+	stage string,
+	language string,
+	guard func() error,
+) (string, int64, int64, bool, error) {
+	var completed, unfinished string
+	var inputTokens, outputTokens int64
+	attempted := false
+	continuations := 0
+	for {
+		prompt := singleArticleSummaryPrompt(candidate)
+		if completed != "" || unfinished != "" {
+			prompt = "Continue only this unfinished article summary. Do not repeat completed text and finish every sentence.\n\nCompleted ending:\n" + completed + "\n\nUnfinished fragment:\n" + unfinished
+		}
+		response, requestInput, requestOutput, requestAttempted, err := g.requestWithRetryDetailed(ctx, client, provider, structuredRequest{
+			Stage: stage, SystemPrompt: singleArticleSummarySystemPrompt(language), UserPrompt: prompt, MaxTokens: 1200,
+		}, guard)
+		inputTokens += requestInput
+		outputTokens += requestOutput
+		attempted = attempted || requestAttempted
+		if err != nil {
+			return "", inputTokens, outputTokens, attempted, err
+		}
+		if looksLikeTruncatedOutput(response.Content, response.FinishReason, response.Truncated, response.OutputTokens, 1200) {
+			merged := mergeGeneratedContinuation(unfinished, response.Content)
+			completePart, unfinishedPart := splitCompleteGeneratedText(merged)
+			completed = mergeGeneratedContinuation(completed, completePart)
+			unfinished = unfinishedPart
+			if continuations >= maxSectionContinuations {
+				return "", inputTokens, outputTokens, attempted, generationFailure(stage, "output_truncated", fmt.Errorf("AI article summary remained truncated"))
+			}
+			continuations++
+			continue
+		}
+		return cleanGeneratedSummary(mergeGeneratedContinuation(completed, mergeGeneratedContinuation(unfinished, response.Content))), inputTokens, outputTokens, attempted, nil
+	}
+}
+
+func chunkProgramSelections(values []programSelection, size int) [][]programSelection {
+	if size <= 0 {
+		size = 1
+	}
+	result := make([][]programSelection, 0, (len(values)+size-1)/size)
+	for start := 0; start < len(values); start += size {
+		end := min(start+size, len(values))
+		result = append(result, values[start:end])
+	}
+	return result
+}
+
+func allowedSectionSources(values []programSelection) map[int]struct{} {
+	allowed := make(map[int]struct{}, len(values))
+	for _, selection := range values {
+		allowed[selection.CandidateIndex+1] = struct{}{}
+	}
+	return allowed
 }
 
 func sectionWriterPrompt(focus string, section OutlineSection, candidates []models.DailyReportCandidate, selections []programSelection, summaries map[int]string) string {

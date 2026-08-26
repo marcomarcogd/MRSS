@@ -77,6 +77,7 @@ func localFallback(config *models.DailyReportConfig, candidates []models.DailyRe
 			ranked = ranked[:maxLocalItemsPerSection]
 		}
 		lines := make([]string, 0, len(ranked))
+		items := make([]ReportBlockItem, 0, len(ranked))
 		sourceIDs := make([]int, 0, len(ranked))
 		for _, item := range ranked {
 			candidate := candidates[item.index]
@@ -94,14 +95,18 @@ func localFallback(config *models.DailyReportConfig, candidates []models.DailyRe
 				}
 			}
 			lines = append(lines, "- "+line)
-			sourceIDs = append(sourceIDs, item.index+1)
+			sourceID := item.index + 1
+			sourceIDs = append(sourceIDs, sourceID)
+			items = append(items, ReportBlockItem{Text: line, SourceIDs: []int{sourceID}})
 		}
 		summaryText := strings.Join(lines, "\n")
+		blocks := []ReportBlock{{Type: ReportBlockUnorderedList, Items: items}}
 		if summaryText == "" {
 			summaryText = localEmptySection(config.Language)
+			blocks = []ReportBlock{{Type: ReportBlockParagraph, Text: summaryText}}
 		}
 		sections = append(sections, ReportSection{
-			ID: definition.ID, Title: definition.Title, Summary: summaryText, SourceIDs: sourceIDs,
+			ID: definition.ID, Title: definition.Title, Summary: summaryText, SourceIDs: sourceIDs, Blocks: blocks,
 		})
 	}
 	content := ReportContent{Sections: sections}
@@ -214,26 +219,52 @@ func renderMarkdown(content ReportContent, candidates []models.DailyReportCandid
 		builder.WriteString("## ")
 		builder.WriteString(section.Title)
 		builder.WriteString("\n\n")
-		builder.WriteString(section.Summary)
-		builder.WriteString("\n\n")
-		if len(section.SourceIDs) == 0 {
+		if len(section.Blocks) == 0 {
+			builder.WriteString(section.Summary)
+			builder.WriteString("\n\n")
 			continue
 		}
-		builder.WriteString("来源：")
-		for _, id := range section.SourceIDs {
-			if id <= 0 || id > len(candidates) {
-				continue
-			}
-			candidate := candidates[id-1]
-			if candidate.URL == "" {
-				builder.WriteString(fmt.Sprintf(" [%d]", id))
-			} else {
-				builder.WriteString(fmt.Sprintf(" [%d](%s)", id, candidate.URL))
+		for _, block := range section.Blocks {
+			switch block.Type {
+			case ReportBlockHeading:
+				builder.WriteString("### ")
+				builder.WriteString(block.Text)
+				writeMarkdownSourceLinks(&builder, block.SourceIDs, candidates)
+				builder.WriteString("\n\n")
+			case ReportBlockUnorderedList, ReportBlockOrderedList:
+				for index, item := range block.Items {
+					if block.Type == ReportBlockOrderedList {
+						builder.WriteString(fmt.Sprintf("%d. ", index+1))
+					} else {
+						builder.WriteString("- ")
+					}
+					builder.WriteString(item.Text)
+					writeMarkdownSourceLinks(&builder, item.SourceIDs, candidates)
+					builder.WriteString("\n")
+				}
+				builder.WriteString("\n")
+			default:
+				builder.WriteString(block.Text)
+				writeMarkdownSourceLinks(&builder, block.SourceIDs, candidates)
+				builder.WriteString("\n\n")
 			}
 		}
-		builder.WriteString("\n\n")
 	}
 	return strings.TrimSpace(builder.String())
+}
+
+func writeMarkdownSourceLinks(builder *strings.Builder, sourceIDs []int, candidates []models.DailyReportCandidate) {
+	for _, id := range sourceIDs {
+		if id <= 0 || id > len(candidates) {
+			continue
+		}
+		candidate := candidates[id-1]
+		if candidate.URL == "" {
+			builder.WriteString(fmt.Sprintf(" [%d]", id))
+		} else {
+			builder.WriteString(fmt.Sprintf(" [%d](%s)", id, candidate.URL))
+		}
+	}
 }
 
 func localEmptySection(language string) string {

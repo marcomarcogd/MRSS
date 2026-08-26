@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"sync"
@@ -1122,8 +1123,413 @@ func TestDailyReportAIGeneratorLimitsSelectionBatchesSummariesAndRetriesMissingI
 	if len(summarizedIDs) != 39 {
 		t.Fatalf("batch output covered %d unique selected articles, want 39 before one single-item retry", len(summarizedIDs))
 	}
-	if totalCalls.Load() != 13 {
-		t.Fatalf("total AI calls=%d, want 7 summary batches + 1 retry + 5 sections", totalCalls.Load())
+	if totalCalls.Load() != 23 {
+		t.Fatalf("total AI calls=%d, want 7 summary batches + 1 retry + 15 section parts", totalCalls.Load())
+	}
+}
+
+func TestDailyReportAIGeneratorShrinksTruncatedSummaryBatchesFromSixToThreeToOne(t *testing.T) {
+	var mu sync.Mutex
+	batchSizes := make([]int, 0, 3)
+	var singleCalls atomic.Int32
+	articleMarker := regexp.MustCompile(`\[ARTICLE (\d+)\]`)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body := struct {
+			Prompt   string `json:"prompt"`
+			Messages []struct {
+				Content string `json:"content"`
+			} `json:"messages"`
+		}{}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		joined := body.Prompt
+		for _, message := range body.Messages {
+			joined += message.Content
+		}
+		if strings.Contains(joined, "Sources:") {
+			writeOllamaResponseWithFinish(t, w, "Completed report paragraph [1].", "stop")
+			return
+		}
+		matches := articleMarker.FindAllStringSubmatch(joined, -1)
+		if len(matches) > 0 {
+			mu.Lock()
+			batchSizes = append(batchSizes, len(matches))
+			mu.Unlock()
+			writeOllamaResponseWithFinish(t, w, "Incomplete batch output", "length")
+			return
+		}
+		singleCalls.Add(1)
+		writeOllamaResponseWithFinish(t, w, "Complete single article summary.", "stop")
+	}))
+	defer server.Close()
+
+	db := newDailyReportTestDB(t)
+	defer db.Close()
+	profileID, err := db.CreateAIProfile(&models.AIProfile{Name: "Shrink batches", Endpoint: server.URL, Model: "test-model", IsDefault: true})
+	if err != nil {
+		t.Fatalf("CreateAIProfile failed: %v", err)
+	}
+	candidates := make([]models.DailyReportCandidate, 0, 6)
+	for index := 0; index < 6; index++ {
+		candidates = append(candidates, models.DailyReportCandidate{
+			ArticleID: int64(index + 1), FeedID: int64(index + 1), FeedTitle: fmt.Sprintf("Feed %d", index+1),
+			Title: fmt.Sprintf("Article %d", index+1), Content: "Full article content for summary generation.",
+		})
+	}
+	config := dailyReportGeneratorConfig(profileID)
+	config.OutlineJSON = `[{"id":"highlights","title":"Highlights","instruction":"important updates"}]`
+	generator := dailyreport.NewAIGenerator(db, ai.NewUsageTracker(db), nil, dailyreport.WithAIGeneratorRetryDelays(0))
+	if _, err := generator.Generate(context.Background(), config, candidates); err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+	mu.Lock()
+	gotBatchSizes := append([]int(nil), batchSizes...)
+	mu.Unlock()
+	if !reflect.DeepEqual(gotBatchSizes, []int{6, 3, 3}) {
+		t.Fatalf("summary batch sizes=%v, want [6 3 3]", gotBatchSizes)
+	}
+	if singleCalls.Load() != 6 {
+		t.Fatalf("single summary calls=%d, want 6", singleCalls.Load())
+	}
+}
+
+func TestDailyReportAIGeneratorReusesCompleteItemsFromTruncatedBatch(t *testing.T) {
+	var mu sync.Mutex
+	batchSizes := make([]int, 0, 3)
+	articleCalls := make(map[string]int)
+	articleMarker := regexp.MustCompile(`\[ARTICLE (\d+)\]`)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body := struct {
+			Prompt   string `json:"prompt"`
+			Messages []struct {
+				Content string `json:"content"`
+			} `json:"messages"`
+		}{}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		joined := body.Prompt
+		for _, message := range body.Messages {
+			joined += message.Content
+		}
+		if strings.Contains(joined, "Sources:") {
+			writeOllamaResponseWithFinish(t, w, "Completed report paragraph [1].", "stop")
+			return
+		}
+		matches := articleMarker.FindAllStringSubmatch(joined, -1)
+		if len(matches) == 0 {
+			t.Fatalf("unexpected AI request without article markers: %q", joined)
+		}
+		mu.Lock()
+		batchSizes = append(batchSizes, len(matches))
+		for _, match := range matches {
+			articleCalls[match[1]]++
+		}
+		mu.Unlock()
+		if len(matches) == 6 {
+			writeOllamaResponseWithFinish(t, w, "[ARTICLE 1]\nComplete first summary.\n[ARTICLE 2]\nPartial", "length")
+			return
+		}
+		blocks := make([]string, 0, len(matches))
+		for _, match := range matches {
+			blocks = append(blocks, "[ARTICLE "+match[1]+"]\nComplete summary "+match[1]+".")
+		}
+		writeOllamaResponseWithFinish(t, w, strings.Join(blocks, "\n"), "stop")
+	}))
+	defer server.Close()
+
+	db := newDailyReportTestDB(t)
+	defer db.Close()
+	profileID, err := db.CreateAIProfile(&models.AIProfile{Name: "Partial batch", Endpoint: server.URL, Model: "test-model", IsDefault: true})
+	if err != nil {
+		t.Fatalf("CreateAIProfile failed: %v", err)
+	}
+	candidates := make([]models.DailyReportCandidate, 0, 6)
+	for index := 0; index < 6; index++ {
+		candidates = append(candidates, models.DailyReportCandidate{
+			ArticleID: int64(index + 1), FeedID: int64(index + 1), FeedTitle: fmt.Sprintf("Feed %d", index+1),
+			Title: fmt.Sprintf("Article %d", index+1), Content: "Full article content for summary generation.",
+		})
+	}
+	config := dailyReportGeneratorConfig(profileID)
+	config.OutlineJSON = `[{"id":"highlights","title":"Highlights","instruction":"important updates"}]`
+	if _, err := dailyreport.NewAIGenerator(db, ai.NewUsageTracker(db), nil, dailyreport.WithAIGeneratorRetryDelays(0)).Generate(
+		context.Background(), config, candidates,
+	); err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+	mu.Lock()
+	gotBatchSizes := append([]int(nil), batchSizes...)
+	firstCalls := articleCalls["1"]
+	mu.Unlock()
+	if !reflect.DeepEqual(gotBatchSizes, []int{6, 3, 2}) {
+		t.Fatalf("summary batch sizes=%v, want [6 3 2]", gotBatchSizes)
+	}
+	if firstCalls != 1 {
+		t.Fatalf("completed article 1 was requested %d times, want once", firstCalls)
+	}
+}
+
+func TestDailyReportProgramAssemblyCleansMarkupExtractsSectionsAndDeduplicates(t *testing.T) {
+	var writingCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]interface{}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		joined := fmt.Sprint(body["prompt"])
+		if messages, ok := body["messages"].([]interface{}); ok {
+			for _, raw := range messages {
+				message, _ := raw.(map[string]interface{})
+				joined += fmt.Sprint(message["content"])
+			}
+		}
+		if strings.Contains(joined, "[ARTICLE") {
+			writeOllamaResponseWithFinish(t, w, "[ARTICLE 1]\nFirst summary.\n[ARTICLE 2]\nSecond summary.", "stop")
+			return
+		}
+		writingCalls.Add(1)
+		writeOllamaResponseWithFinish(t, w, `<h2>Highlights</h2>
+*Alpha* [details](https://provider.invalid/internal) finding [1].
+- Repeated fact [1]
+- Repeated fact [1]
+<ol><li>First ordered item [1]</li><li>Second ordered item [1]</li></ol>
+<h2>Watch</h2>
+Beta finding [2].
+<script>alert('unsafe')</script>`, "stop")
+	}))
+	defer server.Close()
+
+	db := newDailyReportTestDB(t)
+	defer db.Close()
+	profileID, err := db.CreateAIProfile(&models.AIProfile{Name: "Blocks", Endpoint: server.URL, Model: "test-model", IsDefault: true})
+	if err != nil {
+		t.Fatalf("CreateAIProfile failed: %v", err)
+	}
+	config := dailyReportGeneratorConfig(profileID)
+	config.OutlineJSON = `[
+		{"id":"highlights","title":"Highlights","instruction":"important"},
+		{"id":"watch","title":"Watch","instruction":"follow up"}
+	]`
+	candidates := []models.DailyReportCandidate{
+		{ArticleID: 1, FeedID: 1, Title: "Alpha", OriginalSummary: "Alpha summary"},
+		{ArticleID: 2, FeedID: 2, Title: "Beta", OriginalSummary: "Beta summary"},
+	}
+	generator := dailyreport.NewAIGenerator(db, ai.NewUsageTracker(db), nil, dailyreport.WithAIGeneratorRetryDelays(0))
+	result, err := generator.Generate(context.Background(), config, candidates)
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+	if writingCalls.Load() != 2 || len(result.Content.Sections) != 2 {
+		t.Fatalf("writing calls=%d sections=%+v", writingCalls.Load(), result.Content.Sections)
+	}
+	first := result.Content.Sections[0]
+	second := result.Content.Sections[1]
+	if len(first.Blocks) == 0 || len(second.Blocks) == 0 {
+		t.Fatalf("structured blocks missing: %+v", result.Content.Sections)
+	}
+	if strings.Contains(first.Summary, "*") || strings.Contains(first.Summary, "https://") || strings.Contains(first.Summary, "Watch") || strings.Contains(first.Summary, "alert") {
+		t.Fatalf("first section was not safely isolated: %q", first.Summary)
+	}
+	if strings.Count(first.Summary, "Repeated fact") != 1 {
+		t.Fatalf("duplicate list item was not removed: %q", first.Summary)
+	}
+	if !strings.Contains(second.Summary, "Beta finding") || strings.Contains(second.Summary, "Alpha finding") {
+		t.Fatalf("second section was not isolated: %q", second.Summary)
+	}
+	orderedFound := false
+	for _, block := range first.Blocks {
+		if block.Type == dailyreport.ReportBlockOrderedList && len(block.Items) == 2 {
+			orderedFound = true
+		}
+	}
+	if !orderedFound {
+		t.Fatalf("HTML ordered list was not preserved as structured content: %+v", first.Blocks)
+	}
+	if strings.Count(result.Markdown, "## Highlights") != 1 || strings.Contains(result.Markdown, "**") || strings.Contains(result.Markdown, "<h2>") {
+		t.Fatalf("Markdown was not rebuilt from safe blocks: %q", result.Markdown)
+	}
+}
+
+func TestDailyReportProgramAssemblyDeduplicatesOnlyNearMatchesWithSharedSources(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]interface{}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		joined := fmt.Sprint(body["prompt"])
+		if messages, ok := body["messages"].([]interface{}); ok {
+			for _, raw := range messages {
+				message, _ := raw.(map[string]interface{})
+				joined += fmt.Sprint(message["content"])
+			}
+		}
+		if strings.Contains(joined, "[ARTICLE") {
+			writeOllamaResponseWithFinish(t, w, "[ARTICLE 1]\nFirst summary.\n[ARTICLE 2]\nSecond summary.", "stop")
+			return
+		}
+		writeOllamaResponseWithFinish(t, w, `Major change affects many users today [1].
+
+Major change affects many users today now [1].
+
+Major change affects many users today later [2].`, "stop")
+	}))
+	defer server.Close()
+
+	db := newDailyReportTestDB(t)
+	defer db.Close()
+	profileID, err := db.CreateAIProfile(&models.AIProfile{Name: "Near duplicate", Endpoint: server.URL, Model: "test-model", IsDefault: true})
+	if err != nil {
+		t.Fatalf("CreateAIProfile failed: %v", err)
+	}
+	config := dailyReportGeneratorConfig(profileID)
+	config.OutlineJSON = `[{"id":"highlights","title":"Highlights","instruction":"important"}]`
+	candidates := []models.DailyReportCandidate{
+		{ArticleID: 1, FeedID: 1, Title: "Alpha", OriginalSummary: "Alpha summary"},
+		{ArticleID: 2, FeedID: 2, Title: "Beta", OriginalSummary: "Beta summary"},
+	}
+	result, err := dailyreport.NewAIGenerator(db, ai.NewUsageTracker(db), nil, dailyreport.WithAIGeneratorRetryDelays(0)).Generate(
+		context.Background(), config, candidates,
+	)
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+	if len(result.Content.Sections) != 1 {
+		t.Fatalf("sections=%+v", result.Content.Sections)
+	}
+	section := result.Content.Sections[0]
+	if strings.Count(section.Summary, "Major change") != 2 {
+		t.Fatalf("same-source near duplicate was not removed or different-source text was removed: %q", section.Summary)
+	}
+	if len(section.Blocks) != 2 || !reflect.DeepEqual(section.Blocks[0].SourceIDs, []int{1}) || !reflect.DeepEqual(section.Blocks[1].SourceIDs, []int{2}) {
+		t.Fatalf("deduplicated blocks=%+v", section.Blocks)
+	}
+}
+
+func TestDailyReportProgramAssemblyContinuesTruncatedSectionsAtMostThreeTimes(t *testing.T) {
+	tests := []struct {
+		name       string
+		finishCall int32
+		wantError  bool
+	}{
+		{name: "first continuation completes", finishCall: 2},
+		{name: "second continuation completes", finishCall: 3},
+		{name: "third continuation completes", finishCall: 4},
+		{name: "three continuations remain truncated", finishCall: 0, wantError: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var writingCalls atomic.Int32
+			var checkpointSaves atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var body map[string]interface{}
+				_ = json.NewDecoder(r.Body).Decode(&body)
+				joined := fmt.Sprint(body["prompt"])
+				if messages, ok := body["messages"].([]interface{}); ok {
+					for _, raw := range messages {
+						message, _ := raw.(map[string]interface{})
+						joined += fmt.Sprint(message["content"])
+					}
+				}
+				if strings.Contains(joined, "[ARTICLE") {
+					writeOllamaResponseWithFinish(t, w, "[ARTICLE 1]\nCached summary.", "stop")
+					return
+				}
+				call := writingCalls.Add(1)
+				if tt.finishCall > 0 && call == tt.finishCall {
+					writeOllamaResponseWithFinish(t, w, "unfinished final sentence [1].\n- Final point [1]", "stop")
+					return
+				}
+				writeOllamaResponseWithFinish(t, w, "Complete sentence [1]. unfinished", "length")
+			}))
+			defer server.Close()
+
+			db := newDailyReportTestDB(t)
+			defer db.Close()
+			profileID, err := db.CreateAIProfile(&models.AIProfile{Name: "Continuation", Endpoint: server.URL, Model: "test-model", IsDefault: true})
+			if err != nil {
+				t.Fatalf("CreateAIProfile failed: %v", err)
+			}
+			generator := dailyreport.NewAIGenerator(db, ai.NewUsageTracker(db), nil, dailyreport.WithAIGeneratorRetryDelays(0))
+			result, generateErr := generator.GenerateResumable(
+				context.Background(), dailyReportGeneratorConfig(profileID),
+				[]models.DailyReportCandidate{{ArticleID: 1, FeedID: 1, Title: "Title", OriginalSummary: "Summary"}},
+				"", "", func(progress dailyreport.GenerationProgress) error {
+					checkpointSaves.Add(1)
+					if strings.Contains(progress.Checkpoint, "API key") {
+						t.Fatal("checkpoint contains sensitive data")
+					}
+					return nil
+				},
+			)
+			if tt.wantError {
+				var generationErr *dailyreport.GenerationError
+				if !errors.As(generateErr, &generationErr) || generationErr.Code != "output_truncated" {
+					t.Fatalf("Generate error = %v", generateErr)
+				}
+				if writingCalls.Load() != 4 {
+					t.Fatalf("writing calls=%d, want initial request plus three continuations", writingCalls.Load())
+				}
+				if len(result.Content.Sections) != 0 {
+					t.Fatalf("truncated content was incorrectly completed: %+v", result.Content)
+				}
+			} else {
+				if generateErr != nil {
+					t.Fatalf("Generate failed: %v", generateErr)
+				}
+				if writingCalls.Load() != tt.finishCall {
+					t.Fatalf("writing calls=%d, want %d", writingCalls.Load(), tt.finishCall)
+				}
+				if len(result.Content.Sections) != 1 || !strings.Contains(result.Content.Sections[0].Summary, "final sentence") {
+					t.Fatalf("continued content missing: %+v", result.Content.Sections)
+				}
+				if strings.Count(result.Content.Sections[0].Summary, "Complete sentence") != 1 {
+					t.Fatalf("overlapping continuation was duplicated: %q", result.Content.Sections[0].Summary)
+				}
+			}
+			if checkpointSaves.Load() < writingCalls.Load() {
+				t.Fatalf("checkpoint saves=%d writing calls=%d", checkpointSaves.Load(), writingCalls.Load())
+			}
+		})
+	}
+}
+
+func TestDailyReportProgramAssemblyInfersTruncationNearTokenBoundaryWithoutFinishReason(t *testing.T) {
+	var writingCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]interface{}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		joined := fmt.Sprint(body["prompt"])
+		if messages, ok := body["messages"].([]interface{}); ok {
+			for _, raw := range messages {
+				message, _ := raw.(map[string]interface{})
+				joined += fmt.Sprint(message["content"])
+			}
+		}
+		if strings.Contains(joined, "[ARTICLE") {
+			writeOllamaResponse(t, w, "[ARTICLE 1]\nCached summary.")
+			return
+		}
+		if writingCalls.Add(1) == 1 {
+			writeOllamaResponse(t, w, strings.Repeat("abcdefgh", 2200))
+			return
+		}
+		writeOllamaResponseWithFinish(t, w, "Final sentence [1].", "stop")
+	}))
+	defer server.Close()
+
+	db := newDailyReportTestDB(t)
+	defer db.Close()
+	profileID, err := db.CreateAIProfile(&models.AIProfile{Name: "Boundary", Endpoint: server.URL, Model: "test-model", IsDefault: true})
+	if err != nil {
+		t.Fatalf("CreateAIProfile failed: %v", err)
+	}
+	result, err := dailyreport.NewAIGenerator(db, ai.NewUsageTracker(db), nil, dailyreport.WithAIGeneratorRetryDelays(0)).Generate(
+		context.Background(), dailyReportGeneratorConfig(profileID),
+		[]models.DailyReportCandidate{{ArticleID: 1, FeedID: 1, Title: "Title", OriginalSummary: "Summary"}},
+	)
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+	if writingCalls.Load() != 2 {
+		t.Fatalf("writing calls=%d, want inferred continuation", writingCalls.Load())
+	}
+	if len(result.Content.Sections) != 1 || !strings.Contains(result.Content.Sections[0].Summary, "Final sentence") {
+		t.Fatalf("continued result=%+v", result.Content.Sections)
 	}
 }
 
@@ -1334,12 +1740,34 @@ func writeOpenAIResponseWithUsage(t *testing.T, w http.ResponseWriter, content s
 	}
 }
 
+func writeOpenAIResponseWithFinish(t *testing.T, w http.ResponseWriter, content, finishReason string) {
+	t.Helper()
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
+		"choices": []map[string]interface{}{{
+			"message": map[string]string{"content": content}, "finish_reason": finishReason,
+		}},
+	}); err != nil {
+		t.Errorf("write AI response failed: %v", err)
+	}
+}
+
 func writeOllamaResponse(t *testing.T, w http.ResponseWriter, content string) {
 	t.Helper()
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"response": content,
 		"done":     true,
+	}); err != nil {
+		t.Errorf("write Ollama response failed: %v", err)
+	}
+}
+
+func writeOllamaResponseWithFinish(t *testing.T, w http.ResponseWriter, content, finishReason string) {
+	t.Helper()
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
+		"response": content, "done": true, "done_reason": finishReason,
 	}); err != nil {
 		t.Errorf("write Ollama response failed: %v", err)
 	}

@@ -61,9 +61,20 @@ type ResponseResult struct {
 	Content         string     // The main response content
 	Thinking        string     // Optional thinking/reasoning content (for models that support it)
 	FormatUsed      FormatType // Which format was successful
+	FinishReason    string     // Provider-reported completion reason, when available
+	Truncated       bool       // True when the provider stopped because the output limit was reached
 	InputTokens     int64      // Provider-reported prompt/input tokens, when available
 	OutputTokens    int64      // Provider-reported completion/output tokens, when available
 	ReasoningTokens int64      // Provider-reported reasoning tokens, when available
+}
+
+func isTruncatedFinishReason(reason string) bool {
+	switch strings.ToLower(strings.TrimSpace(reason)) {
+	case "length", "max_tokens", "max_output_tokens", "max_new_tokens", "limit":
+		return true
+	default:
+		return false
+	}
 }
 
 // FormatHandler defines the interface for handling different API formats

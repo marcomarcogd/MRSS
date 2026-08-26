@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
 	"sync"
 
 	"MRSS/internal/dailyreport"
@@ -16,8 +17,6 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/services/notifications"
 )
-
-const dailyReportNotificationCategory = "daily-report-completed"
 
 type dailyReportSettings interface {
 	GetSetting(string) (string, error)
@@ -32,10 +31,12 @@ type desktopDailyReportNotifier struct {
 	app      *application.App
 	settings dailyReportSettings
 
-	categoryOnce sync.Once
-	categoryErr  error
-	statusMu     sync.RWMutex
-	lastStatus   string
+	statusMu   sync.RWMutex
+	lastStatus string
+	deliveryMu sync.Mutex
+	eventSent  map[int64]struct{}
+	systemSent map[int64]struct{}
+	opened     map[int64]struct{}
 }
 
 func newDesktopDailyReportNotifier(
@@ -48,6 +49,9 @@ func newDesktopDailyReportNotifier(
 		app:        app,
 		settings:   settings,
 		lastStatus: dailyreport.NotificationNotDetermined,
+		eventSent:  make(map[int64]struct{}),
+		systemSent: make(map[int64]struct{}),
+		opened:     make(map[int64]struct{}),
 	}
 }
 
@@ -102,8 +106,9 @@ func (n *desktopDailyReportNotifier) NotifyCompleted(_ context.Context, run *mod
 	}
 	systemRequested := false
 	systemDelivered := false
+	emitCompletion := n.claimDelivery(n.eventSent, run.ID)
 	defer func() {
-		if n.app != nil {
+		if emitCompletion && n.app != nil {
 			n.app.Event.Emit("daily-report:completed", map[string]interface{}{
 				"run_id":           run.ID,
 				"status":           run.Status,
@@ -122,9 +127,9 @@ func (n *desktopDailyReportNotifier) NotifyCompleted(_ context.Context, run *mod
 	if !systemRequested || n.AuthorizationStatus(context.Background()) != dailyreport.NotificationAuthorized {
 		return nil
 	}
-
-	if err := n.ensureCategory(); err != nil {
-		return err
+	if !n.claimDelivery(n.systemSent, run.ID) {
+		log.Printf("daily report: notification skipped run=%d channel=system reason=duplicate", run.ID)
+		return nil
 	}
 
 	language := "en"
@@ -134,65 +139,83 @@ func (n *desktopDailyReportNotifier) NotifyCompleted(_ context.Context, run *mod
 		}
 	}
 
-	actionTitle := "View report"
-	body := fmt.Sprintf("%d articles summarized", run.ArticleCount)
+	body := dailyReportNotificationPreview(run)
 	if language == "zh" || language == "zh-CN" || language == "zh-cn" {
-		actionTitle = "查看日报"
-		body = fmt.Sprintf("已汇总 %d 篇文章", run.ArticleCount)
-	}
-	if run.Status == "partial" {
-		if language == "zh" || language == "zh-CN" || language == "zh-cn" {
-			body += "（部分内容已降级生成）"
-		} else {
-			body += " (completed with fallback content)"
+		if body == "" {
+			body = fmt.Sprintf("已汇总 %d 篇文章", run.ArticleCount)
 		}
+	} else if body == "" {
+		body = fmt.Sprintf("%d articles summarized", run.ArticleCount)
 	}
 
 	options := notifications.NotificationOptions{
-		ID:         fmt.Sprintf("daily-report-%d", run.ID),
-		Title:      run.Title,
-		Body:       body,
-		CategoryID: dailyReportNotificationCategory,
-		ThreadID:   "mrss-daily-reports",
+		ID:    fmt.Sprintf("daily-report-%d", run.ID),
+		Title: run.Title,
+		Body:  body,
 		Data: map[string]interface{}{
 			"run_id": strconv.FormatInt(run.ID, 10),
 		},
 	}
 
-	// Registering the category carries the localized action title. Re-register
-	// when a non-English label is needed before sending the first notification.
-	if actionTitle != "View report" {
-		// The service treats registration as an update on supported platforms.
-		_ = n.service.RegisterNotificationCategory(notifications.NotificationCategory{
-			ID: dailyReportNotificationCategory,
-			Actions: []notifications.NotificationAction{{
-				ID:    "view",
-				Title: actionTitle,
-			}},
-		})
-	}
-
-	if err := n.service.SendNotificationWithActions(options); err != nil {
+	if err := n.service.SendNotification(options); err != nil {
 		return fmt.Errorf("send daily report notification: %w", err)
 	}
 	systemDelivered = true
 	return nil
 }
 
-func (n *desktopDailyReportNotifier) ensureCategory() error {
-	n.categoryOnce.Do(func() {
-		n.categoryErr = n.service.RegisterNotificationCategory(notifications.NotificationCategory{
-			ID: dailyReportNotificationCategory,
-			Actions: []notifications.NotificationAction{{
-				ID:    "view",
-				Title: "View report",
-			}},
-		})
-	})
-	if n.categoryErr != nil {
-		return fmt.Errorf("register daily report notification category: %w", n.categoryErr)
+func (n *desktopDailyReportNotifier) claimDelivery(values map[int64]struct{}, runID int64) bool {
+	n.deliveryMu.Lock()
+	defer n.deliveryMu.Unlock()
+	if _, exists := values[runID]; exists {
+		return false
 	}
-	return nil
+	values[runID] = struct{}{}
+	return true
+}
+
+func (n *desktopDailyReportNotifier) claimOpen(runID int64) bool {
+	return n.claimDelivery(n.opened, runID)
+}
+
+func dailyReportNotificationPreview(run *models.DailyReportRun) string {
+	if run == nil || strings.TrimSpace(run.ContentJSON) == "" {
+		return ""
+	}
+	var content dailyreport.ReportContent
+	if json.Unmarshal([]byte(run.ContentJSON), &content) != nil {
+		return ""
+	}
+	var preview string
+	for _, section := range content.Sections {
+		if section.ID == "highlights" {
+			preview = firstReportBlockText(section)
+			break
+		}
+	}
+	if preview == "" && len(content.Sections) > 0 {
+		preview = firstReportBlockText(content.Sections[0])
+	}
+	preview = strings.Join(strings.Fields(preview), " ")
+	runes := []rune(preview)
+	if len(runes) > 140 {
+		preview = strings.TrimSpace(string(runes[:140])) + "…"
+	}
+	return preview
+}
+
+func firstReportBlockText(section dailyreport.ReportSection) string {
+	for _, block := range section.Blocks {
+		for _, item := range block.Items {
+			if strings.TrimSpace(item.Text) != "" {
+				return item.Text
+			}
+		}
+		if block.Type != dailyreport.ReportBlockHeading && strings.TrimSpace(block.Text) != "" {
+			return block.Text
+		}
+	}
+	return section.Summary
 }
 
 func (n *desktopDailyReportNotifier) setStatus(status string) {

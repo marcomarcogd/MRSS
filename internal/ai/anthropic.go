@@ -170,9 +170,13 @@ func (h *AnthropicHandler) ParseResponse(body []byte) (ResponseResult, error) {
 	}
 
 	result := ResponseResult{
-		Content:    contentBuilder.String(),
-		Thinking:   thinkingContent,
-		FormatUsed: FormatTypeAnthropic,
+		Content:      strings.TrimSpace(contentBuilder.String()),
+		Thinking:     strings.TrimSpace(thinkingContent),
+		FormatUsed:   FormatTypeAnthropic,
+		FinishReason: response.StopReason,
+		Truncated:    isTruncatedFinishReason(response.StopReason),
+		InputTokens:  int64(response.Usage.InputTokens),
+		OutputTokens: int64(response.Usage.OutputTokens),
 	}
 
 	return result, nil

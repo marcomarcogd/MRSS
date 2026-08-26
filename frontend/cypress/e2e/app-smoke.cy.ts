@@ -206,6 +206,18 @@ describe('Application Smoke Tests', () => {
             title: 'Highlights',
             summary: '<img src=x onerror=alert(1)> Plain text only',
             source_ids: [1],
+            blocks: [
+              { type: 'heading', text: 'Top story' },
+              {
+                type: 'paragraph',
+                text: '<img src=x onerror=alert(1)> rendered as safe text',
+                source_ids: [1],
+              },
+              {
+                type: 'unordered_list',
+                items: [{ text: 'Structured list item', source_ids: [1] }],
+              },
+            ],
           },
         ],
       },
@@ -278,9 +290,11 @@ describe('Application Smoke Tests', () => {
     });
     cy.get('[data-testid="daily-report-view"]').should('be.visible');
     cy.contains('AI Daily Digest').should('be.visible');
-    cy.contains('<img src=x onerror=alert(1)> Plain text only').should('be.visible');
+    cy.contains('Top story').should('be.visible');
+    cy.contains('<img src=x onerror=alert(1)> rendered as safe text').should('be.visible');
+    cy.contains('Structured list item').should('be.visible');
     cy.get('img[src="x"]').should('not.exist');
-    cy.contains('[1] Source article').should('be.visible');
+    cy.get('button[title="Source article"]').should('contain.text', '[1]').and('be.visible');
     cy.get('button[title="Mark as unread"], button[title="标为未读"]').click();
     cy.wait('@markDigestUnread');
     cy.get('button[title="Mark as read"], button[title="标为已读"]').should('exist');

@@ -162,6 +162,8 @@ func (h *DeepSeekHandler) ParseResponse(body []byte) (ResponseResult, error) {
 		Content:         content,
 		Thinking:        strings.TrimSpace(response.Choices[0].Message.ReasoningContent),
 		FormatUsed:      FormatTypeDeepSeek,
+		FinishReason:    response.Choices[0].FinishReason,
+		Truncated:       isTruncatedFinishReason(response.Choices[0].FinishReason),
 		InputTokens:     int64(response.Usage.PromptTokens),
 		OutputTokens:    int64(response.Usage.CompletionTokens),
 		ReasoningTokens: int64(response.Usage.CompletionDetails.ReasoningTokens),

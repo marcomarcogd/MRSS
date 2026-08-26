@@ -107,9 +107,32 @@ describe('App', () => {
     expect(dailyReportView).not.toContain('v-html');
     expect(dailyReportView).toContain('source.source_index');
     expect(dailyReportView).toContain('downloadMarkdown');
+    expect(dailyReportView).toContain('section.blocks?.length');
+    expect(dailyReportView).toContain("block.type === 'ordered_list'");
+    expect(dailyReportView).toContain('{{ item.text }}');
     expect(dailyReportView).not.toContain("t('dailyReport.detail.failureCode'");
     expect(dailyReportView).toContain('step.match(/^summarizing:');
     expect(dailyReportView).toContain('step.match(/^writing:');
+
+    const dailyReportComposable = readFileSync(
+      'src/composables/dailyReport/useDailyReports.ts',
+      'utf8'
+    );
+    expect(dailyReportComposable).toContain('completedEventRunIds.has(runId)');
+    expect(dailyReportComposable).toContain('openedNotificationRunIds.has(runId)');
+
+    const desktopNotifier = readFileSync('../daily_report_notifications.go', 'utf8');
+    expect(desktopNotifier).toContain('eventSent');
+    expect(desktopNotifier).toContain('systemSent');
+    expect(desktopNotifier).toContain('opened');
+    expect(desktopNotifier).toContain('SendNotification(options)');
+    expect(desktopNotifier).toContain('dailyReportNotificationPreview(run)');
+    expect(desktopNotifier).not.toContain('SendNotificationWithActions');
+    expect(desktopNotifier).not.toContain('ThreadID:');
+    expect(desktopNotifier).not.toContain('CategoryID:');
+
+    const desktopMain = readFileSync('../main.go', 'utf8');
+    expect(desktopMain).toContain('dailyReportNotifier.claimOpen(runID)');
 
     const dailyReportConfig = readFileSync(
       'src/components/dailyReport/DailyReportConfigModal.vue',
