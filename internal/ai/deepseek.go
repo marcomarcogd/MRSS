@@ -90,6 +90,12 @@ func (h *DeepSeekHandler) BuildRequest(config RequestConfig) (map[string]interfa
 	if config.ResponseFormat != nil {
 		request["response_format"] = config.ResponseFormat
 	}
+	if config.ThinkingConfig != nil {
+		request["thinking"] = config.ThinkingConfig
+	}
+	if config.ReasoningEffort != "" {
+		request["reasoning_effort"] = config.ReasoningEffort
+	}
 
 	// Stream (always false for now)
 	request["stream"] = false
@@ -107,8 +113,9 @@ func (h *DeepSeekHandler) ParseResponse(body []byte) (ResponseResult, error) {
 		Choices []struct {
 			Index   int `json:"index"`
 			Message struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
+				Role             string `json:"role"`
+				Content          string `json:"content"`
+				ReasoningContent string `json:"reasoning_content"`
 			} `json:"message"`
 			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
@@ -118,6 +125,9 @@ func (h *DeepSeekHandler) ParseResponse(body []byte) (ResponseResult, error) {
 			TotalTokens           int `json:"total_tokens"`
 			PromptCacheHitTokens  int `json:"prompt_cache_hit_tokens"`
 			PromptCacheMissTokens int `json:"prompt_cache_miss_tokens"`
+			CompletionDetails     struct {
+				ReasoningTokens int `json:"reasoning_tokens"`
+			} `json:"completion_tokens_details"`
 		} `json:"usage"`
 		Error struct {
 			Message string `json:"message"`
@@ -140,11 +150,21 @@ func (h *DeepSeekHandler) ParseResponse(body []byte) (ResponseResult, error) {
 		return ResponseResult{}, fmt.Errorf("no choices in response")
 	}
 
-	content := response.Choices[0].Message.Content
+	content := strings.TrimSpace(response.Choices[0].Message.Content)
+	if content == "" {
+		if response.Choices[0].FinishReason == "length" {
+			return ResponseResult{}, fmt.Errorf("empty content in response: output truncated")
+		}
+		return ResponseResult{}, fmt.Errorf("empty content in response")
+	}
 
 	result := ResponseResult{
-		Content:    content,
-		FormatUsed: FormatTypeDeepSeek,
+		Content:         content,
+		Thinking:        strings.TrimSpace(response.Choices[0].Message.ReasoningContent),
+		FormatUsed:      FormatTypeDeepSeek,
+		InputTokens:     int64(response.Usage.PromptTokens),
+		OutputTokens:    int64(response.Usage.CompletionTokens),
+		ReasoningTokens: int64(response.Usage.CompletionDetails.ReasoningTokens),
 	}
 
 	// DeepSeek doesn't have separate thinking content in standard mode
@@ -168,6 +188,13 @@ func (h *DeepSeekHandler) ValidateResponse(statusCode int, body []byte) error {
 
 	if err := json.Unmarshal(body, &response); err != nil {
 		return fmt.Errorf("invalid JSON response: %w", err)
+	}
+
+	if statusCode < 200 || statusCode >= 300 {
+		if response.Error.Message != "" {
+			return fmt.Errorf("API error: %s", response.Error.Message)
+		}
+		return fmt.Errorf("DeepSeek API returned status %d", statusCode)
 	}
 
 	if response.Error.Message != "" {

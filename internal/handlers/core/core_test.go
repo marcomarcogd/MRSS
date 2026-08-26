@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -56,7 +57,7 @@ func TestNewHandler_ConstructsHandler(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetConfig failed: %v", err)
 	}
-	if config.ScheduleTime != "08:00" || config.FeedScope != "all" || config.Enabled {
+	if config.ScheduleTime != "08:00" || config.FeedScope != "all" || config.Enabled || config.ArticleSummaryMode != "ai" {
 		t.Fatalf("unexpected daily report defaults: %+v", config)
 	}
 	if config.OutlineJSON == "" || config.OutlineJSON == "[]" {
@@ -367,9 +368,9 @@ func TestDailyReportAIGeneratorRetryPolicyAndSourceValidation(t *testing.T) {
 						userPrompt = message.Content
 					}
 				}
-				response := `{"insights":[{"summary":"verified insight","source_ids":[1,999]}]}`
-				if strings.Contains(userPrompt, "Fill the requested outline") {
-					response = `{"sections":[{"id":"highlights","title":"Highlights","summary":"verified report","source_ids":[1,999]}]}`
+				response := "[ARTICLE 1]\nverified insight"
+				if strings.Contains(userPrompt, "Sources:") {
+					response = "verified report [1] [999]"
 				}
 				if requestBody.Prompt != "" {
 					writeOllamaResponse(t, w, response)
@@ -395,7 +396,7 @@ func TestDailyReportAIGeneratorRetryPolicyAndSourceValidation(t *testing.T) {
 			)
 			config := dailyReportGeneratorConfig(profileID)
 			result, generateErr := generator.Generate(context.Background(), config, []models.DailyReportCandidate{{
-				ArticleID: 1, FeedID: 1, Title: "A trusted title", FeedTitle: "Test feed", Summary: "Cached summary",
+				ArticleID: 1, FeedID: 1, Title: "A trusted title", FeedTitle: "Test feed", OriginalSummary: "Cached summary",
 			}})
 			if tt.wantError {
 				if generateErr == nil {
@@ -427,7 +428,7 @@ func TestDailyReportAIGeneratorRetryPolicyAndSourceValidation(t *testing.T) {
 	}
 }
 
-func TestDailyReportAIGeneratorUsesStrictSchemaActualUsageAndResumesCheckpoint(t *testing.T) {
+func TestDailyReportAIGeneratorUsesPlainTextActualUsageCachesSummariesAndResumesCheckpoint(t *testing.T) {
 	var calls atomic.Int32
 	var extractionCalls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -437,13 +438,8 @@ func TestDailyReportAIGeneratorUsesStrictSchemaActualUsageAndResumesCheckpoint(t
 			t.Errorf("decode request: %v", err)
 			return
 		}
-		format, ok := body["response_format"].(map[string]interface{})
-		if !ok || format["type"] != "json_schema" {
-			t.Errorf("missing strict response format: %#v", body["response_format"])
-		}
-		definition, _ := format["json_schema"].(map[string]interface{})
-		if definition["strict"] != true {
-			t.Errorf("response schema is not strict: %#v", definition)
+		if _, exists := body["response_format"]; exists {
+			t.Errorf("article summaries must not require structured output: %#v", body["response_format"])
 		}
 		joined := ""
 		if messages, ok := body["messages"].([]interface{}); ok {
@@ -452,9 +448,9 @@ func TestDailyReportAIGeneratorUsesStrictSchemaActualUsageAndResumesCheckpoint(t
 				joined += fmt.Sprint(message["content"])
 			}
 		}
-		if strings.Contains(joined, "Extract concise factual insights") {
+		if strings.Contains(joined, "[ARTICLE 1]") {
 			extractionCalls.Add(1)
-			writeOpenAIResponseWithUsage(t, w, `{"insights":[{"summary":"checkpointed","source_ids":[1]}]}`, 101, 17, 3)
+			writeOpenAIResponseWithUsage(t, w, "[ARTICLE 1]\ncheckpointed summary", 101, 17, 3)
 			return
 		}
 		if call == 2 {
@@ -462,7 +458,7 @@ func TestDailyReportAIGeneratorUsesStrictSchemaActualUsageAndResumesCheckpoint(t
 			_, _ = w.Write([]byte(`{"error":{"message":"temporary"}}`))
 			return
 		}
-		writeOpenAIResponseWithUsage(t, w, `{"sections":[{"id":"highlights","title":"Highlights","summary":"resumed","source_ids":[1]}]}`, 53, 11, 2)
+		writeOpenAIResponseWithUsage(t, w, "resumed report [1]", 53, 11, 2)
 	}))
 	defer server.Close()
 
@@ -476,7 +472,13 @@ func TestDailyReportAIGeneratorUsesStrictSchemaActualUsageAndResumesCheckpoint(t
 	generator := dailyreport.NewAIGenerator(db, ai.NewUsageTracker(db), nil, dailyreport.WithAIGeneratorRetryDelays(0))
 	generator.SetConsentVerifier(func(*models.DailyReportConfig, *dailyreport.ResolvedAIProvider) error { return nil })
 	config := dailyReportGeneratorConfig(profileID)
-	candidates := []models.DailyReportCandidate{{ArticleID: 1, FeedID: 1, Title: "Title", Summary: "Summary"}}
+	candidates := []models.DailyReportCandidate{{ArticleID: 1, FeedID: 1, Title: "Title", OriginalSummary: "Summary"}}
+	if _, err := db.Exec(`INSERT INTO feeds (id, title, url) VALUES (1, 'Feed', 'https://example.com/feed')`); err != nil {
+		t.Fatalf("insert feed: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO articles (id, feed_id, title, url, published_at, first_seen_at, unique_id) VALUES (1, 1, 'Title', 'https://example.com/article', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'summary-cache-test')`); err != nil {
+		t.Fatalf("insert article: %v", err)
+	}
 	var fingerprint, checkpoint string
 	result, err := generator.GenerateResumable(context.Background(), config, candidates, "", "", func(progress dailyreport.GenerationProgress) error {
 		fingerprint, checkpoint = progress.Fingerprint, progress.Checkpoint
@@ -490,6 +492,10 @@ func TestDailyReportAIGeneratorUsesStrictSchemaActualUsageAndResumesCheckpoint(t
 	}
 	if fingerprint == "" || checkpoint == "" {
 		t.Fatal("generation checkpoint was not persisted")
+	}
+	cachedArticle, cacheErr := db.GetArticleByID(1)
+	if cacheErr != nil || cachedArticle.Summary != "checkpointed summary" || cachedArticle.SummarySource != "ai_daily_report" || cachedArticle.SummaryContentHash == "" {
+		t.Fatalf("AI article summary was not cached for article reuse: article=%+v err=%v", cachedArticle, cacheErr)
 	}
 	changedCandidates := append([]models.DailyReportCandidate(nil), candidates...)
 	changedCandidates[0].Title = "Changed after checkpoint"
@@ -510,6 +516,41 @@ func TestDailyReportAIGeneratorUsesStrictSchemaActualUsageAndResumesCheckpoint(t
 	if result.InputTokens != 154 || result.OutputTokens != 28 {
 		t.Fatalf("resumed attempt did not use actual provider usage: %+v", result)
 	}
+
+	reusableCandidate := candidates[0]
+	reusableCandidate.GeneratedSummary = cachedArticle.Summary
+	reusableCandidate.SummarySource = cachedArticle.SummarySource
+	reusableCandidate.SummaryFingerprint = cachedArticle.SummaryFingerprint
+	reusableCandidate.SummaryContentHash = cachedArticle.SummaryContentHash
+	if _, err := generator.Generate(context.Background(), config, []models.DailyReportCandidate{reusableCandidate}); err != nil {
+		t.Fatalf("generation with reusable AI summary failed: %v", err)
+	}
+	if extractionCalls.Load() != 1 {
+		t.Fatalf("valid cached AI summary triggered another summary request: %d", extractionCalls.Load())
+	}
+
+	profile, profileErr := db.GetAIProfile(profileID)
+	if profileErr != nil || profile == nil {
+		t.Fatalf("reload AI profile: profile=%+v err=%v", profile, profileErr)
+	}
+	profile.Model = "changed-model"
+	if err := db.UpdateAIProfile(profile); err != nil {
+		t.Fatalf("change AI profile model: %v", err)
+	}
+	if _, err := generator.Generate(context.Background(), config, []models.DailyReportCandidate{reusableCandidate}); err != nil {
+		t.Fatalf("generation after AI configuration changed failed: %v", err)
+	}
+	if extractionCalls.Load() != 2 {
+		t.Fatalf("changed AI configuration did not invalidate the cached summary: %d", extractionCalls.Load())
+	}
+
+	reusableCandidate.OriginalSummary = "Article content changed"
+	if _, err := generator.Generate(context.Background(), config, []models.DailyReportCandidate{reusableCandidate}); err != nil {
+		t.Fatalf("generation after article content changed failed: %v", err)
+	}
+	if extractionCalls.Load() != 3 {
+		t.Fatalf("changed article content did not invalidate the cached summary: %d", extractionCalls.Load())
+	}
 }
 
 func TestDailyReportLocalFallbackMatchesOutlineAndCleansHTML(t *testing.T) {
@@ -521,9 +562,9 @@ func TestDailyReportLocalFallbackMatchesOutlineAndCleansHTML(t *testing.T) {
 		]`,
 	}
 	candidates := []models.DailyReportCandidate{
-		{ArticleID: 1, Title: "New artificial intelligence model", Summary: `<p>Model update</p><script>steal()</script>`},
-		{ArticleID: 2, Title: "Football league final", Summary: `<strong>Team wins</strong>`},
-		{ArticleID: 3, Title: "Unrelated cooking notes", Summary: "A recipe"},
+		{ArticleID: 1, Title: "New artificial intelligence model", OriginalSummary: `<p>Model update</p><script>steal()</script>`},
+		{ArticleID: 2, Title: "Football league final", OriginalSummary: `<strong>Team wins</strong>`},
+		{ArticleID: 3, Title: "Unrelated cooking notes", OriginalSummary: "A recipe"},
 	}
 	result, err := (dailyreport.LocalGenerator{}).Generate(context.Background(), config, candidates)
 	if err != nil {
@@ -543,30 +584,21 @@ func TestDailyReportLocalFallbackMatchesOutlineAndCleansHTML(t *testing.T) {
 	}
 }
 
-func TestDailyReportStructuredOutputFallsBackToJSONObjectWhenSchemaIsUnsupported(t *testing.T) {
+func TestDailyReportPlainTextGenerationDoesNotRequireProviderSchemaSupport(t *testing.T) {
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		call := calls.Add(1)
+		calls.Add(1)
 		var body map[string]interface{}
 		_ = json.NewDecoder(r.Body).Decode(&body)
-		if call == 1 {
-			if _, ok := body["response_format"]; !ok {
-				t.Error("first request did not attempt strict schema")
-			}
-			w.WriteHeader(http.StatusBadRequest)
-			_, _ = w.Write([]byte(`{"error":{"message":"response_format json_schema is unsupported","type":"invalid_request_error","param":"response_format"}}`))
-			return
+		if _, ok := body["response_format"]; ok {
+			t.Errorf("plain text digest request unexpectedly required response_format: %#v", body["response_format"])
 		}
 		joined := fmt.Sprint(body["messages"])
-		if strings.Contains(joined, "Fill the requested outline") {
-			writeOpenAIResponseWithUsage(t, w, `{"sections":[{"id":"highlights","title":"Highlights","summary":"done","source_ids":[1]}]}`, 20, 3, 1)
+		if strings.Contains(joined, "Sources:") {
+			writeOpenAIResponseWithUsage(t, w, "done [1]", 20, 3, 1)
 			return
 		}
-		format, ok := body["response_format"].(map[string]interface{})
-		if !ok || format["type"] != "json_object" {
-			t.Errorf("schema fallback did not use JSON object mode: %#v", body["response_format"])
-		}
-		writeOpenAIResponseWithUsage(t, w, `{"insights":[{"summary":"done","source_ids":[1]}]}`, 10, 2, 1)
+		writeOpenAIResponseWithUsage(t, w, "[ARTICLE 1]\ndone", 10, 2, 1)
 	}))
 	defer server.Close()
 	db := newDailyReportTestDB(t)
@@ -582,35 +614,26 @@ func TestDailyReportStructuredOutputFallsBackToJSONObjectWhenSchemaIsUnsupported
 	if err != nil {
 		t.Fatalf("schema compatibility fallback failed: %v", err)
 	}
-	if calls.Load() != 3 {
-		t.Fatalf("schema fallback calls = %d, want 3", calls.Load())
+	if calls.Load() != 2 {
+		t.Fatalf("plain text generation calls = %d, want 2", calls.Load())
 	}
 	if result.InputTokens != 30 || result.OutputTokens != 5 {
 		t.Fatalf("unsupported schema response was incorrectly counted: %+v", result)
 	}
 }
 
-func TestDailyReportStructuredOutputFallsBackToPromptJSONWhenFormatsAreUnsupported(t *testing.T) {
+func TestDailyReportBatchParserAcceptsMarkdownArticleMarkers(t *testing.T) {
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 		var body map[string]interface{}
 		_ = json.NewDecoder(r.Body).Decode(&body)
-		if format, ok := body["response_format"].(map[string]interface{}); ok {
-			status := http.StatusBadRequest
-			if format["type"] == "json_object" {
-				status = http.StatusUnprocessableEntity
-			}
-			w.WriteHeader(status)
-			_, _ = w.Write([]byte(`{"error":{"message":"invalid request"}}`))
-			return
-		}
 		joined := fmt.Sprint(body["messages"])
-		if strings.Contains(joined, "Fill the requested outline") {
-			writeOpenAIResponse(t, w, `{"sections":[{"id":"highlights","title":"Highlights","summary":"done","source_ids":[1]}]}`)
+		if strings.Contains(joined, "Sources:") {
+			writeOpenAIResponse(t, w, "### Result\nDone [1]")
 			return
 		}
-		writeOpenAIResponse(t, w, `{"insights":[{"summary":"done","source_ids":[1]}]}`)
+		writeOpenAIResponse(t, w, "- [文章 1]\n**摘要：** done")
 	}))
 	defer server.Close()
 
@@ -629,15 +652,15 @@ func TestDailyReportStructuredOutputFallsBackToPromptJSONWhenFormatsAreUnsupport
 	if err != nil {
 		t.Fatalf("prompt JSON compatibility fallback failed: %v", err)
 	}
-	if calls.Load() != 6 {
-		t.Fatalf("format fallback calls = %d, want 6", calls.Load())
+	if calls.Load() != 2 {
+		t.Fatalf("plain text calls = %d, want 2", calls.Load())
 	}
-	if len(result.Content.Sections) != 1 || result.Content.Sections[0].Summary != "done" {
+	if len(result.Content.Sections) != 1 || !strings.Contains(result.Content.Sections[0].Summary, "Done") {
 		t.Fatalf("unexpected report result: %+v", result.Content)
 	}
 }
 
-func TestDailyReportDeepSeekStartsWithNativeJSONMode(t *testing.T) {
+func TestDailyReportDeepSeekUsesPortablePlainTextMode(t *testing.T) {
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
@@ -646,16 +669,18 @@ func TestDailyReportDeepSeekStartsWithNativeJSONMode(t *testing.T) {
 			t.Errorf("decode request: %v", err)
 			return
 		}
-		format, _ := body["response_format"].(map[string]interface{})
-		if format["type"] != "json_object" {
-			t.Errorf("DeepSeek format = %#v, want json_object", body["response_format"])
+		if _, exists := body["response_format"]; exists {
+			t.Errorf("DeepSeek digest request unexpectedly used response_format: %#v", body["response_format"])
+		}
+		if thinking, _ := body["thinking"].(map[string]interface{}); thinking["type"] != "disabled" {
+			t.Errorf("DeepSeek reasoning was not disabled for digest summaries: %#v", body["thinking"])
 		}
 		joined := fmt.Sprint(body["messages"])
-		if strings.Contains(joined, "Fill the requested outline") {
-			writeOpenAIResponse(t, w, `{"sections":[{"id":"highlights","title":"Highlights","summary":"done","source_ids":[1]}]}`)
+		if strings.Contains(joined, "Sources:") {
+			writeOpenAIResponse(t, w, "done [1]")
 			return
 		}
-		writeOpenAIResponse(t, w, `{"insights":[{"summary":"done","source_ids":[1]}]}`)
+		writeOpenAIResponse(t, w, "[ARTICLE 1]\ndone")
 	}))
 	defer server.Close()
 
@@ -888,7 +913,7 @@ func TestDailyReportAIGeneratorRequiresConsentBeforeNetworkAndHonorsLimit(t *tes
 		t.Fatalf("CreateAIProfile failed: %v", err)
 	}
 	config := dailyReportGeneratorConfig(profileID)
-	candidate := []models.DailyReportCandidate{{ArticleID: 1, FeedID: 1, Title: "Title", Summary: "Summary"}}
+	candidate := []models.DailyReportCandidate{{ArticleID: 1, FeedID: 1, Title: "Title", OriginalSummary: "Summary"}}
 
 	generator := dailyreport.NewAIGenerator(db, ai.NewUsageTracker(db), nil, dailyreport.WithAIGeneratorRetryDelays(0))
 	generator.SetConsentVerifier(func(*models.DailyReportConfig, *dailyreport.ResolvedAIProvider) error {
@@ -964,9 +989,9 @@ func TestDailyReportAIGeneratorBlocksCrossOriginRedirectsAndBypassesProxyForLoca
 		var endpointCalls atomic.Int32
 		endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			call := endpointCalls.Add(1)
-			content := `{"insights":[{"summary":"local","source_ids":[1]}]}`
+			content := "[ARTICLE 1]\nlocal summary"
 			if call > 1 {
-				content = `{"sections":[{"id":"highlights","title":"Highlights","summary":"local","source_ids":[1]}]}`
+				content = "local report [1]"
 			}
 			var body map[string]any
 			_ = json.NewDecoder(r.Body).Decode(&body)
@@ -1002,9 +1027,13 @@ func TestDailyReportAIGeneratorBlocksCrossOriginRedirectsAndBypassesProxyForLoca
 	})
 }
 
-func TestDailyReportAIGeneratorBatchesLargeCachedArticles(t *testing.T) {
-	var extractionCalls atomic.Int32
+func TestDailyReportAIGeneratorLimitsSelectionBatchesSummariesAndRetriesMissingItems(t *testing.T) {
+	var batchCalls atomic.Int32
+	var singleCalls atomic.Int32
 	var totalCalls atomic.Int32
+	var summarizedMu sync.Mutex
+	summarizedIDs := make(map[string]struct{})
+	articleMarker := regexp.MustCompile(`\[ARTICLE (\d+)\]`)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		totalCalls.Add(1)
 		body := struct {
@@ -1018,12 +1047,42 @@ func TestDailyReportAIGeneratorBatchesLargeCachedArticles(t *testing.T) {
 		for _, message := range body.Messages {
 			joined += message.Content
 		}
-		if strings.Contains(joined, "Fill the requested outline") {
-			writeOllamaResponse(t, w, `{"sections":[{"id":"highlights","title":"Highlights","summary":"Combined","source_ids":[1]}]}`)
+		if strings.Contains(joined, "Sources:") {
+			writeOllamaResponse(t, w, "Combined [1]")
 			return
 		}
-		extractionCalls.Add(1)
-		writeOllamaResponse(t, w, `{"insights":[{"summary":"Extracted","source_ids":[1]}]}`)
+		matches := articleMarker.FindAllStringSubmatch(joined, -1)
+		if len(matches) == 0 {
+			singleCalls.Add(1)
+			writeOllamaResponse(t, w, "Recovered single summary")
+			return
+		}
+		call := batchCalls.Add(1)
+		blocks := make([]string, 0, len(matches)+1)
+		for index, match := range matches {
+			// The first multi-item response deliberately omits its final article;
+			// the generator must retry only that missing item as a smaller request.
+			if call == 1 && index == len(matches)-1 {
+				continue
+			}
+			summarizedMu.Lock()
+			summarizedIDs[match[1]] = struct{}{}
+			summarizedMu.Unlock()
+			switch index % 4 {
+			case 0:
+				blocks = append(blocks, "### Article "+match[1]+":\nExtracted "+match[1])
+			case 1:
+				blocks = append(blocks, "- [文章 "+match[1]+"]\nExtracted "+match[1])
+			case 2:
+				blocks = append(blocks, "["+match[1]+"]\nExtracted "+match[1])
+			default:
+				blocks = append(blocks, "ID: "+match[1]+"\nExtracted "+match[1])
+			}
+		}
+		if call == 1 && len(matches) > 0 {
+			blocks = append(blocks, "[ARTICLE "+matches[0][1]+"]\nUpdated duplicate summary")
+		}
+		writeOllamaResponse(t, w, strings.Join(blocks, "\n"))
 	}))
 	defer server.Close()
 
@@ -1037,18 +1096,34 @@ func TestDailyReportAIGeneratorBatchesLargeCachedArticles(t *testing.T) {
 		t.Fatalf("SetSetting(ai_usage_limit) failed: %v", err)
 	}
 	longContent := strings.Repeat("内容 content payload ", 2500)
-	candidates := make([]models.DailyReportCandidate, 0, 8)
-	for index := 0; index < 8; index++ {
+	candidates := make([]models.DailyReportCandidate, 0, 48)
+	for index := 0; index < 48; index++ {
 		candidates = append(candidates, models.DailyReportCandidate{
-			ArticleID: int64(index + 1), FeedID: 1, Title: "Article", Content: longContent,
+			ArticleID: int64(index + 1), FeedID: int64(index%6 + 1), FeedTitle: fmt.Sprintf("Feed %d", index%6+1),
+			Title: fmt.Sprintf("Article %d", index+1), URL: fmt.Sprintf("https://example.com/%d", index+1),
+			Content: longContent,
 		})
 	}
+	config := dailyReportGeneratorConfig(profileID)
+	config.OutlineJSON = `[
+		{"id":"one","title":"One","instruction":"news"},
+		{"id":"two","title":"Two","instruction":"news"},
+		{"id":"three","title":"Three","instruction":"news"},
+		{"id":"four","title":"Four","instruction":"news"},
+		{"id":"five","title":"Five","instruction":"news"}
+	]`
 	generator := dailyreport.NewAIGenerator(db, ai.NewUsageTracker(db), nil, dailyreport.WithAIGeneratorRetryDelays(0))
-	if _, err := generator.Generate(context.Background(), dailyReportGeneratorConfig(profileID), candidates); err != nil {
+	if _, err := generator.Generate(context.Background(), config, candidates); err != nil {
 		t.Fatalf("Generate failed: %v", err)
 	}
-	if extractionCalls.Load() < 2 || totalCalls.Load() < 3 {
-		t.Fatalf("Large input was not batched: extraction=%d total=%d", extractionCalls.Load(), totalCalls.Load())
+	if batchCalls.Load() != 7 || singleCalls.Load() != 1 {
+		t.Fatalf("summary calls: batch=%d single=%d, want 7 batches plus one missing-item retry", batchCalls.Load(), singleCalls.Load())
+	}
+	if len(summarizedIDs) != 39 {
+		t.Fatalf("batch output covered %d unique selected articles, want 39 before one single-item retry", len(summarizedIDs))
+	}
+	if totalCalls.Load() != 13 {
+		t.Fatalf("total AI calls=%d, want 7 summary batches + 1 retry + 5 sections", totalCalls.Load())
 	}
 }
 

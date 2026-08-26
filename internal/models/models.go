@@ -71,7 +71,10 @@ type Article struct {
 	FeedTitle             string    `json:"feed_title,omitempty"` // Joined field
 	Author                string    `json:"author,omitempty"`     // Article author
 	TranslatedTitle       string    `json:"translated_title"`
-	Summary               string    `json:"summary"`          // Cached AI-generated summary
+	Summary               string    `json:"summary"`        // Cached AI-generated summary
+	SummarySource         string    `json:"summary_source"` // ai_manual, ai_daily_report, local_manual, or legacy/unknown
+	SummaryFingerprint    string    `json:"summary_fingerprint"`
+	SummaryContentHash    string    `json:"summary_content_hash"`
 	OriginalSummary       string    `json:"original_summary"` // Summary/description provided by the RSS item
 	UniqueID              string    `json:"unique_id"`        // Unique identifier for deduplication (title+feed_id+published_date)
 	FreshRSSItemID        string    `json:"freshrss_item_id"` // FreshRSS/Google Reader item ID for API operations
@@ -87,6 +90,7 @@ type DailyReportConfig struct {
 	FeedScope               string     `json:"feed_scope"`
 	IncludeHidden           bool       `json:"include_hidden"`
 	AIProfileID             *int64     `json:"ai_profile_id"`
+	ArticleSummaryMode      string     `json:"article_summary_mode"`
 	Focus                   string     `json:"focus"`
 	OutlineJSON             string     `json:"outline_json"`
 	Language                string     `json:"language"`
@@ -122,7 +126,11 @@ type DailyReportCandidate struct {
 	Author                string    `json:"author"`
 	URL                   string    `json:"url"`
 	FeedTitle             string    `json:"feed_title"`
-	Summary               string    `json:"summary"`
+	OriginalSummary       string    `json:"original_summary"`
+	GeneratedSummary      string    `json:"generated_summary"`
+	SummarySource         string    `json:"summary_source"`
+	SummaryFingerprint    string    `json:"summary_fingerprint"`
+	SummaryContentHash    string    `json:"summary_content_hash"`
 	Content               string    `json:"content"`
 	UniqueID              string    `json:"unique_id"`
 	PublishedAt           time.Time `json:"published_at"`

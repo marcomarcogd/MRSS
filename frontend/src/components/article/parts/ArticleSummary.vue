@@ -20,7 +20,6 @@ interface Props {
     sentence_count: number;
     is_too_short: boolean;
     limit_reached?: boolean;
-    used_fallback?: boolean;
     thinking?: string;
     error?: string;
   } | null;

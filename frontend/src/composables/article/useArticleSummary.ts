@@ -16,7 +16,6 @@ interface SummaryResult {
   sentence_count: number;
   is_too_short: boolean;
   limit_reached?: boolean;
-  used_fallback?: boolean;
   thinking?: string;
   error?: string;
 }
@@ -108,11 +107,6 @@ export function useArticleSummary() {
         // Show notification if AI limit was reached
         if (data.limit_reached) {
           window.showToast(t('article.summary.aiLimitReached'), 'warning');
-        }
-
-        // Show notification if AI failed and fell back to built-in algorithm
-        if (data.used_fallback) {
-          window.showToast(t('article.summary.aiSummaryFallback'), 'info');
         }
 
         return data;

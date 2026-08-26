@@ -14,9 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 新增独立的“日报”中心，可按本地时间每天汇总上一个计划边界至当前边界之间的订阅文章；首次启用后的首份定时日报覆盖完整 24 小时，并正确处理夏令时造成的 23/25 小时周期。
 - 支持全部订阅或指定订阅、关注重点、AI Profile、报告语言、标题模板和 1–12 个可编辑栏目；AI 目录草案必须由用户确认后才会保存。
 - 生成前会刷新所选订阅；单个订阅失败或超时不会丢弃本地数据，报告会以“部分完成”状态继续生成。无文章时不会调用 AI。
-- AI 生成会按文章数量分段处理，校验来源引用并优先记录服务商返回的实际 Token 用量；生成中断后可以继续，不会重复处理已经完成的内容。
-- 外部 AI 已经开始调用后若最终失败，不再用本地内容冒充 AI 报告。用户可以继续生成，或主动改用明确标记的本地摘要；未配置外部 AI、首次请求前已达到上限或本地预览时会直接使用本地摘要。
-- 本地摘要会清洗 RSS HTML，并依据关注重点、栏目标题和栏目要求计算文章相关度；文章只进入最相关栏目，无匹配内容的栏目会如实显示为空，不再按文章顺序轮流填充。
+- 程序会先清洗 HTML、去重并按标题、RSS 原摘要、关注重点、栏目要求和来源多样性免费筛选文章；每栏最多选择 8 篇，总量控制在 16–40 篇范围内，不使用本地算法伪造 AI 摘要。
+- 默认“AI 摘要并保存”会复用来源、正文和 AI 配置均匹配的已有 AI 摘要，只为其余入选文章批量生成普通文本摘要，并立即写回文章缓存；随后打开单篇文章可直接复用，不再重复消耗 Token。
+- AI 生成中断后会保留已经成功写回的文章摘要和报告进度，继续生成不会重复处理已完成内容。AI 不可用、达到限额或返回错误时会暂停，不再静默降级为 TextRank。
+- 日报设置新增独立的“文章摘要方式”。只有用户明确选择“本地 TextRank”时才执行离线本地摘要；该选择不受全局文章摘要来源影响。
 - 云端内容处理默认关闭。每个用户首次启用定时日报、手动开始 AI 生成或使用 AI 优化目录前，都必须在授权弹窗中确认实际 AI Profile 和脱敏端点，并明确同意发送标题、RSS 摘要、本地正文缓存、关注重点和目录要求；未授权时不会发出任何 AI 网络请求。
 - AI 优化目录会自动处理常见返回格式；格式异常时会自动修正一次，仍失败则提示更换模型或手动编辑，并保留现有目录。
 - 授权可随时撤销；切换 AI Profile 或端点会立即使旧授权失效并暂停定时日报，只有同一端点的模型变化无需重复授权。未配置可用 AI 服务时仅执行本地降级生成，不尝试默认远程地址。
@@ -43,7 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 撤销日报云端授权只会撤销许可并暂停定时任务，不再回读旧配置覆盖设置弹窗中尚未保存的 AI Profile、目录或订阅草稿。只有切换 AI Profile 或实际端点时需要重新授权，同一端点仅更换模型仍沿用已有授权。
 - AI 用量上限、进度和超限状态会随设置输入即时更新，保存后回读后端规范值；设置窗口打开期间会刷新实际用量。
 - AI 配置测试会在密钥未修改时使用安全保存的真实密钥，输入新密钥时测试当前表单值，避免把掩码当作密钥造成鉴权误报。
-- 日报生成会适配 DeepSeek、Gemini、Claude、Ollama 及 OpenAI 兼容接口的结构化输出协议，并在服务能力不足时依次改用 JSON 模式和普通 JSON 提示词；诊断日志只记录安全的 HTTP 状态和生成阶段，不记录密钥、文章内容或服务商响应正文。
+- 日报文章摘要与栏目撰写改用普通文本协议，由程序负责文章编号映射、栏目结构、来源校验和 Markdown 组装，不再强制 DeepSeek、Gemini、Claude、Ollama 或 OpenAI 兼容服务返回严格 JSON；诊断日志只记录安全的 HTTP 状态和生成阶段，不记录密钥、文章内容或服务商响应正文。
 - 文章批量写入遇到 SQLite 忙或锁定时会整批回滚并有限重试，重试耗尽后向刷新和日报链路返回真实错误，不再提交部分数据后报告成功。
 - Windows 预发布测试同时提供安装包和带 `portable.txt`、许可证的独立便携 ZIP，避免便携测试误用安装版数据目录。
 - Windows 安装包和便携包仍未使用 Authenticode 证书签名，Publisher 可能显示为未知，Microsoft Defender SmartScreen 仍可能提示。本版本不会绕过 UAC、Defender 或 SmartScreen。
@@ -55,9 +56,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added a dedicated Daily Reports center that summarizes feed entries between adjacent local-time schedule boundaries. The first scheduled report after enabling covers a complete prior 24-hour window, while daylight-saving transitions correctly produce 23- or 25-hour periods.
 - Reports can cover all feeds or selected feeds and support a focus prompt, AI Profile, report language, title template, and 1–12 editable outline sections. AI-generated outline drafts are never saved until the user confirms them.
 - Selected feeds are refreshed before generation. A feed failure or timeout does not discard locally available entries; the report continues with a partial status. Empty periods do not call an AI service.
-- AI generation processes larger input in manageable groups, validates source references, and prefers actual token usage reported by the provider. Interrupted generation can continue without repeating completed work.
-- If an external AI call has started and generation ultimately fails, MRSS no longer presents local content as an AI report. Users can continue generation or explicitly switch to a clearly labeled local summary; local summaries are used directly when no external profile exists, the limit is reached before the first request, or for local preview.
-- Local summaries sanitize RSS HTML and score articles against the focus, section titles, and section instructions. Each article is assigned to its most relevant section; unrelated sections remain explicitly empty instead of being filled round-robin.
+- MRSS first sanitizes HTML, removes duplicates, and ranks articles locally from titles, original RSS summaries, focus instructions, section requirements, and source diversity. It selects up to eight articles per section and keeps the overall AI workload within 16–40 articles without using a local algorithm to imitate AI summaries.
+- The default “Generate and save AI summaries” mode reuses existing AI summaries only when provenance, article content, and AI configuration still match. Missing summaries are generated in portable plain-text batches and written back immediately, so opening those articles later does not spend tokens again.
+- Interrupted generation retains successfully cached article summaries and report progress. Provider failures or usage limits pause the report and never silently switch to TextRank.
+- Daily Report settings now include an independent article-summary mode. Offline TextRank runs only when the user explicitly selects it and does not follow the global article-summary provider setting.
 - Cloud processing is off by default. Before scheduled reports, manual AI generation, or AI outline optimization can contact a provider, every user must review the actual AI Profile and redacted endpoint and explicitly consent to sending titles, RSS summaries, locally cached bodies, focus instructions, and outline requirements. No AI network request is made without that consent.
 - AI outline optimization now handles common response formats automatically. If the format is invalid, MRSS makes one repair attempt, then suggests another model or manual editing while preserving the existing outline.
 - Consent can be revoked at any time. Changing the AI Profile or endpoint invalidates the prior grant and pauses scheduling; changing only the model at the same endpoint does not require consent again. With no usable AI service configured, MRSS uses local fallback generation and never tries a default remote endpoint.
@@ -84,7 +86,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Revoking daily-report cloud consent now revokes permission and pauses scheduling without reloading saved settings over unsaved AI Profile, outline, feed, or notification edits. Reauthorization is required only when the selected AI Profile or actual endpoint changes; model-only changes at the same endpoint retain consent.
 - AI usage limits, progress, and exceeded state update immediately while editing; saved values are normalized by the backend and actual usage refreshes while Settings remains open.
 - AI Profile tests now use the securely saved key when it is unchanged and the current form value when a new key is entered, preventing masked keys from causing false authentication failures.
-- Daily-report generation now adapts structured output requests for DeepSeek, Gemini, Claude, Ollama, and OpenAI-compatible endpoints, then falls back to JSON mode and prompt-guided JSON when stricter capabilities are unavailable. Diagnostics record only the safe HTTP status and generation stage, never keys, article content, or provider response bodies.
+- Article summarization and section writing now use a portable plain-text protocol. MRSS maps article IDs, owns section structure, validates sources, and assembles Markdown locally instead of requiring strict JSON from DeepSeek, Gemini, Claude, Ollama, or OpenAI-compatible endpoints. Diagnostics record only the safe HTTP status and generation stage, never keys, article content, or provider response bodies.
 - Article batch writes now roll back and retry as a unit when SQLite is busy or locked. Exhausted retries propagate a real error to feed refresh and daily-report refresh instead of committing partial data and reporting success.
 - Windows pre-release artifacts now include both an installer and an isolated portable ZIP containing `portable.txt` and the required licenses.
 - Windows installer and portable artifacts remain unsigned with Authenticode. Publisher may appear as unknown and Microsoft Defender SmartScreen may still warn. This release does not bypass UAC, Defender, or SmartScreen.

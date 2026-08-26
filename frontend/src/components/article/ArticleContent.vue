@@ -31,7 +31,6 @@ interface SummaryResult {
   sentence_count: number;
   is_too_short: boolean;
   limit_reached?: boolean;
-  used_fallback?: boolean;
   source?: string;
   thinking?: string;
   error?: string;

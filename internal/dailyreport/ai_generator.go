@@ -26,7 +26,7 @@ const (
 	maxRequestInputTokens   = int64(12000)
 	requestDataBudget       = int64(10500)
 	maxOutlineRepairChars   = 12000
-	generationPromptVersion = "daily-report-v2"
+	generationPromptVersion = "daily-report-v3-program-assembled"
 )
 
 var (
@@ -114,8 +114,8 @@ func (g *AIGenerator) InspectCheckpoint(
 	if strings.TrimSpace(resumeFingerprint) == "" || strings.TrimSpace(resumeJSON) == "" {
 		return RetryState{Action: RetryActionRestart, Reason: RetryReasonCheckpointMissing}, nil
 	}
-	var checkpoint generationCheckpoint
-	if err := json.Unmarshal([]byte(resumeJSON), &checkpoint); err != nil || checkpoint.Version != 1 {
+	var checkpoint programCheckpoint
+	if err := json.Unmarshal([]byte(resumeJSON), &checkpoint); err != nil || checkpoint.Version != 2 {
 		return RetryState{Action: RetryActionRestart, Reason: RetryReasonCheckpointMissing}, nil
 	}
 	provider, err := g.resolver.Resolve(config)
@@ -147,12 +147,23 @@ func (g *AIGenerator) GenerateResumable(
 	resumeJSON string,
 	save CheckpointSaver,
 ) (result AIResult, err error) {
+	return g.generateProgramAssembled(ctx, config, candidates, resumeFingerprint, resumeJSON, save)
+}
+
+func (g *AIGenerator) generateStructuredLegacy(
+	ctx context.Context,
+	config *models.DailyReportConfig,
+	candidates []models.DailyReportCandidate,
+	resumeFingerprint string,
+	resumeJSON string,
+	save CheckpointSaver,
+) (result AIResult, err error) {
 	provider, err := g.resolver.Resolve(config)
 	if err != nil {
 		return result, err
 	}
 	if provider == nil {
-		return localFallback(config, candidates), ErrNoAIProvider
+		return result, ErrNoAIProvider
 	}
 	guard := func() error { return g.verifyConsent(config, provider) }
 	if err := guard(); err != nil {
@@ -551,6 +562,9 @@ func (g *AIGenerator) requestWithRetry(ctx context.Context, client *ai.Client, p
 			Model: provider.Model, SystemPrompt: request.SystemPrompt, UserPrompt: request.UserPrompt,
 			Temperature: 0.2, MaxTokens: requestMaxTokens,
 		}
+		if ai.DetectAPIProvider(provider.Endpoint) == "deepseek" {
+			requestConfig.ThinkingConfig = map[string]interface{}{"type": "disabled"}
+		}
 		switch formatMode {
 		case responseFormatJSONSchema:
 			requestConfig.ResponseFormat = strictJSONSchema(request.SchemaName, request.Schema)
@@ -566,7 +580,7 @@ func (g *AIGenerator) requestWithRetry(ctx context.Context, client *ai.Client, p
 			Model: requestConfig.Model, SystemPrompt: requestConfig.SystemPrompt, UserPrompt: requestConfig.UserPrompt,
 			Temperature: requestConfig.Temperature, MaxTokens: requestConfig.MaxTokens,
 			ReasoningEffort: requestConfig.ReasoningEffort, ReasoningConfig: requestConfig.ReasoningConfig,
-			ResponseFormat: requestConfig.ResponseFormat,
+			ResponseFormat: requestConfig.ResponseFormat, ThinkingConfig: requestConfig.ThinkingConfig,
 		})
 		inputUsed := response.InputTokens
 		var statusErr *ai.HTTPStatusError
@@ -656,7 +670,11 @@ func retryableAIError(err error) bool {
 		return statusErr.StatusCode == http.StatusTooManyRequests || statusErr.StatusCode >= 500
 	}
 	var networkErr net.Error
-	return errors.As(err, &networkErr)
+	if errors.As(err, &networkErr) {
+		return true
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "empty content") || strings.Contains(message, "no choices")
 }
 
 func safeAIRequestError(err error) error {

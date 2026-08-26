@@ -3,10 +3,13 @@ package summary
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unsafe"
@@ -154,6 +157,104 @@ func TestHandleSummarizeArticle_RSSProviderUsesOriginalSummary(t *testing.T) {
 	}
 	if bytes.Contains(rr.Body.Bytes(), []byte("<script>")) {
 		t.Fatalf("expected unsafe script content to be removed, got: %s", rr.Body.String())
+	}
+}
+
+func TestHandleSummarizeArticle_ReusesDailyReportAISummaryWithoutNetwork(t *testing.T) {
+	db, err := database.NewDB(":memory:")
+	if err != nil {
+		t.Fatalf("failed to create db: %v", err)
+	}
+	defer db.Close()
+	if err := db.Init(); err != nil {
+		t.Fatalf("db init failed: %v", err)
+	}
+	if err := db.SetSetting("summary_provider", "ai"); err != nil {
+		t.Fatalf("SetSetting failed: %v", err)
+	}
+	feedID, err := db.AddFeed(&models.Feed{Title: "T", URL: "https://example.com/feed"})
+	if err != nil {
+		t.Fatalf("AddFeed failed: %v", err)
+	}
+	if err := db.SaveArticle(&models.Article{FeedID: feedID, Title: "A", URL: "https://example.com/article", PublishedAt: time.Now()}); err != nil {
+		t.Fatalf("SaveArticle failed: %v", err)
+	}
+	var articleID int64
+	if err := db.QueryRow("SELECT id FROM articles WHERE url = ?", "https://example.com/article").Scan(&articleID); err != nil {
+		t.Fatalf("query article id: %v", err)
+	}
+	if err := db.UpdateArticleSummaryWithMetadata(articleID, "saved by daily report", "ai_daily_report", "fingerprint", "content-hash"); err != nil {
+		t.Fatalf("cache daily report summary: %v", err)
+	}
+
+	h := core.NewHandler(db, nil, nil, nil)
+	payload := []byte(fmt.Sprintf(`{"article_id":%d,"length":"medium"}`, articleID))
+	rr := httptest.NewRecorder()
+	HandleSummarizeArticle(h, rr, httptest.NewRequest(http.MethodPost, "/summary/article", bytes.NewReader(payload)))
+	if rr.Code != http.StatusOK || !bytes.Contains(rr.Body.Bytes(), []byte("saved by daily report")) || !bytes.Contains(rr.Body.Bytes(), []byte(`"cached":true`)) {
+		t.Fatalf("daily report summary was not reused: status=%d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestHandleSummarizeArticle_AIFailureDoesNotFallbackToTextRank(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"message": "temporary provider failure"}})
+	}))
+	defer server.Close()
+
+	db, err := database.NewDB(":memory:")
+	if err != nil {
+		t.Fatalf("failed to create db: %v", err)
+	}
+	defer db.Close()
+	if err := db.Init(); err != nil {
+		t.Fatalf("db init failed: %v", err)
+	}
+	for key, value := range map[string]string{
+		"summary_provider": "ai",
+		"ai_endpoint":      server.URL,
+		"ai_model":         "test-model",
+	} {
+		if err := db.SetSetting(key, value); err != nil {
+			t.Fatalf("SetSetting(%s): %v", key, err)
+		}
+	}
+	feedID, err := db.AddFeed(&models.Feed{Title: "T", URL: "https://example.com/feed"})
+	if err != nil {
+		t.Fatalf("AddFeed failed: %v", err)
+	}
+	if err := db.SaveArticle(&models.Article{FeedID: feedID, Title: "A", URL: "https://example.com/article", PublishedAt: time.Now()}); err != nil {
+		t.Fatalf("SaveArticle failed: %v", err)
+	}
+	var articleID int64
+	if err := db.QueryRow("SELECT id FROM articles WHERE url = ?", "https://example.com/article").Scan(&articleID); err != nil {
+		t.Fatalf("query article id: %v", err)
+	}
+
+	h := core.NewHandler(db, nil, nil, nil)
+	payload, err := json.Marshal(map[string]any{
+		"article_id": articleID,
+		"length":     "medium",
+		"content":    strings.Repeat("A substantial article body that must never be summarized locally after an AI provider failure. ", 40),
+	})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+	rr := httptest.NewRecorder()
+	HandleSummarizeArticle(h, rr, httptest.NewRequest(http.MethodPost, "/summary/article", bytes.NewReader(payload)))
+	if rr.Code == http.StatusOK || bytes.Contains(rr.Body.Bytes(), []byte("substantial article body")) {
+		t.Fatalf("AI failure silently fell back to local output: status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	article, getErr := db.GetArticleByID(articleID)
+	if getErr != nil || article.Summary != "" || article.SummarySource != "" {
+		t.Fatalf("AI failure wrote a local summary: article=%+v err=%v", article, getErr)
+	}
+	if calls.Load() == 0 {
+		t.Fatal("AI endpoint was not called")
 	}
 }
 

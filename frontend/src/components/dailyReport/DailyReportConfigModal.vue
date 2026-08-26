@@ -344,6 +344,14 @@ async function revokeCloudProcessing(): Promise<void> {
           </select>
         </label>
         <label class="report-field">
+          <span>{{ t('dailyReport.config.articleSummaryMode') }}</span>
+          <select v-model="form.article_summary_mode" class="report-input">
+            <option value="ai">{{ t('dailyReport.config.articleSummaryModeAI') }}</option>
+            <option value="local">{{ t('dailyReport.config.articleSummaryModeLocal') }}</option>
+          </select>
+          <small>{{ t('dailyReport.config.articleSummaryModeDescription') }}</small>
+        </label>
+        <label class="report-field">
           <span>{{ t('dailyReport.config.titleTemplate') }}</span>
           <input v-model="form.title_template" maxlength="80" class="report-input" />
           <small class="flex flex-wrap items-center gap-1">

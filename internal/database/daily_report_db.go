@@ -25,14 +25,14 @@ func (db *DB) GetDailyReportConfig() (*models.DailyReportConfig, error) {
 	var cloudConsentAt sql.NullTime
 	err := db.QueryRow(`
 		SELECT id, enabled, schedule_time, feed_scope, include_hidden,
-			ai_profile_id, focus, outline_json, language, title_template,
+			ai_profile_id, article_summary_mode, focus, outline_json, language, title_template,
 			in_app_notification, system_notification, notify_on_empty,
 			last_handled_boundary, cloud_consent_version, cloud_consent_at,
 			cloud_consent_destination_fingerprint, created_at, updated_at
 		FROM daily_report_config WHERE id = 1
 	`).Scan(
 		&config.ID, &config.Enabled, &config.ScheduleTime, &config.FeedScope,
-		&config.IncludeHidden, &aiProfileID, &config.Focus, &config.OutlineJSON,
+		&config.IncludeHidden, &aiProfileID, &config.ArticleSummaryMode, &config.Focus, &config.OutlineJSON,
 		&config.Language, &config.TitleTemplate, &config.InAppNotification,
 		&config.SystemNotification, &config.NotifyOnEmpty, &lastHandledBoundary,
 		&config.CloudConsentVersion, &cloudConsentAt, &config.CloudConsentFingerprint,
@@ -83,18 +83,19 @@ func (db *DB) SaveDailyReportConfig(config *models.DailyReportConfig, feedIDs []
 	config.UpdatedAt = now
 	_, err = tx.Exec(`
 		INSERT INTO daily_report_config (
-			id, enabled, schedule_time, feed_scope, include_hidden, ai_profile_id,
+			id, enabled, schedule_time, feed_scope, include_hidden, ai_profile_id, article_summary_mode,
 			focus, outline_json, language, title_template, in_app_notification,
 			system_notification, notify_on_empty, last_handled_boundary,
 			cloud_consent_version, cloud_consent_at,
 			cloud_consent_destination_fingerprint, created_at, updated_at
-		) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			enabled = excluded.enabled,
 			schedule_time = excluded.schedule_time,
 			feed_scope = excluded.feed_scope,
 			include_hidden = excluded.include_hidden,
 			ai_profile_id = excluded.ai_profile_id,
+			article_summary_mode = excluded.article_summary_mode,
 			focus = excluded.focus,
 			outline_json = excluded.outline_json,
 			language = excluded.language,
@@ -108,7 +109,7 @@ func (db *DB) SaveDailyReportConfig(config *models.DailyReportConfig, feedIDs []
 			cloud_consent_destination_fingerprint = excluded.cloud_consent_destination_fingerprint,
 			updated_at = excluded.updated_at
 	`, config.Enabled, config.ScheduleTime, config.FeedScope, config.IncludeHidden,
-		config.AIProfileID, config.Focus, config.OutlineJSON, config.Language,
+		config.AIProfileID, config.ArticleSummaryMode, config.Focus, config.OutlineJSON, config.Language,
 		config.TitleTemplate, config.InAppNotification, config.SystemNotification,
 		config.NotifyOnEmpty, config.LastHandledBoundary, config.CloudConsentVersion,
 		config.CloudConsentAt, config.CloudConsentFingerprint, config.CreatedAt,
@@ -188,7 +189,8 @@ func (db *DB) ListDailyReportCandidates(filter models.DailyReportCandidateFilter
 	query := `
 		SELECT a.id, a.feed_id, COALESCE(a.title, ''), COALESCE(a.author, ''),
 			COALESCE(a.url, ''), COALESCE(f.title, ''),
-			COALESCE(NULLIF(a.original_summary, ''), NULLIF(a.summary, ''), ''),
+			COALESCE(a.original_summary, ''), COALESCE(a.summary, ''),
+			COALESCE(a.summary_source, ''), COALESCE(a.summary_fingerprint, ''), COALESCE(a.summary_content_hash, ''),
 			COALESCE(ac.content, ''), COALESCE(a.unique_id, ''), a.published_at, a.first_seen_at,
 			CASE WHEN ` + publicationValid + ` THEN 1 ELSE 0 END AS has_valid_published_time,
 			CASE WHEN ` + publicationValid + `
@@ -257,7 +259,9 @@ func (db *DB) ListDailyReportCandidates(filter models.DailyReportCandidateFilter
 		if err := rows.Scan(
 			&candidate.ArticleID, &candidate.FeedID, &candidate.Title,
 			&candidate.Author, &candidate.URL, &candidate.FeedTitle,
-			&candidate.Summary, &candidate.Content, &candidate.UniqueID, &publishedAt, &firstSeenAt,
+			&candidate.OriginalSummary, &candidate.GeneratedSummary,
+			&candidate.SummarySource, &candidate.SummaryFingerprint, &candidate.SummaryContentHash,
+			&candidate.Content, &candidate.UniqueID, &publishedAt, &firstSeenAt,
 			&candidate.HasValidPublishedTime, &candidate.LateArrival,
 		); err != nil {
 			return nil, fmt.Errorf("scan daily report candidate: %w", err)

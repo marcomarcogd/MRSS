@@ -121,7 +121,7 @@ func (s *Service) GetConfig() (*models.DailyReportConfig, error) {
 		return nil, err
 	}
 	requiresPause := config.Enabled && config.FeedScope == "selected" && len(feedIDs) == 0
-	if config.Enabled {
+	if config.Enabled && config.ArticleSummaryMode == "ai" {
 		cloudProcessing, cloudErr := s.GetCloudProcessing(config)
 		if cloudErr != nil {
 			return nil, cloudErr
@@ -206,7 +206,7 @@ func (s *Service) SaveConfig(config *models.DailyReportConfig) (*models.DailyRep
 		}
 	}
 	var consentErr error
-	if config.Enabled || consentInvalidated || profileSelectionChanged {
+	if (config.Enabled && config.ArticleSummaryMode == "ai") || consentInvalidated || profileSelectionChanged {
 		consentErr = s.ensureCloudProcessingConsent(config)
 		if consentErr != nil {
 			// Persist the user's new destination and the rest of the draft safely
@@ -279,7 +279,11 @@ func (s *Service) Preview(periodStart, periodEnd *time.Time) (*Preview, error) {
 	if err != nil {
 		return nil, err
 	}
-	batches := (len(candidates) + 9) / 10
+	selectedCount := len(candidates)
+	if selectedCount > maxSelectedArticles {
+		selectedCount = maxSelectedArticles
+	}
+	batches := (selectedCount + maxSummaryArticlesPerBatch - 1) / maxSummaryArticlesPerBatch
 	if batches == 0 && len(candidates) > 0 {
 		batches = 1
 	}
@@ -295,8 +299,10 @@ func (s *Service) StartManual(ctx context.Context, periodStart, periodEnd *time.
 	if err != nil {
 		return nil, err
 	}
-	if err := s.ensureCloudProcessingConsent(config); err != nil {
-		return nil, err
+	if config.ArticleSummaryMode == "ai" {
+		if err := s.ensureCloudProcessingConsent(config); err != nil {
+			return nil, err
+		}
 	}
 	return s.startOne(ctx, config, RunKindManual, start, end, nil)
 }
@@ -316,8 +322,10 @@ func (s *Service) Retry(ctx context.Context, id int64, restart ...bool) (*models
 	if err != nil {
 		return nil, err
 	}
-	if err := s.ensureCloudProcessingConsent(config); err != nil {
-		return nil, err
+	if config.ArticleSummaryMode == "ai" {
+		if err := s.ensureCloudProcessingConsent(config); err != nil {
+			return nil, err
+		}
 	}
 	candidates, err := s.candidates(config, original.PeriodStart, original.PeriodEnd, RunKindManual)
 	if err != nil {
@@ -547,7 +555,7 @@ func (s *Service) executePrepared(ctx context.Context, config *models.DailyRepor
 	}
 	var result AIResult
 	var generateErr error
-	if run.GenerationMode == "local" {
+	if run.GenerationMode == "local" || config.ArticleSummaryMode == "local" {
 		result = localFallback(config, candidates)
 		run.GenerationMode = "local"
 	} else {
@@ -580,27 +588,15 @@ func (s *Service) executePrepared(ctx context.Context, config *models.DailyRepor
 		run.OutputTokens = result.OutputTokens
 		run.TotalTokens = result.InputTokens + result.OutputTokens
 		run.AIUsed = run.TotalTokens > 0
-		if errors.Is(generateErr, ErrNoAIProvider) || (errors.Is(generateErr, ErrAIUsageLimit) && !run.AIUsed) {
-			result = localFallback(config, candidates)
-			run.GenerationMode = "local"
-			partial = true
-			run.Error = "Cloud AI was unavailable before generation; created a local report"
-			if errors.Is(generateErr, ErrAIUsageLimit) {
-				run.FailureCode = "usage_limit_reached"
-			} else {
-				run.FailureCode = "no_ai_provider"
-			}
-		} else {
-			run.GenerationMode = "ai"
-			var generationErr *GenerationError
-			if errors.As(generateErr, &generationErr) {
-				run.FailureCode = generationErr.Code
-			}
-			log.Printf("daily report: AI generation failed run=%d stage=%s code=%s", run.ID, run.CurrentStep, run.FailureCode)
-			_ = s.store.ReplaceDailyReportSources(run.ID, sourceSnapshots(run.ID, candidates))
-			s.failRun(run, generateErr)
-			return
+		run.GenerationMode = "ai"
+		var generationErr *GenerationError
+		if errors.As(generateErr, &generationErr) {
+			run.FailureCode = generationErr.Code
 		}
+		log.Printf("daily report: AI generation failed run=%d stage=%s code=%s", run.ID, run.CurrentStep, run.FailureCode)
+		_ = s.store.ReplaceDailyReportSources(run.ID, sourceSnapshots(run.ID, candidates))
+		s.failRun(run, generateErr)
+		return
 	}
 	if result.InputTokens+result.OutputTokens > 0 {
 		run.AIUsed = true
@@ -756,7 +752,7 @@ func (s *Service) HandleMissed(ctx context.Context, action string) (accepted, sk
 	if len(periods) == 0 {
 		return 0, 0, nil
 	}
-	if action != "skip_all" {
+	if action != "skip_all" && config.ArticleSummaryMode == "ai" {
 		if err := s.ensureCloudProcessingConsent(config); err != nil {
 			return 0, 0, err
 		}
@@ -1052,8 +1048,8 @@ func candidateContent(candidate models.DailyReportCandidate) (string, string) {
 	if candidate.Content != "" {
 		return candidate.Content, "content"
 	}
-	if candidate.Summary != "" {
-		return candidate.Summary, "summary"
+	if candidate.OriginalSummary != "" {
+		return candidate.OriginalSummary, "rss_summary"
 	}
 	return candidate.Title, "title"
 }

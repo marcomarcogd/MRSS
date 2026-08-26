@@ -40,6 +40,9 @@ func runMigrations(db *sql.DB) error {
 
 	// Migration: Add summary column for caching AI-generated summaries
 	_, _ = db.Exec(`ALTER TABLE articles ADD COLUMN summary TEXT DEFAULT ''`)
+	_, _ = db.Exec(`ALTER TABLE articles ADD COLUMN summary_source TEXT NOT NULL DEFAULT ''`)
+	_, _ = db.Exec(`ALTER TABLE articles ADD COLUMN summary_fingerprint TEXT NOT NULL DEFAULT ''`)
+	_, _ = db.Exec(`ALTER TABLE articles ADD COLUMN summary_content_hash TEXT NOT NULL DEFAULT ''`)
 
 	// Migration: Add original_summary column for RSS-provided summaries/descriptions
 	_, _ = db.Exec(`ALTER TABLE articles ADD COLUMN original_summary TEXT DEFAULT ''`)
@@ -207,6 +210,9 @@ func migrateDropUniqueConstraintOnArticles(db *sql.DB) error {
 				is_hidden BOOLEAN DEFAULT 0,
 				is_read_later BOOLEAN DEFAULT 0,
 				summary TEXT DEFAULT '',
+				summary_source TEXT NOT NULL DEFAULT '',
+				summary_fingerprint TEXT NOT NULL DEFAULT '',
+				summary_content_hash TEXT NOT NULL DEFAULT '',
 				original_summary TEXT DEFAULT '',
 				unique_id TEXT UNIQUE,
 				content TEXT DEFAULT '',
@@ -218,9 +224,12 @@ func migrateDropUniqueConstraintOnArticles(db *sql.DB) error {
 		if err == nil {
 			// Copy data from old table to new table
 			_, _ = db.Exec(`
-				INSERT INTO articles_new (id, feed_id, title, url, image_url, audio_url, video_url, translated_title, published_at, first_seen_at, has_valid_published_time, is_read, is_favorite, is_hidden, is_read_later, summary, original_summary, unique_id, content, freshrss_item_id, author)
+				INSERT INTO articles_new (id, feed_id, title, url, image_url, audio_url, video_url, translated_title, published_at, first_seen_at, has_valid_published_time, is_read, is_favorite, is_hidden, is_read_later, summary, summary_source, summary_fingerprint, summary_content_hash, original_summary, unique_id, content, freshrss_item_id, author)
 				SELECT id, feed_id, title, url, image_url, audio_url, video_url, translated_title, published_at, COALESCE(published_at, CURRENT_TIMESTAMP), 1, is_read, is_favorite, is_hidden, is_read_later,
 					COALESCE(summary, '') as summary,
+					COALESCE(summary_source, '') as summary_source,
+					COALESCE(summary_fingerprint, '') as summary_fingerprint,
+					COALESCE(summary_content_hash, '') as summary_content_hash,
 					COALESCE(original_summary, '') as original_summary,
 					LOWER(HEX(MD5(title || '|' || feed_id || '|' || COALESCE(strftime('%Y-%m-%d', published_at), '')))) as unique_id,
 					COALESCE(content, ''), COALESCE(freshrss_item_id, ''), COALESCE(author, '')
@@ -421,6 +430,7 @@ func migrateDailyReportConfig(db *sql.DB) error {
 		definition string
 	}{
 		{"include_hidden", "BOOLEAN NOT NULL DEFAULT 0"},
+		{"article_summary_mode", "TEXT NOT NULL DEFAULT 'ai'"},
 		{"cloud_consent_version", "INTEGER NOT NULL DEFAULT 0"},
 		{"cloud_consent_at", "DATETIME"},
 		{"cloud_consent_destination_fingerprint", "TEXT NOT NULL DEFAULT ''"},

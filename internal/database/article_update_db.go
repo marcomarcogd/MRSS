@@ -17,7 +17,20 @@ func (db *DB) UpdateArticleTranslation(id int64, translatedTitle string) error {
 // UpdateArticleSummary updates the cached summary for an article.
 func (db *DB) UpdateArticleSummary(id int64, summary string) error {
 	db.WaitForReady()
-	_, err := db.Exec("UPDATE articles SET summary = ? WHERE id = ?", summary, id)
+	_, err := db.Exec("UPDATE articles SET summary = ?, summary_source = '', summary_fingerprint = '', summary_content_hash = '' WHERE id = ?", summary, id)
+	return err
+}
+
+// UpdateArticleSummaryWithMetadata stores a generated summary together with
+// enough provenance to distinguish cloud AI output from an explicitly chosen
+// local summary. Legacy summaries deliberately keep an empty source.
+func (db *DB) UpdateArticleSummaryWithMetadata(id int64, summary, source, fingerprint, contentHash string) error {
+	db.WaitForReady()
+	_, err := db.Exec(`
+		UPDATE articles
+		SET summary = ?, summary_source = ?, summary_fingerprint = ?, summary_content_hash = ?
+		WHERE id = ?
+	`, summary, source, fingerprint, contentHash, id)
 	return err
 }
 
@@ -40,6 +53,6 @@ func (db *DB) ClearAllTranslations() error {
 // ClearAllSummaries clears all summaries from articles.
 func (db *DB) ClearAllSummaries() error {
 	db.WaitForReady()
-	_, err := db.Exec("UPDATE articles SET summary = ''")
+	_, err := db.Exec("UPDATE articles SET summary = '', summary_source = '', summary_fingerprint = '', summary_content_hash = ''")
 	return err
 }

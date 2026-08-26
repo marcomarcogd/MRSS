@@ -38,6 +38,9 @@ func initSchema(db *sql.DB) error {
 		is_hidden BOOLEAN DEFAULT 0,
 		is_read_later BOOLEAN DEFAULT 0,
 		summary TEXT DEFAULT '',
+		summary_source TEXT NOT NULL DEFAULT '',
+		summary_fingerprint TEXT NOT NULL DEFAULT '',
+		summary_content_hash TEXT NOT NULL DEFAULT '',
 		original_summary TEXT DEFAULT '',
 		unique_id TEXT UNIQUE,
 		FOREIGN KEY(feed_id) REFERENCES feeds(id)
@@ -93,6 +96,7 @@ func initSchema(db *sql.DB) error {
 		feed_scope TEXT NOT NULL DEFAULT 'all' CHECK (feed_scope IN ('all', 'selected')),
 		include_hidden BOOLEAN NOT NULL DEFAULT 0,
 		ai_profile_id INTEGER,
+		article_summary_mode TEXT NOT NULL DEFAULT 'ai' CHECK (article_summary_mode IN ('ai', 'local')),
 		focus TEXT NOT NULL DEFAULT '',
 		outline_json TEXT NOT NULL DEFAULT '[]',
 		language TEXT NOT NULL DEFAULT 'auto',

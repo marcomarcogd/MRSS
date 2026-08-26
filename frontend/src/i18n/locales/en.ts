@@ -108,7 +108,6 @@ const en: TranslationMessages = {
     },
     summary: {
       aiLimitReached: 'AI usage limit reached. Using free alternatives.',
-      aiSummaryFallback: 'AI summarization failed. Using built-in algorithm.',
       articleSummary: 'Article Summary',
       articleTooShort: 'Article content is too short',
       generatingSummaryTime: 'Generating summary took {time}',
@@ -1283,6 +1282,9 @@ const en: TranslationMessages = {
         refreshing: 'Refreshing the selected feeds…',
         collecting: 'Collecting and filtering articles for this period…',
         generating: 'Generating the digest…',
+        selecting: 'Selecting the articles most relevant to each section…',
+        summarizing: 'Generating and saving article summaries ({current}/{total})…',
+        writing: 'Writing digest sections ({current}/{total})…',
         extracting: 'Analyzing article group {current} of {total}…',
         merging: 'Organizing the analysis…',
         finalizing: 'Writing the digest…',
@@ -1397,6 +1399,11 @@ const en: TranslationMessages = {
       chinese: '简体中文',
       english: 'English',
       aiProfile: 'AI profile',
+      articleSummaryMode: 'Article summary method',
+      articleSummaryModeAI: 'AI summaries with caching',
+      articleSummaryModeLocal: 'Local TextRank',
+      articleSummaryModeDescription:
+        'AI mode summarizes and caches only the selected digest articles. TextRank runs only when local mode is explicitly selected.',
       defaultProfile: 'Summary profile / default profile',
       aiPrivacyNotice:
         'When scheduled or manual generation runs, titles, RSS summaries, and locally cached article content for the selected period are sent to your configured AI service. MRSS does not open source webpages for digests. Token charges may apply; API keys and custom authorization data are never stored in digest history.',

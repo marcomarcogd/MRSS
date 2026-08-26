@@ -24,6 +24,7 @@ type configDTO struct {
 	FeedIDs             []int64                 `json:"feed_ids"`
 	IncludeHidden       bool                    `json:"include_hidden"`
 	AIProfileID         *int64                  `json:"ai_profile_id"`
+	ArticleSummaryMode  string                  `json:"article_summary_mode"`
 	Focus               string                  `json:"focus"`
 	Outline             []report.OutlineSection `json:"outline"`
 	Language            string                  `json:"language"`
@@ -544,7 +545,8 @@ func toConfigDTO(config *models.DailyReportConfig) configDTO {
 	result := configDTO{
 		Enabled: config.Enabled, ScheduleTime: config.ScheduleTime, FeedScope: config.FeedScope,
 		FeedIDs: config.FeedIDs, IncludeHidden: config.IncludeHidden, AIProfileID: config.AIProfileID,
-		Focus: config.Focus, Outline: outline, Language: config.Language, TitleTemplate: config.TitleTemplate,
+		ArticleSummaryMode: config.ArticleSummaryMode,
+		Focus:              config.Focus, Outline: outline, Language: config.Language, TitleTemplate: config.TitleTemplate,
 		InAppNotification: config.InAppNotification, SystemNotification: config.SystemNotification,
 		NotifyOnEmpty: config.NotifyOnEmpty, LastHandledBoundary: config.LastHandledBoundary,
 	}
@@ -561,7 +563,8 @@ func fromConfigDTO(input configDTO) *models.DailyReportConfig {
 	return &models.DailyReportConfig{
 		Enabled: input.Enabled, ScheduleTime: input.ScheduleTime, FeedScope: input.FeedScope,
 		FeedIDs: input.FeedIDs, IncludeHidden: input.IncludeHidden, AIProfileID: input.AIProfileID,
-		Focus: input.Focus, OutlineJSON: mustMarshal(input.Outline), Language: input.Language,
+		ArticleSummaryMode: input.ArticleSummaryMode,
+		Focus:              input.Focus, OutlineJSON: mustMarshal(input.Outline), Language: input.Language,
 		TitleTemplate: input.TitleTemplate, InAppNotification: input.InAppNotification,
 		SystemNotification: input.SystemNotification, NotifyOnEmpty: input.NotifyOnEmpty,
 	}

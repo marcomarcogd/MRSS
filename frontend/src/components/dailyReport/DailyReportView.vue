@@ -195,6 +195,19 @@ function statusClass(value: DailyReportStatus): string {
 function runProgress(run: DailyReportRun): number {
   const stored = Math.max(0, Math.min(100, Math.round(run.progress || 0)));
   const step = run.current_step || '';
+  if (step === 'selecting') return Math.max(stored, 58);
+  const summarizing = step.match(/^summarizing:(\d+)\/(\d+)$/);
+  if (summarizing) {
+    const current = Number(summarizing[1]);
+    const total = Math.max(1, Number(summarizing[2]));
+    return Math.max(stored, Math.min(80, 60 + Math.round((current / total) * 20)));
+  }
+  const writing = step.match(/^writing:(\d+)\/(\d+)$/);
+  if (writing) {
+    const current = Number(writing[1]);
+    const total = Math.max(1, Number(writing[2]));
+    return Math.max(stored, Math.min(90, 82 + Math.round((current / total) * 8)));
+  }
   const extraction = step.match(/^extracting:(\d+)\/(\d+)$/);
   if (extraction) {
     const current = Number(extraction[1]);
@@ -214,6 +227,21 @@ function runProgress(run: DailyReportRun): number {
 
 function progressStepLabel(run: DailyReportRun): string {
   const step = run.current_step || run.status;
+  if (step === 'selecting') return t('dailyReport.progress.stages.selecting');
+  const summarizing = step.match(/^summarizing:(\d+)\/(\d+)$/);
+  if (summarizing) {
+    return t('dailyReport.progress.stages.summarizing', {
+      current: Number(summarizing[1]),
+      total: Number(summarizing[2]),
+    });
+  }
+  const writing = step.match(/^writing:(\d+)\/(\d+)$/);
+  if (writing) {
+    return t('dailyReport.progress.stages.writing', {
+      current: Number(writing[1]),
+      total: Number(writing[2]),
+    });
+  }
   const extraction = step.match(/^extracting:(\d+)\/(\d+)$/);
   if (extraction) {
     return t('dailyReport.progress.stages.extracting', {

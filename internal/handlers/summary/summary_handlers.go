@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
 
 	"MRSS/internal/ai"
 	"MRSS/internal/handlers/core"
@@ -125,30 +126,37 @@ func HandleSummarizeArticle(h *core.Handler, w http.ResponseWriter, r *http.Requ
 	}
 
 	var result summary.SummaryResult
-	usedFallback := false
 	limitReached := false
+	summarySource := "local_manual"
+	summaryFingerprint := ""
 
 	if provider == "ai" {
-		// Check if AI usage limit is reached - fallback to local if so
+		// AI mode never silently falls back to the local algorithm. TextRank is
+		// used only when the user explicitly selects the local provider.
 		if h.AITracker.IsLimitReached() {
-			log.Printf("AI usage limit reached, falling back to local summarization")
+			log.Printf("AI summary skipped: usage limit reached")
 			limitReached = true
-			summarizer := summary.NewSummarizer()
-			result = summarizer.Summarize(content, summaryLength)
-			usedFallback = true
+			publicErr := ai.UserFacingErrorForCode(ai.ErrorCodeUsageLimitReached)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(publicErr.HTTPStatus)
+			response.JSON(w, map[string]interface{}{
+				"error": publicErr.Message, "error_code": publicErr.Code, "limit_reached": true,
+			})
+			return
 		} else {
 			// Use AI summarization
 			// Apply rate limiting for AI requests
 			h.AITracker.WaitForRateLimit()
 
 			// Try to get AI config from ProfileProvider first
-			var apiKey, endpoint, model string
+			var apiKey, endpoint, model, profileFingerprint string
 			if h.AIProfileProvider != nil {
-				cfg, err := h.AIProfileProvider.GetConfigForFeature(ai.FeatureSummary)
-				if err == nil && cfg != nil {
-					apiKey = cfg.APIKey
-					endpoint = cfg.Endpoint
-					model = cfg.Model
+				profile, err := h.AIProfileProvider.GetProfileForFeature(ai.FeatureSummary)
+				if err == nil && profile != nil {
+					apiKey = profile.APIKey
+					endpoint = profile.Endpoint
+					model = profile.Model
+					profileFingerprint = strconv.FormatInt(profile.ID, 10)
 					log.Printf("AI summary profile selected endpoint=%s model=%s", ai.RedactEndpoint(endpoint), model)
 				}
 			}
@@ -158,6 +166,7 @@ func HandleSummarizeArticle(h *core.Handler, w http.ResponseWriter, r *http.Requ
 				apiKey, _ = h.DB.GetEncryptedSetting("ai_api_key")
 				endpoint, _ = h.DB.GetSetting("ai_endpoint")
 				model, _ = h.DB.GetSetting("ai_model")
+				profileFingerprint = "legacy"
 				log.Printf("Using global AI settings for summarization (API key: %s)", func() string {
 					if apiKey != "" {
 						return "configured"
@@ -183,13 +192,17 @@ func HandleSummarizeArticle(h *core.Handler, w http.ResponseWriter, r *http.Requ
 			aiResult, err := aiSummarizer.Summarize(content, summaryLength)
 			if err != nil {
 				publicErr := ai.ClassifyUserFacingError(err)
-				log.Printf("AI summary failed code=%s status=%d; using local fallback", publicErr.Code, publicErr.HTTPStatus)
-				// Fallback to local algorithm on any AI error
-				summarizer := summary.NewSummarizer()
-				result = summarizer.Summarize(content, summaryLength)
-				usedFallback = true
+				log.Printf("AI summary failed code=%s status=%d", publicErr.Code, publicErr.HTTPStatus)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(publicErr.HTTPStatus)
+				response.JSON(w, map[string]interface{}{
+					"error": publicErr.Message, "error_code": publicErr.Code,
+				})
+				return
 			} else {
 				result = aiResult
+				summarySource = "ai_manual"
+				summaryFingerprint = summary.CacheFingerprint(content, string(summaryLength), profileFingerprint, endpoint, model)
 				// Track AI usage only on success
 				h.AITracker.TrackSummary(content, result.Summary)
 				// Track statistics
@@ -203,7 +216,7 @@ func HandleSummarizeArticle(h *core.Handler, w http.ResponseWriter, r *http.Requ
 	}
 
 	// Cache the summary in the database
-	if err := h.DB.UpdateArticleSummary(req.ArticleID, result.Summary); err != nil {
+	if err := h.DB.UpdateArticleSummaryWithMetadata(req.ArticleID, result.Summary, summarySource, summaryFingerprint, summary.ContentFingerprint(content)); err != nil {
 		log.Printf("Failed to cache summary for article %d: %v", req.ArticleID, err)
 		// Don't fail the request if caching fails
 	}
@@ -218,9 +231,6 @@ func HandleSummarizeArticle(h *core.Handler, w http.ResponseWriter, r *http.Requ
 		"is_too_short":   result.IsTooShort,
 		"limit_reached":  limitReached,
 		"thinking":       result.Thinking,
-	}
-	if usedFallback {
-		resp["used_fallback"] = true
 	}
 
 	response.JSON(w, resp)

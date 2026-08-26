@@ -108,6 +108,16 @@ describe('App', () => {
     expect(dailyReportView).toContain('source.source_index');
     expect(dailyReportView).toContain('downloadMarkdown');
     expect(dailyReportView).not.toContain("t('dailyReport.detail.failureCode'");
+    expect(dailyReportView).toContain('step.match(/^summarizing:');
+    expect(dailyReportView).toContain('step.match(/^writing:');
+
+    const dailyReportConfig = readFileSync(
+      'src/components/dailyReport/DailyReportConfigModal.vue',
+      'utf8'
+    );
+    expect(dailyReportConfig).toContain('v-model="form.article_summary_mode"');
+    expect(zh.dailyReport.config.articleSummaryModeAI).toContain('AI');
+    expect(zh.dailyReport.config.articleSummaryModeLocal).toContain('TextRank');
 
     expect(zh.dailyReport.action.resumeAI).toBe('继续生成');
     expect(zh.dailyReport.action.restartAI).toBe('重新生成');

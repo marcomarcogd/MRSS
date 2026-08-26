@@ -264,7 +264,10 @@ func (c *Client) tryFormat(ctx context.Context, handler FormatHandler, config Re
 		return ResponseResult{}, fmt.Errorf("failed to read response body: %w", err)
 	}
 	if err := handler.ValidateResponse(resp.StatusCode, bodyBytes); err != nil {
-		return ResponseResult{}, &HTTPStatusError{StatusCode: resp.StatusCode, Err: err}
+		if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+			return ResponseResult{}, &HTTPStatusError{StatusCode: resp.StatusCode, Err: err}
+		}
+		return ResponseResult{}, fmt.Errorf("response validation failed: %w", err)
 	}
 
 	// Parse response

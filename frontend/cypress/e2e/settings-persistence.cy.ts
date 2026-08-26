@@ -138,6 +138,7 @@ describe('Settings Persistence', () => {
       feed_ids: [],
       include_hidden: false,
       ai_profile_id: null,
+      article_summary_mode: 'ai',
       focus: '',
       outline: [{ id: 'overview', title: 'Highlights', instruction: 'Summarize.' }],
       language: 'auto',
@@ -179,14 +180,25 @@ describe('Settings Persistence', () => {
     cy.get('button[title="Digest settings"], button[title="日报设置"]').click({ force: true });
     cy.wait('@getDailyReportConfig');
     cy.get('[data-testid="daily-report-config"] input[type="time"]').clear().type('09:30');
+    cy.get('[data-testid="daily-report-config"]')
+      .contains('label', /Article summary method|文章摘要方式/)
+      .find('select')
+      .select('local');
     cy.get('button')
       .contains(/^Save$|^保存$/)
       .click({ force: true });
-    cy.wait('@saveDailyReportConfig').its('request.body.schedule_time').should('eq', '09:30');
+    cy.wait('@saveDailyReportConfig').then(({ request }) => {
+      expect(request.body.schedule_time).to.eq('09:30');
+      expect(request.body.article_summary_mode).to.eq('local');
+    });
 
     cy.get('button[title="Digest settings"], button[title="日报设置"]').click({ force: true });
     cy.wait('@getDailyReportConfig');
     cy.get('[data-testid="daily-report-config"] input[type="time"]').should('have.value', '09:30');
+    cy.get('[data-testid="daily-report-config"]')
+      .contains('label', /Article summary method|文章摘要方式/)
+      .find('select')
+      .should('have.value', 'local');
   });
 
   it('should require explicit cloud processing consent and support revocation', () => {
@@ -200,6 +212,7 @@ describe('Settings Persistence', () => {
       feed_ids: [],
       include_hidden: false,
       ai_profile_id: 12,
+      article_summary_mode: 'ai',
       focus: '',
       outline: [{ id: 'overview', title: 'Highlights', instruction: 'Summarize.' }],
       language: 'auto',
@@ -367,7 +380,7 @@ describe('Settings Persistence', () => {
     cy.get('[data-testid="daily-report-optimize-outline"]').click();
     cy.wait('@optimizeDailyReportOutline');
     cy.contains(
-      'The AI returned an invalid outline format twice. Choose another model or edit the outline manually.'
+      /The AI outline format did not meet the requirements\. Choose another model or edit the outline manually\.|AI 返回的目录格式不符合要求，请更换模型或手动编辑目录。/
     ).should('be.visible');
     cy.get('[data-testid="daily-report-config"] input[placeholder="Section title"]')
       .first()

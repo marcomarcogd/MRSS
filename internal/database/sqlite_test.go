@@ -77,7 +77,7 @@ func TestDatabaseInitialization(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get default daily report config: %v", err)
 	}
-	if config.Enabled || config.ScheduleTime != "08:00" || config.FeedScope != "all" || config.IncludeHidden {
+	if config.Enabled || config.ScheduleTime != "08:00" || config.FeedScope != "all" || config.IncludeHidden || config.ArticleSummaryMode != "ai" {
 		t.Fatalf("Unexpected default daily report config: %+v", config)
 	}
 	if !config.InAppNotification || !config.SystemNotification || config.NotifyOnEmpty {
@@ -90,6 +90,7 @@ func TestDatabaseInitialization(t *testing.T) {
 	config.CloudConsentVersion = 1
 	config.CloudConsentAt = &consentedAt
 	config.CloudConsentFingerprint = "test-destination-fingerprint"
+	config.ArticleSummaryMode = "local"
 	if err := db.SaveDailyReportConfig(config, nil); err != nil {
 		t.Fatalf("Failed to persist cloud consent: %v", err)
 	}
@@ -99,7 +100,8 @@ func TestDatabaseInitialization(t *testing.T) {
 	}
 	if persistedConfig.CloudConsentVersion != 1 || persistedConfig.CloudConsentAt == nil ||
 		!persistedConfig.CloudConsentAt.Equal(consentedAt) ||
-		persistedConfig.CloudConsentFingerprint != "test-destination-fingerprint" {
+		persistedConfig.CloudConsentFingerprint != "test-destination-fingerprint" ||
+		persistedConfig.ArticleSummaryMode != "local" {
 		t.Fatalf("Cloud consent did not round-trip: %+v", persistedConfig)
 	}
 

@@ -126,6 +126,7 @@ async function saveConfig(value: DailyReportConfig): Promise<DailyReportConfig> 
       feed_ids: value.feed_ids,
       include_hidden: value.include_hidden,
       ai_profile_id: value.ai_profile_id,
+      article_summary_mode: value.article_summary_mode,
       focus: value.focus,
       outline: value.outline,
       language: value.language,

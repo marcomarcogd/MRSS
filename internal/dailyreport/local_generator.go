@@ -131,7 +131,7 @@ func localRelevance(candidate models.DailyReportCandidate, sectionTerms, focusTe
 		value  string
 		weight float64
 	}{
-		{candidate.Title, 8}, {candidate.Summary, 4}, {candidate.Content, 2},
+		{candidate.Title, 8}, {candidate.OriginalSummary, 4}, {candidate.GeneratedSummary, 4}, {candidate.Content, 2},
 		{candidate.FeedTitle, 3}, {candidate.Author, 2},
 	}
 	score := weightedTermScore(fields, sectionTerms)

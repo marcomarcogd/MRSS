@@ -22,6 +22,12 @@ func normalizeConfig(config *models.DailyReportConfig, now time.Time) error {
 	if config.FeedScope != "all" && config.FeedScope != "selected" {
 		return fmt.Errorf("feed_scope must be all or selected")
 	}
+	if config.ArticleSummaryMode == "" {
+		config.ArticleSummaryMode = "ai"
+	}
+	if config.ArticleSummaryMode != "ai" && config.ArticleSummaryMode != "local" {
+		return fmt.Errorf("article_summary_mode must be ai or local")
+	}
 	if len([]rune(config.Focus)) > MaxFocusLength {
 		return fmt.Errorf("focus must not exceed %d characters", MaxFocusLength)
 	}

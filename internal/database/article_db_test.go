@@ -332,6 +332,9 @@ func TestDailyReportDataLifecycleAndCandidates(t *testing.T) {
 	if err := db.SetArticleContent(normalID, "cached full content"); err != nil {
 		t.Fatalf("SetArticleContent: %v", err)
 	}
+	if err := db.UpdateArticleSummaryWithMetadata(normalID, "cached AI summary", "ai_daily_report", "summary-fingerprint", "content-fingerprint"); err != nil {
+		t.Fatalf("UpdateArticleSummaryWithMetadata: %v", err)
+	}
 
 	config, err := db.GetDailyReportConfig()
 	if err != nil {
@@ -363,8 +366,14 @@ func TestDailyReportDataLifecycleAndCandidates(t *testing.T) {
 	lateByTitle := make(map[string]bool, len(candidates))
 	for _, candidate := range candidates {
 		lateByTitle[candidate.Title] = candidate.LateArrival
-		if candidate.Title == "normal" && candidate.Content != "cached full content" {
-			t.Fatalf("normal candidate content = %q", candidate.Content)
+		if candidate.Title == "normal" {
+			if candidate.Content != "cached full content" {
+				t.Fatalf("normal candidate content = %q", candidate.Content)
+			}
+			if candidate.GeneratedSummary != "cached AI summary" || candidate.SummarySource != "ai_daily_report" ||
+				candidate.SummaryFingerprint != "summary-fingerprint" || candidate.SummaryContentHash != "content-fingerprint" {
+				t.Fatalf("normal candidate summary metadata = %+v", candidate)
+			}
 		}
 	}
 	if !lateByTitle["late"] || lateByTitle["normal"] || lateByTitle["future"] || lateByTitle["no-date-in-window"] {

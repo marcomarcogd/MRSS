@@ -105,7 +105,6 @@ const zh: TranslationMessages = {
     },
     summary: {
       aiLimitReached: 'AI 使用量已达上限，正在使用免费替代方案。',
-      aiSummaryFallback: 'AI 摘要生成失败，正在使用内置算法。',
       articleSummary: '文章摘要',
       articleTooShort: '文章内容过短',
       generatingSummaryTime: '生成摘要耗时 {time}',
@@ -1254,6 +1253,9 @@ const zh: TranslationMessages = {
         refreshing: '正在刷新所选订阅源…',
         collecting: '正在收集并筛选本周期文章…',
         generating: '正在生成日报…',
+        selecting: '正在筛选与栏目最相关的文章…',
+        summarizing: '正在生成并保存文章摘要（{current}/{total}）…',
+        writing: '正在撰写日报栏目（{current}/{total}）…',
         extracting: '正在分析第 {current}/{total} 组文章…',
         merging: '正在整理分析结果…',
         finalizing: '正在编写日报内容…',
@@ -1357,6 +1359,11 @@ const zh: TranslationMessages = {
       chinese: '简体中文',
       english: 'English',
       aiProfile: 'AI 配置',
+      articleSummaryMode: '文章摘要方式',
+      articleSummaryModeAI: 'AI 摘要并保存',
+      articleSummaryModeLocal: '本地 TextRank',
+      articleSummaryModeDescription:
+        'AI 模式只为日报采用的重点文章生成摘要并缓存；只有选择本地模式时才使用 TextRank。',
       defaultProfile: '继承摘要配置 / 默认配置',
       aiPrivacyNotice:
         '启用或手动生成日报时，所选周期的标题、RSS 摘要和本地正文缓存会发送到你配置的 AI 服务，MRSS 不会为日报访问原网页。调用可能产生 Token 费用；API Key 和自定义鉴权信息不会写入日报历史。',

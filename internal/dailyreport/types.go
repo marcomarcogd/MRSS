@@ -174,6 +174,7 @@ type Store interface {
 	GetDefaultAIProfile() (*models.AIProfile, error)
 	GetSetting(string) (string, error)
 	GetEncryptedSetting(string) (string, error)
+	UpdateArticleSummaryWithMetadata(int64, string, string, string, string) error
 }
 
 func parseOutline(raw string) ([]OutlineSection, error) {

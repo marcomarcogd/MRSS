@@ -2,6 +2,7 @@ export type DailyReportView = 'articles' | 'imageGallery' | 'dailyReports';
 
 export type DailyReportFeedScope = 'all' | 'selected';
 export type DailyReportLanguage = 'auto' | 'zh-CN' | 'en';
+export type DailyReportArticleSummaryMode = 'ai' | 'local';
 export type DailyReportStatus =
   | 'queued'
   | 'refreshing'
@@ -25,6 +26,7 @@ export interface DailyReportConfig {
   feed_ids: number[];
   include_hidden: boolean;
   ai_profile_id: number | null;
+  article_summary_mode: DailyReportArticleSummaryMode;
   focus: string;
   outline: DailyReportOutlineItem[];
   language: DailyReportLanguage;
@@ -153,6 +155,7 @@ export const DEFAULT_DAILY_REPORT_CONFIG: DailyReportConfig = {
   feed_ids: [],
   include_hidden: false,
   ai_profile_id: null,
+  article_summary_mode: 'ai',
   focus: '',
   outline: [],
   language: 'auto',
