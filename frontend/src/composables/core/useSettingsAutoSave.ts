@@ -7,7 +7,7 @@
  */
 import { computed, isRef, onUnmounted, ref, watch, type Ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useAppStore } from '@/stores/app';
+import { getAutoRefreshInterval, useAppStore } from '@/stores/app';
 import type { SettingsData } from '@/types/settings';
 import { buildAutoSavePayload } from './useSettings.generated';
 import { mergeSharedSettings } from './useSettings';
@@ -59,8 +59,10 @@ export function useSettingsAutoSave(
     if (changed(changes, 'theme')) {
       store.setTheme(savedSettings.theme as 'light' | 'dark' | 'auto');
     }
-    if (changed(changes, 'update_interval')) {
-      store.startAutoRefresh(savedSettings.update_interval);
+    if (changed(changes, 'update_interval', 'refresh_mode')) {
+      store.startAutoRefresh(
+        getAutoRefreshInterval(savedSettings.refresh_mode, savedSettings.update_interval)
+      );
     }
 
     if (changed(changes, 'default_view_mode')) {
