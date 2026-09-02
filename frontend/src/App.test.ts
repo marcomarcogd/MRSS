@@ -9,7 +9,12 @@ import zh from './i18n/locales/zh';
 import App from './App.vue';
 import ActivityBar from './components/sidebar/ActivityBar.vue';
 import DailyReportCloudConsentModal from './components/dailyReport/DailyReportCloudConsentModal.vue';
-import { useAppStore } from './stores/app';
+import {
+  createAutoRefreshScheduler,
+  getAutoRefreshInterval,
+  preserveSelectedArticle,
+  useAppStore,
+} from './stores/app';
 import { DailyReportAPIError, useDailyReports } from './composables/dailyReport/useDailyReports';
 import { setSettingsFromRawData } from './composables/core/useSettings';
 import { getAIErrorMessage } from './utils/aiError';
@@ -36,6 +41,97 @@ const collectStrings = (value: unknown): string[] => {
 };
 
 describe('App', () => {
+  it('preserves the selected article while replacing a refreshed first page', () => {
+    const selected = { id: 75, title: 'Selected article' };
+    const fresh = [{ id: 1, title: 'Fresh article' }];
+
+    expect(preserveSelectedArticle(fresh, [selected], 75)).toEqual([fresh[0], selected]);
+    expect(preserveSelectedArticle([selected], [selected], 75)).toEqual([selected]);
+    expect(preserveSelectedArticle(fresh, [selected], null)).toEqual(fresh);
+  });
+
+  it('schedules normal and very long automatic refresh intervals without overflowing', async () => {
+    vi.useFakeTimers();
+    const refresh = vi.fn();
+    const scheduler = createAutoRefreshScheduler(refresh);
+
+    scheduler.start(30);
+    await vi.advanceTimersByTimeAsync(30 * 60 * 1000 - 1);
+    expect(refresh).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(refresh).toHaveBeenCalledTimes(1);
+
+    refresh.mockClear();
+    scheduler.start(46_080);
+    await vi.advanceTimersByTimeAsync(46_080 * 60 * 1000 - 1);
+    expect(refresh).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(refresh).toHaveBeenCalledTimes(1);
+
+    scheduler.stop();
+    vi.useRealTimers();
+  });
+
+  it('replaces or disables an existing automatic refresh schedule', async () => {
+    vi.useFakeTimers();
+    const refresh = vi.fn();
+    const scheduler = createAutoRefreshScheduler(refresh);
+
+    scheduler.start(30);
+    await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
+    scheduler.start(60);
+    await vi.advanceTimersByTimeAsync(45 * 60 * 1000);
+    expect(refresh).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
+    expect(refresh).toHaveBeenCalledTimes(1);
+
+    refresh.mockClear();
+    scheduler.start(30);
+    scheduler.start(0);
+    await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+    expect(refresh).not.toHaveBeenCalled();
+
+    scheduler.stop();
+    vi.useRealTimers();
+  });
+
+  it('disables the frontend timer outside fixed refresh mode', () => {
+    expect(getAutoRefreshInterval('fixed', 30)).toBe(30);
+    expect(getAutoRefreshInterval('intelligent', 30)).toBe(0);
+    expect(getAutoRefreshInterval('never', 30)).toBe(0);
+  });
+
+  it('skips overlapping refreshes and catches up only once after sleep', async () => {
+    vi.useFakeTimers();
+    const refresh = vi.fn();
+    let refreshing = true;
+    let currentTime = 0;
+    const scheduler = createAutoRefreshScheduler(
+      refresh,
+      () => !refreshing,
+      () => currentTime
+    );
+
+    scheduler.start(30);
+    currentTime = 30 * 60 * 1000;
+    await vi.advanceTimersByTimeAsync(30 * 60 * 1000);
+    expect(refresh).not.toHaveBeenCalled();
+
+    refreshing = false;
+    currentTime = 4 * 30 * 60 * 1000;
+    await vi.advanceTimersByTimeAsync(30 * 60 * 1000);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(refresh).toHaveBeenCalledTimes(1);
+
+    currentTime = 5 * 30 * 60 * 1000;
+    await vi.advanceTimersByTimeAsync(30 * 60 * 1000);
+    expect(refresh).toHaveBeenCalledTimes(2);
+
+    scheduler.stop();
+    vi.useRealTimers();
+  });
+
   it('uses the MRSS brand and fork attribution', () => {
     expect(en.appName).toBe('MRSS');
     expect(en.setting.about.forkNotice).toContain('DevXDojo/MrRSS');

@@ -5,6 +5,18 @@ import type { FilterCondition } from '@/types/filter';
 import { useSettings } from '@/composables/core/useSettings';
 import type { DailyReportView } from '@/types/dailyReport';
 
+export function preserveSelectedArticle<T extends { id: number }>(
+  freshArticles: T[],
+  previousArticles: T[],
+  currentArticleId: number | null
+): T[] {
+  if (!currentArticleId || freshArticles.some((article) => article.id === currentArticleId)) {
+    return freshArticles;
+  }
+  const selectedArticle = previousArticles.find((article) => article.id === currentArticleId);
+  return selectedArticle ? [...freshArticles, selectedArticle] : freshArticles;
+}
+
 export type Filter = 'all' | 'unread' | 'favorites' | 'readLater' | 'imageGallery' | '';
 export type ThemePreference = 'light' | 'dark' | 'auto';
 export type Theme = 'light' | 'dark';
@@ -124,7 +136,7 @@ export interface AppActions {
   setFeed: (feedId: number) => void;
   selectFeedInArticleList: (feedId: number, articleId?: number) => void;
   setCategory: (category: string) => void;
-  fetchArticles: (append?: boolean) => Promise<void>;
+  fetchArticles: (append?: boolean, preserveExisting?: boolean) => Promise<void>;
   loadMore: () => Promise<void>;
   fetchFeeds: () => Promise<void>;
   fetchUnreadCounts: () => Promise<void>;
@@ -276,13 +288,20 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
-  async function fetchArticles(append: boolean = false): Promise<void> {
+  async function fetchArticles(
+    append: boolean = false,
+    preserveExisting: boolean = false
+  ): Promise<void> {
     if (isLoading.value) return;
+
+    const previousArticles = articles.value;
 
     // If not appending, reset to page 1 and clear articles
     if (!append) {
       page.value = 1;
-      articles.value = [];
+      if (!preserveExisting) {
+        articles.value = [];
+      }
       hasMore.value = true;
     }
 
@@ -307,7 +326,9 @@ export const useAppStore = defineStore('app', () => {
       if (append) {
         articles.value = [...articles.value, ...data];
       } else {
-        articles.value = data;
+        articles.value = preserveExisting
+          ? preserveSelectedArticle(data, previousArticles, currentArticleId.value)
+          : data;
       }
     } catch {
       // Error handled silently
@@ -621,7 +642,7 @@ export const useAppStore = defineStore('app', () => {
 
         // Still refresh feeds and articles to get any updates from FreshRSS sync
         fetchFeeds();
-        fetchArticles();
+        fetchArticles(false, true);
         fetchUnreadCounts();
 
         // Notify components that settings have been updated
@@ -708,7 +729,7 @@ export const useAppStore = defineStore('app', () => {
         if (!data.is_running) {
           clearInterval(interval);
           fetchFeeds();
-          fetchArticles();
+          fetchArticles(false, true);
           fetchUnreadCounts();
 
           // Notify components that settings have been updated (e.g., last_article_update)
@@ -776,7 +797,7 @@ export const useAppStore = defineStore('app', () => {
           console.log('[FreshRSS] Sync completed detected, refreshing data...');
           // Refresh all data
           await fetchFeeds();
-          await fetchArticles();
+          await fetchArticles(false, true);
           await fetchUnreadCounts();
         }
 

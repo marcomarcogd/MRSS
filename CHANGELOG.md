@@ -48,8 +48,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 撤销日报云端授权只会撤销许可并暂停定时任务，不再回读旧配置覆盖设置弹窗中尚未保存的 AI Profile、目录或订阅草稿。只有切换 AI Profile 或实际端点时需要重新授权，同一端点仅更换模型仍沿用已有授权。
 - AI 用量上限、进度和超限状态会随设置输入即时更新，保存后回读后端规范值；设置窗口打开期间会刷新实际用量。
 - AI 配置测试会在密钥未修改时使用安全保存的真实密钥，输入新密钥时测试当前表单值，避免把掩码当作密钥造成鉴权误报。
+- AI Profile 测试、翻译、摘要、搜索和聊天统一使用同一套代理、TLS、HTTP/2 与 HTTP/1.1 回退配置；修复测试成功但实际翻译因请求链路不一致而失败的问题。
+- 修复 RSS 正文在文本后紧跟图片等媒体时只翻译标题、漏译正文的问题；失败后可重试，切换文章时不会把旧翻译写入新文章。
 - 日报文章摘要与栏目撰写改用普通文本协议，由程序负责文章编号映射、栏目结构、来源校验和 Markdown 组装，不再强制 DeepSeek、Gemini、Claude、Ollama 或 OpenAI 兼容服务返回严格 JSON；诊断日志只记录安全的 HTTP 状态和生成阶段，不记录密钥、文章内容或服务商响应正文。
 - 文章批量写入遇到 SQLite 忙或锁定时会整批回滚并有限重试，重试耗尽后向刷新和日报链路返回真实错误，不再提交部分数据后报告成功。
+- 应用更新下载复用全局代理，支持有限重试、Range 断点续传和真实字节进度；下载失败不会启动不完整安装包，并保留手动下载入口。
+- 超长自动刷新间隔改用分段定时调度，避免浏览器计时器溢出造成刷新死循环；休眠跨过多个周期时只补一次。
+- 后台刷新订阅后保留当前选中文章，避免文章列表短暂闪空，以及当前文章不在新首页时右侧详情变为空白。
 - Windows 预发布测试同时提供安装包和带 `portable.txt`、许可证的独立便携 ZIP，避免便携测试误用安装版数据目录。
 - Windows 安装包和便携包仍未使用 Authenticode 证书签名，Publisher 可能显示为未知，Microsoft Defender SmartScreen 仍可能提示。本版本不会绕过 UAC、Defender 或 SmartScreen。
 
@@ -94,8 +99,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Revoking daily-report cloud consent now revokes permission and pauses scheduling without reloading saved settings over unsaved AI Profile, outline, feed, or notification edits. Reauthorization is required only when the selected AI Profile or actual endpoint changes; model-only changes at the same endpoint retain consent.
 - AI usage limits, progress, and exceeded state update immediately while editing; saved values are normalized by the backend and actual usage refreshes while Settings remains open.
 - AI Profile tests now use the securely saved key when it is unchanged and the current form value when a new key is entered, preventing masked keys from causing false authentication failures.
+- AI Profile tests, translation, summaries, search, and chat now share the same proxy, TLS, HTTP/2, and HTTP/1.1 fallback configuration, fixing cases where a profile test succeeded but real translation failed through a different request path.
+- Fixed article bodies being skipped when RSS text is followed directly by an image or other media. Failed body translations can be retried, and stale responses are discarded after switching articles.
 - Article summarization and section writing now use a portable plain-text protocol. MRSS maps article IDs, owns section structure, validates sources, and assembles Markdown locally instead of requiring strict JSON from DeepSeek, Gemini, Claude, Ollama, or OpenAI-compatible endpoints. Diagnostics record only the safe HTTP status and generation stage, never keys, article content, or provider response bodies.
 - Article batch writes now roll back and retry as a unit when SQLite is busy or locked. Exhausted retries propagate a real error to feed refresh and daily-report refresh instead of committing partial data and reporting success.
+- Update downloads now reuse the global proxy and support bounded retries, Range resume, and real byte progress. Incomplete packages are never installed, and a manual-download link remains available after failure.
+- Very long automatic refresh intervals now use chunked scheduling instead of overflowing the browser timer. Waking after multiple elapsed periods triggers only one catch-up refresh.
+- Background feed refreshes now preserve the selected article, preventing the list from flashing empty and the detail pane from going blank when that article is outside the refreshed first page.
 - Windows pre-release artifacts now include both an installer and an isolated portable ZIP containing `portable.txt` and the required licenses.
 - Windows installer and portable artifacts remain unsigned with Authenticode. Publisher may appear as unknown and Microsoft Defender SmartScreen may still warn. This release does not bypass UAC, Defender, or SmartScreen.
 
