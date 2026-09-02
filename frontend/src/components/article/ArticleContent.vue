@@ -633,6 +633,24 @@ function simpleHash(str: string): string {
   return hash.toString(36);
 }
 
+// RSS content can contain direct text nodes next to media or other HTML. The
+// translation pipeline works on semantic text elements, so wrap those orphaned
+// text nodes without changing the stored article HTML.
+function wrapOrphanedTextNodes(container: Element): void {
+  const blockContainers = [
+    container,
+    ...Array.from(container.querySelectorAll('div,section,article')),
+  ];
+  blockContainers.forEach((block) => {
+    Array.from(block.childNodes).forEach((node) => {
+      if (node.nodeType !== Node.TEXT_NODE || !node.textContent?.trim()) return;
+      const paragraph = document.createElement('p');
+      paragraph.textContent = node.textContent;
+      block.replaceChild(paragraph, node);
+    });
+  });
+}
+
 // Translate content paragraphs while preserving inline elements (formulas, code, images)
 async function translateContentParagraphs(content: string): Promise<boolean> {
   if (!translationEnabled.value || !content) {
@@ -674,13 +692,7 @@ async function translateContentParagraphs(content: string): Promise<boolean> {
   const existingTranslations = proseContainer.querySelectorAll('.translation-text');
   existingTranslations.forEach((el) => el.remove());
 
-  // Check if content is plain text (no HTML tags) and wrap it in <p> tags
-  // This handles cases where article content is stored as plain text without HTML structure
-  const hasHTMLTags = /<[^>]+>/.test(proseContainer.innerHTML);
-  if (!hasHTMLTags && proseContainer.textContent && proseContainer.textContent.trim().length > 0) {
-    const textContent = proseContainer.innerHTML;
-    proseContainer.innerHTML = `<p>${textContent}</p>`;
-  }
+  wrapOrphanedTextNodes(proseContainer);
 
   // Find all translatable elements
   // For lists: translate individual li items, translation stays inside the same li
@@ -860,6 +872,10 @@ async function translateContentParagraphs(content: string): Promise<boolean> {
   await reattachContentInteractions();
 
   isTranslatingContent.value = false;
+  if (translationFailed) {
+    lastTranslatedArticleId.value = null;
+    lastTranslatedContentHash.value = '';
+  }
   return !translationFailed;
 }
 

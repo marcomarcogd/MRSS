@@ -170,6 +170,73 @@ describe('Article Operations', () => {
     });
   });
 
+  it('should translate orphaned article text next to media', () => {
+    const settingsState: Record<string, string> = {
+      language: 'en-US',
+      theme: 'light',
+      layout_mode: 'normal',
+      default_view_mode: 'rendered',
+      translation_mode: 'auto',
+      translation_provider: 'ai',
+      translation_only_mode: 'false',
+      target_language: 'zh-CN',
+      summary_enabled: 'false',
+      full_text_fetch_enabled: 'false',
+      update_check_enabled: 'false',
+    };
+    const feed = {
+      id: 1,
+      title: 'Translation Feed',
+      url: 'https://example.com/feed.xml',
+      category: '',
+    };
+    const article = {
+      id: 1,
+      feed_id: 1,
+      feed_title: feed.title,
+      title: 'English title',
+      url: 'https://example.com/article',
+      published_at: '2026-04-22T00:00:00Z',
+      translated_title: '',
+      is_read: false,
+      is_favorite: false,
+      is_hidden: false,
+      is_read_later: false,
+    };
+
+    cy.intercept('/api/**', { statusCode: 200, body: {} });
+    cy.intercept('GET', '/api/settings', { statusCode: 200, body: settingsState });
+    cy.intercept('GET', '/api/feeds', { statusCode: 200, body: [feed] }).as('translationFeeds');
+    cy.intercept('GET', '/api/tags', { statusCode: 200, body: [] });
+    cy.intercept('GET', '/api/saved-filters', { statusCode: 200, body: [] });
+    cy.intercept('GET', '/api/articles*', { statusCode: 200, body: [article] }).as(
+      'translationArticles'
+    );
+    cy.intercept('GET', '/api/articles/content*', {
+      statusCode: 200,
+      body: {
+        content:
+          'This paragraph must be translated.<img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" alt="pixel">',
+        cached: true,
+      },
+    }).as('translationContent');
+    cy.intercept('POST', '/api/articles/translate-text', (req) => {
+      expect(req.body.text).to.contain('This paragraph must be translated.');
+      req.reply({
+        statusCode: 200,
+        body: { translated_text: '这一段必须被翻译。', html: '', skipped: false },
+      });
+    }).as('translateMixedContent');
+
+    cy.visit('/');
+    cy.wait('@translationFeeds');
+    cy.wait('@translationArticles');
+    cy.contains('English title').click();
+    cy.wait('@translationContent');
+    cy.wait('@translateMixedContent');
+    cy.contains('这一段必须被翻译。').should('be.visible');
+  });
+
   it('should explain AI search results and keep list and card navigation in search context', () => {
     const settingsState: Record<string, string> = {
       language: 'en-US',
@@ -240,8 +307,7 @@ describe('Article Operations', () => {
           body: {
             success: false,
             error_code: 'rate_limited',
-            error:
-              'OpenRouter 429 {"error":{"message":"RAW_PROVIDER_RESPONSE_MUST_NOT_RENDER"}}',
+            error: 'OpenRouter 429 {"error":{"message":"RAW_PROVIDER_RESPONSE_MUST_NOT_RENDER"}}',
           },
         });
         return;
