@@ -51,6 +51,10 @@ const {
   downloadingUpdate,
   installingUpdate,
   downloadProgress,
+  downloadProgressKnown,
+  downloadBytesWritten,
+  downloadTotalBytes,
+  downloadErrorCode,
   checkForUpdates: handleCheckUpdates,
   downloadAndInstallUpdate: handleDownloadInstallUpdate,
 } = useAppUpdates();
@@ -306,6 +310,10 @@ function handleDiscoverAll() {
               :downloading-update="downloadingUpdate"
               :installing-update="installingUpdate"
               :download-progress="downloadProgress"
+              :download-progress-known="downloadProgressKnown"
+              :download-bytes-written="downloadBytesWritten"
+              :download-total-bytes="downloadTotalBytes"
+              :download-error-code="downloadErrorCode"
               @check-updates="handleCheckUpdates"
               @download-install-update="handleDownloadInstallUpdate"
             />
