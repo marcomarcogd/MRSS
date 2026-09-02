@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"MRSS/internal/ai"
+	"MRSS/internal/utils/httputil"
 )
 
 type rtFunc func(*http.Request) (*http.Response, error)
@@ -156,5 +158,29 @@ func TestAITranslate_RemovesThinkingBlocks(t *testing.T) {
 	}
 	if out != "Bonjour" {
 		t.Fatalf("expected thinking-free translation, got %q", out)
+	}
+}
+
+func TestAITranslatorNegotiatesHTTP2WithCompatibleGateway(t *testing.T) {
+	t.Setenv(httputil.InsecureSkipTLSVerifyEnv, "true")
+
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ProtoMajor != 2 {
+			t.Errorf("expected translation request over HTTP/2, got %s", r.Proto)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"response":"Bonjour","done":true}`)
+	}))
+	server.EnableHTTP2 = true
+	server.StartTLS()
+	defer server.Close()
+
+	translator := NewAITranslator("", server.URL+"/api/generate", "test-model")
+	translated, err := translator.Translate("Hello", "fr")
+	if err != nil {
+		t.Fatalf("Translate failed over HTTP/2: %v", err)
+	}
+	if translated != "Bonjour" {
+		t.Fatalf("expected Bonjour, got %q", translated)
 	}
 }

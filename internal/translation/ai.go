@@ -17,6 +17,7 @@ type AITranslator struct {
 	Model         string
 	SystemPrompt  string
 	CustomHeaders string
+	httpClient    *http.Client
 	client        *ai.Client
 }
 
@@ -34,21 +35,20 @@ func NewAITranslator(apiKey, endpoint, model string) *AITranslator {
 		model = defaults.AIModel
 	}
 
-	clientConfig := ai.ClientConfig{
-		APIKey:   apiKey,
-		Endpoint: strings.TrimSuffix(endpoint, "/"),
-		Model:    model,
-		Timeout:  30 * time.Second,
+	httpClient, err := CreateHTTPClientWithProxy(nil, 30*time.Second)
+	if err != nil {
+		httpClient = &http.Client{Timeout: 30 * time.Second}
 	}
-
-	return &AITranslator{
+	translator := &AITranslator{
 		APIKey:        apiKey,
 		Endpoint:      strings.TrimSuffix(endpoint, "/"),
 		Model:         model,
-		SystemPrompt:  "", // Will be set from settings when used
-		CustomHeaders: "", // Will be set from settings when used
-		client:        ai.NewClient(clientConfig),
+		SystemPrompt:  "",
+		CustomHeaders: "",
+		httpClient:    httpClient,
 	}
+	translator.rebuildClient()
+	return translator
 }
 
 // NewAITranslatorWithDB creates a new AI translator with database for proxy support
@@ -67,51 +67,40 @@ func NewAITranslatorWithDB(apiKey, endpoint, model string, db DBInterface) *AITr
 		httpClient = &http.Client{Timeout: 30 * time.Second}
 	}
 
-	clientConfig := ai.ClientConfig{
-		APIKey:   apiKey,
-		Endpoint: strings.TrimSuffix(endpoint, "/"),
-		Model:    model,
-		Timeout:  30 * time.Second,
-	}
-
-	return &AITranslator{
+	translator := &AITranslator{
 		APIKey:        apiKey,
 		Endpoint:      strings.TrimSuffix(endpoint, "/"),
 		Model:         model,
 		SystemPrompt:  "",
-		CustomHeaders: "", // Will be set from settings when used
-		client:        ai.NewClientWithHTTPClient(clientConfig, httpClient),
+		CustomHeaders: "",
+		httpClient:    httpClient,
 	}
+	translator.rebuildClient()
+	return translator
 }
 
-// SetSystemPrompt sets a custom system prompt for the translator.
-func (t *AITranslator) SetSystemPrompt(prompt string) {
-	t.SystemPrompt = prompt
-	// Re-create client with updated system prompt
-	clientConfig := ai.ClientConfig{
-		APIKey:        t.APIKey,
-		Endpoint:      t.Endpoint,
-		Model:         t.Model,
-		SystemPrompt:  prompt,
-		CustomHeaders: t.CustomHeaders,
-		Timeout:       30 * time.Second,
-	}
-	t.client = ai.NewClient(clientConfig)
-}
-
-// SetCustomHeaders sets custom headers for AI requests.
-func (t *AITranslator) SetCustomHeaders(headers string) {
-	t.CustomHeaders = headers
-	// Re-create client with updated custom headers
+func (t *AITranslator) rebuildClient() {
 	clientConfig := ai.ClientConfig{
 		APIKey:        t.APIKey,
 		Endpoint:      t.Endpoint,
 		Model:         t.Model,
 		SystemPrompt:  t.SystemPrompt,
-		CustomHeaders: headers,
+		CustomHeaders: t.CustomHeaders,
 		Timeout:       30 * time.Second,
 	}
-	t.client = ai.NewClient(clientConfig)
+	t.client = ai.NewClientWithHTTPClient(clientConfig, t.httpClient)
+}
+
+// SetSystemPrompt sets a custom system prompt for the translator.
+func (t *AITranslator) SetSystemPrompt(prompt string) {
+	t.SystemPrompt = prompt
+	t.rebuildClient()
+}
+
+// SetCustomHeaders sets custom headers for AI requests.
+func (t *AITranslator) SetCustomHeaders(headers string) {
+	t.CustomHeaders = headers
+	t.rebuildClient()
 }
 
 // Translate translates text to the target language using an OpenAI-compatible API.

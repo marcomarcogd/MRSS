@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"MRSS/internal/ai"
 	"MRSS/internal/config"
 	"MRSS/internal/database"
 	"MRSS/internal/models"
+	"MRSS/internal/utils/httputil"
 )
 
 // aiService implements AIService interface
@@ -49,14 +49,17 @@ func (s *aiService) Summarize(ctx context.Context, content string) (string, erro
 		model = defaults.AIModel
 	}
 
-	// Create AI client
+	httpClient, err := s.createHTTPClientWithProxy()
+	if err != nil {
+		return "", fmt.Errorf("failed to create HTTP client: %w", err)
+	}
 	clientConfig := ai.ClientConfig{
 		APIKey:   apiKey,
 		Endpoint: endpoint,
 		Model:    model,
 		Timeout:  30 * time.Second,
 	}
-	client := ai.NewClient(clientConfig)
+	client := ai.NewClientWithHTTPClient(clientConfig, httpClient)
 
 	// Generate summary
 	response, err := client.Request(content, "Summarize this article")
@@ -91,14 +94,17 @@ func (s *aiService) Chat(ctx context.Context, sessionID int64, message string) (
 		model = defaults.AIModel
 	}
 
-	// Create AI client
+	httpClient, err := s.createHTTPClientWithProxy()
+	if err != nil {
+		return "", fmt.Errorf("failed to create HTTP client: %w", err)
+	}
 	clientConfig := ai.ClientConfig{
 		APIKey:   apiKey,
 		Endpoint: endpoint,
 		Model:    model,
 		Timeout:  30 * time.Second,
 	}
-	client := ai.NewClient(clientConfig)
+	client := ai.NewClientWithHTTPClient(clientConfig, httpClient)
 
 	// Send chat message
 	response, err := client.Request(message, "")
@@ -168,59 +174,5 @@ func (s *aiService) TestConfig(ctx context.Context) error {
 
 // createHTTPClientWithProxy creates an HTTP client with global proxy settings if enabled
 func (s *aiService) createHTTPClientWithProxy() (*http.Client, error) {
-	// Check if global proxy is enabled
-	proxyEnabled, _ := s.db.GetSetting("proxy_enabled")
-	if proxyEnabled != "true" {
-		return &http.Client{}, nil
-	}
-
-	// Build proxy URL from global settings
-	proxyType, _ := s.db.GetSetting("proxy_type")
-	proxyHost, _ := s.db.GetSetting("proxy_host")
-	proxyPort, _ := s.db.GetSetting("proxy_port")
-	proxyUsername, _ := s.db.GetEncryptedSetting("proxy_username")
-	proxyPassword, _ := s.db.GetEncryptedSetting("proxy_password")
-
-	// Build proxy URL
-	proxyURL := s.buildProxyURL(proxyType, proxyHost, proxyPort, proxyUsername, proxyPassword)
-
-	if proxyURL == "" {
-		return &http.Client{}, nil
-	}
-
-	// Parse proxy URL
-	u, err := url.Parse(proxyURL)
-	if err != nil {
-		return nil, fmt.Errorf("invalid proxy URL: %w", err)
-	}
-
-	return &http.Client{
-		Transport: &http.Transport{
-			Proxy: http.ProxyURL(u),
-		},
-	}, nil
-}
-
-// buildProxyURL builds a proxy URL from components
-func (s *aiService) buildProxyURL(proxyType, proxyHost, proxyPort, proxyUsername, proxyPassword string) string {
-	if proxyHost == "" || proxyPort == "" {
-		return ""
-	}
-
-	var urlBuilder strings.Builder
-	urlBuilder.WriteString(strings.ToLower(proxyType))
-	urlBuilder.WriteString("://")
-
-	if proxyUsername != "" && proxyPassword != "" {
-		urlBuilder.WriteString(url.QueryEscape(proxyUsername))
-		urlBuilder.WriteString(":")
-		urlBuilder.WriteString(url.QueryEscape(proxyPassword))
-		urlBuilder.WriteString("@")
-	}
-
-	urlBuilder.WriteString(proxyHost)
-	urlBuilder.WriteString(":")
-	urlBuilder.WriteString(proxyPort)
-
-	return urlBuilder.String()
+	return httputil.CreateHTTPClientWithProxySettings(s.db, 30*time.Second)
 }

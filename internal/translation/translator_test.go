@@ -3,6 +3,8 @@ package translation
 import (
 	"fmt"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -142,6 +144,77 @@ func TestAITranslator_Defaults(t *testing.T) {
 	if translator.Model != defaults.AIModel {
 		t.Errorf("Expected default model %s, got '%s'", defaults.AIModel, translator.Model)
 	}
+}
+
+func TestAITranslatorKeepsHTTPClientWhenConfigurationChanges(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Test-Header") != "kept" {
+			t.Fatalf("custom header was not sent")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"translated"}}]}`))
+	}))
+	defer server.Close()
+
+	translator := NewAITranslator("test-key", server.URL, "test-model")
+	originalClient := translator.httpClient
+	translator.SetSystemPrompt("Translate exactly")
+	translator.SetCustomHeaders(`{"X-Test-Header":"kept"}`)
+
+	if translator.httpClient != originalClient {
+		t.Fatal("configuration changes replaced the injected HTTP client")
+	}
+	translated, err := translator.Translate("hello", "zh")
+	if err != nil {
+		t.Fatalf("Translate failed: %v", err)
+	}
+	if translated != "translated" {
+		t.Fatalf("unexpected translation %q", translated)
+	}
+}
+
+func TestFactoryAIProviderUsesGlobalProxyClient(t *testing.T) {
+	settings := &mockSettingsProvider{settings: map[string]string{
+		"proxy_enabled":  "true",
+		"proxy_type":     "http",
+		"proxy_host":     "127.0.0.1",
+		"proxy_port":     "3128",
+		"proxy_username": "user",
+		"proxy_password": "password",
+	}}
+	factory := NewFactory(settings)
+	provider := factory.createAIProvider(&aiConfig{
+		APIKey:        "key",
+		Endpoint:      "https://api.example.com/v1/chat/completions",
+		Model:         "model",
+		SystemPrompt:  "prompt",
+		CustomHeaders: `{"X-Test":"value"}`,
+	})
+
+	transport, ok := provider.(*aiProvider).translator.httpClient.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("unexpected transport type %T", provider.(*aiProvider).translator.httpClient.Transport)
+	}
+	request := &http.Request{URL: mustParseURL(t, "https://api.example.com")}
+	proxyURL, err := transport.Proxy(request)
+	if err != nil {
+		t.Fatalf("proxy lookup failed: %v", err)
+	}
+	if proxyURL == nil || proxyURL.String() != "http://user:password@127.0.0.1:3128" {
+		t.Fatalf("unexpected proxy URL %v", proxyURL)
+	}
+	if !transport.ForceAttemptHTTP2 {
+		t.Fatalf("expected actual translation transport to attempt HTTP/2")
+	}
+}
+
+func mustParseURL(t *testing.T, rawURL string) *url.URL {
+	t.Helper()
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("failed to parse URL: %v", err)
+	}
+	return parsed
 }
 
 func TestGetLanguageName(t *testing.T) {
