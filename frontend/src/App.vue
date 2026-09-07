@@ -64,7 +64,10 @@ const showSettings = ref(false);
 const settingsInitialTab = ref<TabName>('general');
 const showDiscoverBlogs = ref(false);
 const feedToDiscover = ref<Feed | null>(null);
-const isSidebarOpen = ref(true);
+const isSidebarOpen = ref(localStorage.getItem('FeedListExpanded') !== 'false');
+watch(isSidebarOpen, (expanded) => {
+  localStorage.setItem('FeedListExpanded', String(expanded));
+});
 
 // Check if we're in image gallery mode
 const isImageGalleryMode = computed(() => store.currentView === 'imageGallery');
