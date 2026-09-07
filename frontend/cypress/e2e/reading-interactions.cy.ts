@@ -75,6 +75,43 @@ function openArticle() {
 }
 
 describe('Reading interactions', () => {
+  it('disables composing only while the history list is open and allows continuing a selected session', () => {
+    let sends = 0;
+    setup({ ai_chat_enabled: 'true', translation_mode: 'disabled' });
+    cy.intercept('GET', '/api/ai/profiles', []);
+    cy.intercept('GET', '/api/ai/chat/sessions*', [
+      { id: 1, article_id: 1, title: 'Saved session', message_count: 1 },
+    ]);
+    cy.intercept('GET', '/api/ai/chat/messages*', [
+      { id: 1, role: 'user', content: 'Previous question', created_at: '' },
+    ]).as('chatMessages');
+    cy.intercept('POST', '/api/ai-chat', (req) => {
+      sends++;
+      expect(req.body.session_id).to.equal(1);
+      expect(req.body.messages.at(-1).content).to.equal('Continue this conversation');
+      req.reply({ response: 'Continued answer', session_id: 1 });
+    }).as('continueChat');
+    openArticle();
+    cy.get('button[title="AI Chat"]').click();
+    cy.wait('@chatMessages');
+    cy.get('input[placeholder="Type a message..."]').type('Continue this conversation');
+    cy.get('[data-testid="chat-session-switcher"]').click();
+    cy.get('input[placeholder="Type a message..."]')
+      .should('be.disabled')
+      .trigger('keydown', { key: 'Enter', force: true });
+    cy.get('input[placeholder="Type a message..."]').parent().find('button').should('be.disabled');
+    cy.then(() => expect(sends).to.equal(0));
+    cy.get('[data-session-id="1"]').click();
+    cy.wait('@chatMessages');
+    cy.get('input[placeholder="Type a message..."]')
+      .should('be.enabled')
+      .should('have.value', 'Continue this conversation')
+      .type('{enter}');
+    cy.wait('@continueChat');
+    cy.contains('.chat-panel', 'Continued answer').should('be.visible');
+    cy.then(() => expect(sends).to.equal(1));
+  });
+
   it('keeps a failed title edit available for retry and shows the failure', () => {
     let saves = 0;
     setup({ ai_chat_enabled: 'true', translation_mode: 'disabled' });
