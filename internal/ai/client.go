@@ -106,6 +106,11 @@ func (c *Client) RequestWithThinking(systemPrompt, userPrompt string) (ResponseR
 
 // RequestWithMessages makes an AI request using messages format
 func (c *Client) RequestWithMessages(messages []map[string]string) (ResponseResult, error) {
+	return c.RequestWithMessagesContext(context.Background(), messages)
+}
+
+// RequestWithMessagesContext propagates cancellation to the provider request.
+func (c *Client) RequestWithMessagesContext(ctx context.Context, messages []map[string]string) (ResponseResult, error) {
 	config := RequestConfig{
 		Model:       c.config.Model,
 		Messages:    messages,
@@ -113,7 +118,7 @@ func (c *Client) RequestWithMessages(messages []map[string]string) (ResponseResu
 		MaxTokens:   2048,
 	}
 
-	return c.RequestWithConfig(config)
+	return c.RequestWithConfigContext(ctx, config)
 }
 
 // RequestWithConfig makes an AI request with full configuration
@@ -161,6 +166,10 @@ func (c *Client) RequestWithConfigContext(ctx context.Context, config RequestCon
 		return ResponseResult{}, err
 	}
 
+	if ctx.Err() != nil {
+		return ResponseResult{}, ctx.Err()
+	}
+
 	// Try other formats as fallback
 	if provider != "gemini" {
 		result, err = c.tryFormat(ctx, NewGeminiHandler(), config)
@@ -174,6 +183,10 @@ func (c *Client) RequestWithConfigContext(ctx context.Context, config RequestCon
 		if err == nil {
 			return result, nil
 		}
+	}
+
+	if ctx.Err() != nil {
+		return ResponseResult{}, ctx.Err()
 	}
 
 	// All formats failed
@@ -196,6 +209,9 @@ func shouldStopFormatFallback(ctx context.Context, err error) bool {
 
 // tryFormat attempts to make a request using a specific format handler
 func (c *Client) tryFormat(ctx context.Context, handler FormatHandler, config RequestConfig) (ResponseResult, error) {
+	if err := ctx.Err(); err != nil {
+		return ResponseResult{}, err
+	}
 	// Build request body
 	requestBody, err := handler.BuildRequest(config)
 	if err != nil {

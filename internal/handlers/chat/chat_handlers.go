@@ -24,6 +24,7 @@ type ChatMessage struct {
 // ChatRequest represents the incoming chat request
 type ChatRequest struct {
 	Messages       []ChatMessage `json:"messages"`
+	RequestID      string        `json:"request_id,omitempty"` // Requires session_id when provided
 	SessionID      int64         `json:"session_id,omitempty"`
 	ArticleID      int64         `json:"article_id,omitempty"`
 	ArticleTitle   string        `json:"article_title,omitempty"`
@@ -50,7 +51,7 @@ type chatErrorResponse struct {
 
 // HandleAIChat handles chat requests for article discussions
 // @Summary      AI chat with article
-// @Description  Send messages to AI for discussing article content (requires ai_chat_enabled setting)
+// @Description  Send messages to AI for discussing article content (requires ai_chat_enabled setting). For cancellable requests, create a session first and send its session_id with a unique request_id.
 // @Tags         chat
 // @Accept       json
 // @Produce      json
@@ -58,8 +59,9 @@ type chatErrorResponse struct {
 // @Success      200  {object}  chat.ChatResponse  "AI response (response, html)"
 // @Failure      400  {object}  map[string]string  "Bad request (missing messages)"
 // @Failure      403  {object}  map[string]string  "AI chat is disabled or limit reached"
+// @Failure      408  {object}  chat.chatErrorResponse  "Chat generation stopped"
 // @Failure      500  {object}  map[string]string  "Internal server error"
-// @Router       /chat [post]
+// @Router       /ai-chat [post]
 func HandleAIChat(h *core.Handler, w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		response.Error(w, nil, http.StatusMethodNotAllowed)
@@ -77,6 +79,20 @@ func HandleAIChat(h *core.Handler, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.RequestID != "" && (req.SessionID <= 0 || !validChatRequestID(req.RequestID)) {
+		response.Error(w, nil, http.StatusBadRequest)
+		return
+	}
+	ctx, finish := h.ChatRequests.Begin(r.Context(), req.SessionID, req.RequestID)
+	defer finish()
+	cancelled := func() {
+		writeChatError(w, ai.UserFacingError{Code: "request_cancelled", Message: "Chat generation stopped", HTTPStatus: http.StatusRequestTimeout}, req.SessionID)
+	}
+	if ctx.Err() != nil {
+		cancelled()
+		return
+	}
+
 	// Check if AI chat is enabled
 	chatEnabled, _ := h.DB.GetSetting("ai_chat_enabled")
 	if chatEnabled != "true" {
@@ -84,7 +100,15 @@ func HandleAIChat(h *core.Handler, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessionID, historyEnabled, err := persistUserChatMessage(h, &req)
+	var sessionID int64
+	var historyEnabled bool
+	var err error
+	if !h.ChatRequests.RunIfActive(ctx, func() {
+		sessionID, historyEnabled, err = persistUserChatMessage(h, &req)
+	}) {
+		cancelled()
+		return
+	}
 	if err != nil {
 		log.Printf("AI chat history preparation failed session=%d", req.SessionID)
 		publicErr := ai.UserFacingErrorForCode(ai.ErrorCodeRequestFailed)
@@ -100,7 +124,10 @@ func HandleAIChat(h *core.Handler, w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Apply rate limiting for AI requests
-	h.AITracker.WaitForRateLimit()
+	if err := h.AITracker.WaitForRateLimitContext(ctx); err != nil {
+		cancelled()
+		return
+	}
 
 	// Get AI settings - try ProfileProvider first
 	var apiKey, endpoint, model string
@@ -180,7 +207,11 @@ func HandleAIChat(h *core.Handler, w http.ResponseWriter, r *http.Request) {
 	client := ai.NewClientWithHTTPClient(clientConfig, httpClient)
 
 	// Send chat request using universal client
-	result, err := client.RequestWithMessages(messagesMap)
+	result, err := client.RequestWithMessagesContext(ctx, messagesMap)
+	if ctx.Err() != nil {
+		cancelled()
+		return
+	}
 	if err != nil {
 		publicErr := ai.ClassifyUserFacingError(err)
 		log.Printf("AI chat request failed code=%s status=%d", publicErr.Code, publicErr.HTTPStatus)
@@ -199,23 +230,28 @@ func HandleAIChat(h *core.Handler, w http.ResponseWriter, r *http.Request) {
 	// Convert markdown response to HTML
 	htmlResponse := textutil.ConvertMarkdownToHTML(respContent)
 
-	// Track AI usage (estimate tokens from input and output)
-	estimatedTokens := estimateChatTokens(optimizedMessages, respContent)
-	if err := h.AITracker.AddUsage(int64(estimatedTokens)); err != nil {
-		log.Printf("Warning: failed to track AI usage: %v", err)
-	}
-
-	// Track statistics
-	_ = h.DB.IncrementStat("ai_chat")
-
 	historySaved := historyEnabled
-	if historyEnabled {
-		if _, saveErr := h.DB.CreateChatMessage(sessionID, "assistant", respContent, thinking); saveErr != nil {
-			log.Printf("AI chat assistant history save failed session=%d", sessionID)
-			historySaved = false
+	if !h.ChatRequests.RunIfActive(ctx, func() {
+		// Track AI usage (estimate tokens from input and output)
+		estimatedTokens := estimateChatTokens(optimizedMessages, respContent)
+		if err := h.AITracker.AddUsage(int64(estimatedTokens)); err != nil {
+			log.Printf("Warning: failed to track AI usage: %v", err)
 		}
-	}
 
+		// Track statistics
+		_ = h.DB.IncrementStat("ai_chat")
+
+		if historyEnabled {
+			if _, saveErr := h.DB.CreateChatMessage(sessionID, "assistant", respContent, thinking); saveErr != nil {
+				log.Printf("AI chat assistant history save failed session=%d", sessionID)
+				historySaved = false
+			}
+		}
+
+	}) {
+		cancelled()
+		return
+	}
 	response.JSON(w, ChatResponse{
 		Response: respContent, HTML: htmlResponse, Thinking: thinking,
 		SessionID: sessionID, HistorySaved: historySaved,

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { nextTick } from 'vue';
-import { mount, shallowMount } from '@vue/test-utils';
+import { mount, shallowMount, flushPromises } from '@vue/test-utils';
 import { createPinia } from 'pinia';
 import { createI18n } from 'vue-i18n';
 import en from './i18n/locales/en';
@@ -11,6 +11,7 @@ import ArticleList from './components/article/ArticleList.vue';
 import type { Feed, Article } from './types/models';
 import { useArticleActions } from './composables/article/useArticleActions';
 import App from './App.vue';
+import ArticleChatPanel from './components/article/ArticleChatPanel.vue';
 import AIFeatureSettings from './components/modals/settings/ai/AIFeatureSettings.vue';
 import type { SettingsData } from './types/settings';
 import ActivityBar from './components/sidebar/ActivityBar.vue';
@@ -894,6 +895,416 @@ describe('Article context menu read status', () => {
     } finally {
       window.removeEventListener('open-context-menu', openMenu);
       wrapper.unmount();
+    }
+  });
+});
+
+describe('Chat generation cancellation', () => {
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((done) => {
+      resolve = done;
+    });
+    return { promise, resolve };
+  }
+
+  function mountChat() {
+    return mount(ArticleChatPanel, {
+      props: {
+        article: { id: 12, title: 'Article', url: 'https://example.com/article' } as Article,
+        articleContent: 'Article content',
+        settings: { ai_chat_enabled: true, ai_chat_profile_id: '', ai_chat_quick_prompts: '[]' },
+      },
+      global: {
+        plugins: [createI18n({ legacy: false, locale: 'en', messages: { en } })],
+        stubs: { teleport: true },
+      },
+    });
+  }
+
+  it.each([false, true])('reuses stopped creation (%s)', async (resolvedBeforeRetry) => {
+    const creation = deferred<Response>();
+    const generated = deferred<Response>();
+    const toast = vi.fn();
+    const previousToast = window.showToast;
+    window.showToast = toast;
+    const fetchMock = vi.fn((url: string, options?: RequestInit) => {
+      if (url === '/api/ai/chat/session/create') return creation.promise;
+      if (url === '/api/ai-chat') return generated.promise;
+      return Promise.resolve(
+        new Response(JSON.stringify(url === '/api/ai-chat/cancel' ? { success: true } : []))
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const wrapper = mountChat();
+    try {
+      await flushPromises();
+      await wrapper.get('input').setValue('first');
+      await wrapper.get('[data-testid="chat-send-message"]').trigger('click');
+      await flushPromises();
+      await wrapper.get('[data-testid="chat-stop-generation"]').trigger('click');
+      expect((wrapper.get('input').element as HTMLInputElement).value).toBe('first');
+      expect(wrapper.text()).not.toContain('first');
+      if (resolvedBeforeRetry) {
+        creation.resolve(new Response(JSON.stringify({ id: 55, article_id: 12, title: 'first' })));
+        await flushPromises();
+        expect((wrapper.get('input').element as HTMLInputElement).value).toBe('first');
+        expect(fetchMock.mock.calls.filter(([url]) => url === '/api/ai-chat')).toHaveLength(0);
+      }
+      await wrapper.get('input').setValue('second');
+      await wrapper.get('[data-testid="chat-send-message"]').trigger('click');
+      await flushPromises();
+      expect(
+        fetchMock.mock.calls.filter(([url]) => url === '/api/ai/chat/session/create')
+      ).toHaveLength(1);
+      if (!resolvedBeforeRetry) {
+        creation.resolve(new Response(JSON.stringify({ id: 55, article_id: 12, title: 'first' })));
+      }
+      await flushPromises();
+      const sends = fetchMock.mock.calls.filter(([url]) => url === '/api/ai-chat');
+      expect(sends).toHaveLength(1);
+      const request = JSON.parse(sends[0][1]?.body as string);
+      expect(request.session_id).toBe(55);
+      expect(request.request_id).toBeTruthy();
+      expect(request.messages).toHaveLength(1);
+      expect(request.messages.at(-1).content).toBe('second');
+      await wrapper.get('[data-testid="chat-stop-generation"]').trigger('click');
+      await flushPromises();
+      expect(sends[0][1]?.signal?.aborted).toBe(true);
+      generated.resolve(new Response(JSON.stringify({ response: 'late answer', session_id: 55 })));
+      await flushPromises();
+      expect(wrapper.text()).not.toContain('late answer');
+      expect(toast).not.toHaveBeenCalled();
+    } finally {
+      if (wrapper.exists()) wrapper.unmount();
+      window.showToast = previousToast;
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('preserves the first question when creating a session fails and retries it once', async () => {
+    let createCount = 0;
+    const fetchMock = vi.fn((url: string, options?: RequestInit) => {
+      if (url === '/api/ai/chat/session/create') {
+        createCount++;
+        return Promise.resolve(
+          createCount === 1
+            ? new Response('', { status: 503 })
+            : new Response(JSON.stringify({ id: 55, article_id: 12, title: 'retry me' }))
+        );
+      }
+      if (url === '/api/ai-chat') {
+        return Promise.resolve(
+          new Response(JSON.stringify({ response: 'answer', session_id: 55 }))
+        );
+      }
+      return Promise.resolve(new Response('[]'));
+    });
+    const previousToast = window.showToast;
+    const toast = vi.fn();
+    window.showToast = toast;
+    vi.stubGlobal('fetch', fetchMock);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const wrapper = mountChat();
+    try {
+      await flushPromises();
+      await wrapper.get('input').setValue('retry me');
+      await wrapper.get('[data-testid="chat-send-message"]').trigger('click');
+      await flushPromises();
+      expect((wrapper.get('input').element as HTMLInputElement).value).toBe('retry me');
+      expect(wrapper.text()).not.toContain('retry me');
+      expect(fetchMock.mock.calls.filter(([url]) => url === '/api/ai-chat')).toHaveLength(0);
+      expect(toast).toHaveBeenCalledTimes(1);
+      await wrapper.get('[data-testid="chat-send-message"]').trigger('click');
+      await flushPromises();
+      const sends = fetchMock.mock.calls.filter(([url]) => url === '/api/ai-chat');
+      expect(createCount).toBe(2);
+      expect(sends).toHaveLength(1);
+      const request = JSON.parse(sends[0][1]?.body as string);
+      expect(request.messages).toHaveLength(1);
+      expect(request.messages[0].content).toBe('retry me');
+      expect(request.is_first_message).toBe(true);
+      expect((wrapper.get('input').element as HTMLInputElement).value).toBe('');
+    } finally {
+      wrapper.unmount();
+      errorSpy.mockRestore();
+      window.showToast = previousToast;
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it.each([
+    { action: 'close', hasAssistant: false },
+    { action: 'unmount', hasAssistant: false },
+    { action: 'close', hasAssistant: true },
+  ])('isolates retries: $action, assistant $hasAssistant', async ({ action, hasAssistant }) => {
+    const first = deferred<Response>();
+    const second = deferred<Response>();
+    let sendCount = 0;
+    let created = false;
+    const fetchMock = vi.fn((url: string, options?: RequestInit) => {
+      if (url === '/api/ai/chat/session/create') {
+        created = true;
+        return Promise.resolve(
+          new Response(JSON.stringify({ id: 55, article_id: 12, title: 'first' }))
+        );
+      }
+      if (url.startsWith('/api/ai/chat/sessions?')) {
+        return Promise.resolve(
+          new Response(JSON.stringify(created ? [{ id: 55, article_id: 12, title: 'first' }] : []))
+        );
+      }
+      if (url === '/api/ai-chat') return ++sendCount === 1 ? first.promise : second.promise;
+      if (url.startsWith('/api/ai/chat/messages?')) {
+        const history = [{ role: 'user', content: 'stored first question' }];
+        if (hasAssistant) history.push({ role: 'assistant', content: 'stored first answer' });
+        return Promise.resolve(new Response(JSON.stringify(history)));
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify(url === '/api/ai-chat/cancel' ? { success: true } : []))
+      );
+    });
+    const toast = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const previousToast = window.showToast;
+    window.showToast = toast;
+    const wrapper = mountChat();
+    try {
+      await flushPromises();
+      await wrapper.get('input').setValue('first');
+      await wrapper.get('[data-testid="chat-send-message"]').trigger('click');
+      await flushPromises();
+      await wrapper.get('[data-testid="chat-stop-generation"]').trigger('click');
+      await flushPromises();
+      await wrapper.get('input').setValue('second');
+      await wrapper.get('[data-testid="chat-send-message"]').trigger('click');
+      await flushPromises();
+      first.resolve(new Response(JSON.stringify({ response: 'old result', session_id: 55 })));
+      await flushPromises();
+      expect(wrapper.find('[data-testid="chat-stop-generation"]').exists()).toBe(true);
+      expect(wrapper.text()).not.toContain('old result');
+      if (action === 'close') {
+        await wrapper.get('[data-testid="chat-close"]').trigger('click');
+        expect(wrapper.emitted('close')).toHaveLength(1);
+      } else {
+        wrapper.unmount();
+      }
+      await flushPromises();
+      const sends = fetchMock.mock.calls.filter(([url]) => url === '/api/ai-chat');
+      const cancels = fetchMock.mock.calls.filter(([url]) => url === '/api/ai-chat/cancel');
+      const nextRequest = JSON.parse(sends[1][1]?.body as string);
+      expect(nextRequest.is_first_message).toBe(!hasAssistant);
+      expect(nextRequest.article_content).toBe('Article content');
+      expect(cancels).toHaveLength(2);
+      expect(JSON.parse(cancels[0][1]?.body as string).request_id).not.toBe(
+        JSON.parse(cancels[1][1]?.body as string).request_id
+      );
+      expect(sends[1][1]?.signal?.aborted).toBe(true);
+      second.resolve(new Response(JSON.stringify({ response: 'closed result', session_id: 55 })));
+      await flushPromises();
+      expect(wrapper.text()).not.toContain('closed result');
+      expect(toast).not.toHaveBeenCalled();
+    } finally {
+      if (wrapper.exists()) wrapper.unmount();
+      window.showToast = previousToast;
+      vi.unstubAllGlobals();
+    }
+  });
+  it('keeps an active conversation bound to A when the reader switches to B', async () => {
+    const answer = deferred<Response>();
+    let created = false;
+    let sendCount = 0;
+    const session = { id: 55, article_id: 12, title: 'Question for A' };
+    const fetchMock = vi.fn((url: string, options?: RequestInit) => {
+      if (url === '/api/ai/chat/session/create') {
+        created = true;
+        return Promise.resolve(new Response(JSON.stringify(session)));
+      }
+      if (url === '/api/ai-chat') {
+        return ++sendCount === 1
+          ? answer.promise
+          : Promise.resolve(
+              new Response(JSON.stringify({ response: 'Follow-up for A', session_id: 55 }))
+            );
+      }
+      if (url.startsWith('/api/ai/chat/sessions'))
+        return Promise.resolve(new Response(JSON.stringify(created ? [session] : [])));
+      return Promise.resolve(new Response(JSON.stringify([])));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const wrapper = mountChat();
+    try {
+      await flushPromises();
+      await wrapper.get('input').setValue('Question for A');
+      await wrapper.get('[data-testid="chat-send-message"]').trigger('click');
+      await flushPromises();
+      await wrapper.setProps({
+        article: { id: 13, title: 'Article B', url: 'https://example.com/b' } as Article,
+        articleContent: 'Body B',
+      });
+      expect(
+        wrapper.get('[data-testid="chat-context-article"]').attributes('data-context-article-id')
+      ).toBe('12');
+      expect(wrapper.get('[data-testid="chat-stop-generation"]').exists()).toBe(true);
+      expect(wrapper.get('input').attributes('disabled')).toBeDefined();
+      expect(fetchMock.mock.calls.filter(([url]) => url === '/api/ai-chat/cancel')).toHaveLength(0);
+      answer.resolve(
+        new Response(JSON.stringify({ response: 'Answer bound to A', session_id: 55 }))
+      );
+      await flushPromises();
+      expect(wrapper.text()).toContain('Answer bound to A');
+      expect(wrapper.find('[data-testid="chat-stop-generation"]').exists()).toBe(false);
+      expect(wrapper.get('[data-testid="chat-send-message"]').attributes('disabled')).toBeDefined();
+      await wrapper.setProps({
+        article: { id: 12, title: 'Article', url: 'https://example.com/article' } as Article,
+        articleContent: 'Article content',
+      });
+      await wrapper.get('input').setValue('Follow-up for A');
+      await wrapper.get('[data-testid="chat-send-message"]').trigger('click');
+      await flushPromises();
+      const sends = fetchMock.mock.calls.filter(([url]) => url === '/api/ai-chat');
+      expect(sends).toHaveLength(2);
+      for (const [, options] of sends) {
+        const body = JSON.parse(options?.body as string);
+        expect(body.article_id).toBe(12);
+        expect(body.article_content).toBe('Article content');
+        expect(body.session_id).toBe(55);
+      }
+      expect(JSON.parse(sends[1][1]?.body as string).is_first_message).toBe(false);
+    } finally {
+      wrapper.unmount();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it.each([12, 13])(
+    'isolates a stopped draft create from explicit New for article %s',
+    async (articleId) => {
+      const createA = deferred<Response>();
+      const answerB = deferred<Response>();
+      let creates = 0;
+      const fetchMock = vi.fn((url: string, options?: RequestInit) => {
+        if (url === '/api/ai/chat/session/create') {
+          const body = JSON.parse(options?.body as string);
+          return ++creates === 1
+            ? createA.promise
+            : Promise.resolve(
+                new Response(JSON.stringify({ id: 66, article_id: articleId, title: body.title }))
+              );
+        }
+        if (url === '/api/ai-chat') return answerB.promise;
+        return Promise.resolve(new Response(JSON.stringify([])));
+      });
+      vi.stubGlobal('fetch', fetchMock);
+      const wrapper = mountChat();
+      try {
+        await flushPromises();
+        await wrapper.get('input').setValue('Stopped question for A');
+        await wrapper.get('[data-testid="chat-send-message"]').trigger('click');
+        await flushPromises();
+        await wrapper.get('[data-testid="chat-stop-generation"]').trigger('click');
+        expect((wrapper.get('input').element as HTMLInputElement).value).toBe(
+          'Stopped question for A'
+        );
+        await wrapper.setProps({
+          article: { id: articleId, title: 'Article B', url: 'https://example.com/b' } as Article,
+          articleContent: 'Body B',
+        });
+        await wrapper.get('[data-testid="chat-new-session"]').trigger('click');
+        await wrapper.get('input').setValue('Question for B');
+        await wrapper.get('[data-testid="chat-send-message"]').trigger('click');
+        await flushPromises();
+        createA.resolve(
+          new Response(JSON.stringify({ id: 55, article_id: 12, title: 'Old draft' }))
+        );
+        await flushPromises();
+        const sends = fetchMock.mock.calls.filter(([url]) => url === '/api/ai-chat');
+        expect(sends).toHaveLength(1);
+        const body = JSON.parse(sends[0][1]?.body as string);
+        expect(body.article_id).toBe(articleId);
+        expect(body.session_id).toBe(66);
+        expect(body.article_content).toBe('Body B');
+        expect(body.messages).toHaveLength(1);
+        expect(wrapper.get('[data-testid="chat-stop-generation"]').exists()).toBe(true);
+        expect(wrapper.text()).not.toContain('Stopped question for A');
+        answerB.resolve(new Response(JSON.stringify({ response: 'Answer for B', session_id: 66 })));
+        await flushPromises();
+        expect(wrapper.text()).toContain('Answer for B');
+        expect(
+          wrapper.get('[data-testid="chat-context-article"]').attributes('data-context-article-id')
+        ).toBe(String(articleId));
+      } finally {
+        wrapper.unmount();
+        vi.unstubAllGlobals();
+      }
+    }
+  );
+
+  it('does not let a stopped history refresh overwrite a newer bound conversation', async () => {
+    const history = deferred<Response>();
+    const answerA = deferred<Response>();
+    const answerB = deferred<Response>();
+    let cancelled = false;
+    const fetchMock = vi.fn((url: string, options?: RequestInit) => {
+      if (url === '/api/ai/chat/session/create') {
+        const body = JSON.parse(options?.body as string);
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              id: body.article_id === 12 ? 55 : 66,
+              article_id: body.article_id,
+              title: body.title,
+            })
+          )
+        );
+      }
+      if (url === '/api/ai-chat')
+        return JSON.parse(options?.body as string).article_id === 12
+          ? answerA.promise
+          : answerB.promise;
+      if (url === '/api/ai-chat/cancel') {
+        cancelled = true;
+        return Promise.resolve(new Response('{}'));
+      }
+      if (cancelled && url.includes('/api/ai/chat/sessions?article_id=12')) return history.promise;
+      return Promise.resolve(new Response('[]'));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const wrapper = mountChat();
+    try {
+      await flushPromises();
+      await wrapper.get('input').setValue('Question A');
+      await wrapper.get('[data-testid="chat-send-message"]').trigger('click');
+      await flushPromises();
+      await wrapper.get('[data-testid="chat-stop-generation"]').trigger('click');
+      await flushPromises();
+      await wrapper.setProps({
+        article: { id: 13, title: 'Article B', url: 'https://example.com/b' } as Article,
+        articleContent: 'Body B',
+      });
+      await wrapper.get('[data-testid="chat-new-context"]').trigger('click');
+      await wrapper.get('input').setValue('Question B');
+      await wrapper.get('[data-testid="chat-send-message"]').trigger('click');
+      await flushPromises();
+      history.resolve(
+        new Response(JSON.stringify([{ id: 55, article_id: 12, title: 'Stale history A' }]))
+      );
+      answerA.resolve(new Response(JSON.stringify({ response: 'Stale answer A', session_id: 55 })));
+      await flushPromises();
+      expect(wrapper.get('[data-testid="chat-stop-generation"]').exists()).toBe(true);
+      expect(
+        wrapper.get('[data-testid="chat-context-article"]').attributes('data-context-article-id')
+      ).toBe('13');
+      expect(wrapper.text()).not.toContain('Stale answer A');
+      expect(wrapper.text()).not.toContain('Stale history A');
+      answerB.resolve(
+        new Response(JSON.stringify({ response: 'Current answer B', session_id: 66 }))
+      );
+      await flushPromises();
+      expect(wrapper.text()).toContain('Current answer B');
+    } finally {
+      wrapper.unmount();
+      vi.unstubAllGlobals();
     }
   });
 });

@@ -84,6 +84,54 @@ function openArticle() {
 }
 
 describe('Reading interactions', () => {
+  it('keeps Stop reachable in a small chat with a long title and cancels the active request', () => {
+    const requests: Array<Record<string, unknown>> = [];
+    setup({ ai_chat_enabled: 'true', translation_mode: 'off' });
+    cy.intercept('GET', '/api/ai/profiles', []);
+    cy.intercept('GET', '/api/ai/chat/sessions*', [
+      { id: 55, article_id: 1, title: 'Long conversation title '.repeat(60), message_count: 1 },
+    ]);
+    cy.intercept('GET', '/api/ai/chat/messages*', [
+      { id: 1, role: 'user', content: 'Earlier cancelled question', created_at: '' },
+    ]).as('stoppedMessages');
+    cy.intercept('POST', '/api/ai-chat', (req) => {
+      requests.push(req.body);
+      expect(req.body.session_id).to.equal(55);
+      expect(req.body.is_first_message).to.equal(true);
+      expect(req.body.article_content).to.contain('First paragraph');
+      req.reply({ delay: 1200, body: { response: 'Late cancelled answer', session_id: 55 } });
+    }).as('cancelledChat');
+    cy.intercept('POST', '/api/ai-chat/cancel', (req) => {
+      expect(req.body.session_id).to.equal(55);
+      expect(req.body.request_id).to.equal(requests[0].request_id);
+      req.reply({ success: true });
+    }).as('cancelChat');
+    openArticle();
+    cy.get('button[title="AI Chat"]').click();
+    cy.wait('@stoppedMessages');
+    cy.get('input[placeholder="Type a message..."]').type('Retry with article context{enter}');
+    cy.wrap(requests).should('have.length', 1);
+    cy.get('.chat-panel').invoke('css', 'height', '174px');
+    cy.get('[data-testid="chat-stop-generation"]').then(($button) => {
+      const panel = $button[0].closest('.chat-panel')!.getBoundingClientRect();
+      const button = $button[0].getBoundingClientRect();
+      expect(button.top).to.be.at.least(panel.top);
+      expect(button.bottom).to.be.at.most(panel.bottom);
+      expect(button.right).to.be.at.most(panel.right);
+    });
+    cy.get('[data-testid="chat-close"]').then(($button) => {
+      expect($button[0].getBoundingClientRect().right).to.be.at.most(
+        $button[0].closest('.chat-panel')!.getBoundingClientRect().right
+      );
+    });
+    cy.get('[data-testid="chat-stop-generation"]').click();
+    cy.wait('@cancelChat');
+    cy.wait('@cancelledChat');
+    cy.get('[data-testid="chat-stop-generation"]').should('not.exist');
+    cy.get('input[placeholder="Type a message..."]').should('be.enabled');
+    cy.contains('.chat-panel', 'Late cancelled answer').should('not.exist');
+  });
+
   it('shows the bound article and requires an explicit new chat before sending from another reader article', () => {
     let sends = 0;
     let creates = 0;
