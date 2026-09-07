@@ -75,6 +75,66 @@ function openArticle() {
 }
 
 describe('Reading interactions', () => {
+  it('keeps a failed title edit available for retry and shows the failure', () => {
+    let saves = 0;
+    setup({ ai_chat_enabled: 'true', translation_mode: 'disabled' });
+    cy.intercept('GET', '/api/ai/profiles', []);
+    cy.intercept('GET', '/api/ai/chat/sessions*', [
+      { id: 1, article_id: 1, title: 'Original title', message_count: 0 },
+    ]);
+    cy.intercept('GET', '/api/ai/chat/messages*', []).as('chatMessages');
+    cy.intercept('PUT', '/api/ai/chat/session*', (req) => {
+      expect(req.body.title).to.equal('Title to retry');
+      saves++;
+      req.reply(saves === 1 ? { statusCode: 500, body: {} } : { success: true });
+    }).as('saveTitle');
+    openArticle();
+    cy.get('button[title="AI Chat"]').click();
+    cy.wait('@chatMessages');
+    cy.get('[data-testid="chat-session-switcher"]').click();
+    cy.get('[data-session-id="1"] button').first().click();
+    cy.get('[data-session-id="1"] input').clear().type('Title to retry');
+    cy.get('[data-session-id="1"] button').first().click();
+    cy.wait('@saveTitle');
+    cy.contains('Failed to save conversation title. Please try again.').should('be.visible');
+    cy.get('[data-session-id="1"] input').should('be.visible').and('have.value', 'Title to retry');
+    cy.get('[data-testid="chat-session-switcher"]').should('contain', 'Original title');
+    cy.get('[data-session-id="1"] button').first().click();
+    cy.wait('@saveTitle');
+    cy.get('[data-session-id="1"] input').should('not.exist');
+    cy.get('[data-session-id="1"]').should('contain', 'Title to retry');
+  });
+
+  it('discards unsaved title edits when leaving the session list or selecting another session', () => {
+    setup({ ai_chat_enabled: 'true', translation_mode: 'disabled' });
+    cy.intercept('GET', '/api/ai/profiles', []);
+    cy.intercept('GET', '/api/ai/chat/sessions*', [
+      { id: 1, article_id: 1, title: 'First session', message_count: 0 },
+      { id: 2, article_id: 1, title: 'Second session', message_count: 0 },
+    ]);
+    cy.intercept('GET', '/api/ai/chat/messages*', []).as('chatMessages');
+    cy.intercept('PUT', '/api/ai/chat/session*', () => {
+      throw new Error('Leaving an edit must not save the draft');
+    });
+    openArticle();
+    cy.get('button[title="AI Chat"]').click();
+    cy.wait('@chatMessages');
+    cy.get('[data-testid="chat-session-switcher"]').click();
+    cy.get('[data-session-id="1"] button').first().click();
+    cy.get('[data-session-id="1"] input').clear().type('Unsaved title');
+    cy.get('[data-testid="chat-session-switcher"]').click();
+    cy.get('[data-testid="chat-session-switcher"]').click();
+    cy.get('[data-session-id="1"] input').should('not.exist');
+    cy.get('[data-session-id="1"]').should('contain', 'First session');
+    cy.get('[data-session-id="1"] button').first().click();
+    cy.get('[data-session-id="1"] input').clear().type('Another unsaved title');
+    cy.get('[data-session-id="2"]').click();
+    cy.wait('@chatMessages');
+    cy.get('[data-testid="chat-session-switcher"]').click();
+    cy.get('[data-session-id="1"] input').should('not.exist');
+    cy.get('[data-session-id="1"]').should('contain', 'First session');
+  });
+
   for (const [language, unreadTitle, galleryTitle, unreadToggle, emptyText, completedText] of [
     [
       'en-US',
@@ -87,7 +147,7 @@ describe('Reading interactions', () => {
     ['zh-CN', '未读', '多媒体模式', '仅显示未读文章', '未找到文章', '已读完全部文章'],
   ]) {
     it(`centers unread completion and distinguishes ordinary empty galleries in ${language}`, () => {
-      setup({ language, translation_enabled: 'false' }, 'global', true);
+      setup({ language, translation_mode: 'disabled' }, 'global', true);
       cy.get('[data-testid="article-list-empty"]').should('contain', emptyText);
       cy.get(`.smart-activity-bar button[title^="${unreadTitle}"]`).click();
       cy.get('[data-testid="article-list-empty"]')
