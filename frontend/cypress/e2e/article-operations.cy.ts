@@ -2,172 +2,153 @@
 
 describe('Article Operations', () => {
   beforeEach(() => {
-    // Set up intercepts before visiting the page
-    cy.intercept('GET', '/api/articles*').as('getArticles');
-    cy.intercept('PUT', '/api/articles/*').as('updateArticle');
-    cy.intercept('PUT', '/api/articles/mark-all-read').as('markAllRead');
-
-    cy.visit('/');
+    const articles = [1, 2].map((id) => ({
+      id,
+      feed_id: 1,
+      feed_title: 'Operations Feed',
+      title: id === 1 ? 'Target article' : 'Read favorite article',
+      url: `https://example.com/article/${id}`,
+      published_at: `2026-09-0${3 - id}T00:00:00Z`,
+      is_read: id === 2,
+      is_favorite: id === 2,
+      is_hidden: false,
+      is_read_later: false,
+    }));
+    // Every request in these UI regressions uses synthetic in-memory data.
+    cy.intercept('/api/**', { statusCode: 200, body: {} });
+    cy.intercept('GET', '/api/settings', {
+      language: 'en-US',
+      theme: 'light',
+      layout_mode: 'normal',
+      default_view_mode: 'rendered',
+      translation_mode: 'off',
+      summary_enabled: 'false',
+      full_text_fetch_enabled: 'false',
+      update_check_enabled: 'false',
+      ai_search_enabled: 'true',
+      confirm_mark_as_read: 'false',
+      shortcuts_enabled: 'true',
+    });
+    cy.intercept('GET', '/api/feeds', [
+      { id: 1, title: 'Operations Feed', url: 'https://example.com/feed', category: '' },
+    ]);
+    cy.intercept('GET', '/api/tags', []);
+    cy.intercept('GET', '/api/saved-filters', []);
+    cy.intercept('GET', '/api/progress', { is_running: false });
+    cy.intercept({ method: 'GET', pathname: '/api/articles' }, (req) => {
+      const filtered = articles.filter((article) =>
+        req.query.filter === 'unread' || req.query.only_unread === 'true'
+          ? !article.is_read
+          : req.query.filter === 'favorites'
+            ? article.is_favorite
+            : true
+      );
+      req.reply(filtered);
+    }).as('getArticles');
+    cy.intercept('GET', '/api/articles/unread-counts', (req) => {
+      const unread = articles.filter((article) => !article.is_read).length;
+      req.reply({ total: unread, feed_counts: { 1: unread } });
+    });
+    cy.intercept('GET', '/api/articles/filter-counts', {});
+    cy.intercept('GET', '/api/articles/content*', (req) => {
+      req.reply({ content: `<p>Article body for ${req.query.id}</p>`, cached: true });
+    }).as('articleContent');
+    cy.intercept('POST', '/api/articles/read*', (req) => {
+      const article = articles.find((item) => item.id === Number(req.query.id));
+      if (article) article.is_read = req.query.read === 'true';
+      req.reply({ success: true });
+    }).as('markRead');
+    cy.intercept('POST', '/api/articles/favorite*', (req) => {
+      const article = articles.find((item) => item.id === Number(req.query.id));
+      if (article) article.is_favorite = !article.is_favorite;
+      req.reply({ success: true });
+    }).as('favoriteArticle');
+    cy.intercept('POST', '/api/articles/mark-all-read*', (req) => {
+      articles.forEach((article) => {
+        article.is_read = true;
+      });
+      req.reply({ success: true });
+    }).as('markAllRead');
+    cy.intercept('POST', '/api/ai/search', (req) => {
+      const matches = articles.filter((article) =>
+        article.title.toLowerCase().includes(String(req.body.query).toLowerCase())
+      );
+      req.reply({ success: true, articles: matches, total_count: matches.length });
+    }).as('basicSearch');
+    cy.intercept('POST', '/api/browser/open', { success: true }).as('openBrowser');
+    cy.visit('/', {
+      onBeforeLoad(win) {
+        win.localStorage.setItem('showOnlyUnread', 'false');
+      },
+    });
     cy.get('body').should('be.visible');
   });
 
   it('should mark article as read', () => {
-    // Wait for articles to load
-    cy.wait('@getArticles', { timeout: 10000 });
-
-    // Try to click on an article if it exists
-    cy.get('body').then(($body) => {
-      if ($body.find('[class*="article"]').length > 0) {
-        cy.get('[class*="article"]').first().click({ force: true });
-
-        // Wait for detail view to appear
-        cy.wait(500);
-
-        // The article detail view should be shown (or at least some content changed)
-        cy.get('body').should('be.visible');
-      } else {
-        cy.log('No articles found to test marking as read');
-      }
-    });
+    cy.wait('@getArticles');
+    cy.get('[data-article-id="1"]').click();
+    cy.wait('@markRead').its('request.url').should('contain', 'id=1&read=true');
+    cy.wait('@articleContent');
+    cy.contains('Article body for 1').should('be.visible');
   });
 
   it('should mark article as favorite', () => {
-    // Wait for articles to load
-    cy.wait('@getArticles', { timeout: 10000 });
-
-    // Try to find an article to test
-    cy.get('body').then(($body) => {
-      if ($body.find('[class*="article"]').length > 0) {
-        // Right-click on an article to open context menu
-        cy.get('[class*="article"]').first().rightclick({ force: true });
-
-        // Click favorite option if it exists
-        cy.get('body').then(($body2) => {
-          if ($body2.find(/favorite|收藏|star/i).length > 0) {
-            cy.contains(/favorite|收藏|star/i).click({ force: true });
-          } else {
-            cy.log('Favorite option not available');
-          }
-        });
-      } else {
-        cy.log('No articles found to test marking as favorite');
-      }
-    });
+    cy.wait('@getArticles');
+    cy.get('[data-article-id="1"]').rightclick();
+    cy.contains('Add to Favorites').click();
+    cy.wait('@favoriteArticle').its('request.url').should('contain', 'id=1');
+    cy.get('[data-article-id="1"]').rightclick();
+    cy.contains('Remove from Favorites').should('be.visible');
   });
 
   it('should filter articles by read status', () => {
-    // Wait for articles to load
-    cy.wait('@getArticles', { timeout: 10000 });
-
-    // Look for filter buttons
-    cy.get('button[title^="Unread"], button[title^="未读"]').click({ force: true });
-
-    // Wait a bit for the filter to apply
-    cy.wait(500);
-
-    // Verify filter button is clickable
-    cy.get('button[title^="Unread"], button[title^="未读"]').should('exist');
+    cy.wait('@getArticles');
+    cy.get('.smart-activity-bar button[title^="Unread"]').click();
+    cy.wait('@getArticles').its('request.url').should('contain', 'filter=unread');
+    cy.get('[data-article-id="1"]').should('be.visible');
+    cy.get('[data-article-id="2"]').should('not.exist');
   });
 
   it('should filter articles by favorites', () => {
-    // Wait for articles to load
-    cy.wait('@getArticles', { timeout: 10000 });
-
-    // Click favorites filter
-    cy.get('button[title^="Favorites"], button[title^="收藏"]').click({ force: true });
-
-    // Wait a bit for the filter to apply
-    cy.wait(500);
-
-    // Verify filter button is clickable
-    cy.get('button[title^="Favorites"], button[title^="收藏"]').should('exist');
+    cy.wait('@getArticles');
+    cy.get('.smart-activity-bar button[title^="Favorites"]').click();
+    cy.wait('@getArticles').its('request.url').should('contain', 'filter=favorites');
+    cy.get('[data-article-id="2"]').should('be.visible');
+    cy.get('[data-article-id="1"]').should('not.exist');
   });
 
   it('should mark all articles as read', () => {
-    // Wait for articles to load
-    cy.wait('@getArticles', { timeout: 10000 });
-
-    // Try to find mark all as read button (it might be in a context menu or toolbar)
-    cy.get('body').then(($body) => {
-      if (
-        $body.find('button').filter((i, el) => /mark.*all|全部标记/i.test(el.textContent || ''))
-          .length > 0
-      ) {
-        cy.get('button')
-          .contains(/mark.*all|全部标记/i)
-          .click({ force: true });
-
-        // Wait for confirmation if needed
-        cy.get('body').then(($body2) => {
-          if ($body2.find(/confirm|确认/i).length > 0) {
-            cy.contains(/confirm|确认/i).click({ force: true });
-          }
-        });
-      } else {
-        cy.log('Mark all as read button not found');
-      }
-    });
+    cy.wait('@getArticles');
+    cy.get('button[title^="Mark All as Read"]').click();
+    cy.wait('@markAllRead');
+    cy.get('.smart-activity-bar button[title^="Unread"]').click();
+    cy.wait('@getArticles').its('response.body').should('deep.equal', []);
+    cy.get('[data-article-id]').should('not.exist');
   });
 
   it('should open article detail view', () => {
-    // Try to click on an article if it exists
-    cy.get('body').then(($body) => {
-      if ($body.find('[class*="article"]').length > 0) {
-        cy.get('[class*="article"]').first().click({ force: true });
-
-        // Verify detail view is shown
-        cy.wait(500);
-        cy.get('body').should('be.visible');
-      } else {
-        cy.log('No articles found to test detail view');
-      }
-    });
+    cy.wait('@getArticles');
+    cy.get('[data-article-id="1"]').click();
+    cy.wait('@articleContent');
+    cy.contains('Article body for 1').should('be.visible');
   });
 
   it('should search articles', () => {
-    // Wait for articles to load
-    cy.wait('@getArticles', { timeout: 10000 });
-
-    // Find search input
-    cy.get('body').then(($body) => {
-      if (
-        $body.find('input[type="search"], input[placeholder*="search"], input[placeholder*="搜索"]')
-          .length > 0
-      ) {
-        cy.get('input[type="search"], input[placeholder*="search"], input[placeholder*="搜索"]')
-          .last()
-          .type('test{enter}');
-
-        // Wait a bit for search results
-        cy.wait(500);
-      } else {
-        cy.log('Search input not found');
-      }
-    });
+    cy.wait('@getArticles');
+    cy.get('input[placeholder="Describe what you want to find..."]').type('Target');
+    cy.contains('button', /^AI Search$/).click();
+    cy.wait('@basicSearch').its('request.body.query').should('equal', 'Target');
+    cy.get('[data-article-id="1"]').should('be.visible');
+    cy.get('[data-article-id="2"]').should('not.exist');
   });
 
   it('should open article in external browser', () => {
-    // Wait for articles to load
-    cy.wait('@getArticles', { timeout: 10000 });
-
-    // Try to find an article
-    cy.get('body').then(($body) => {
-      if ($body.find('[class*="article"]').length > 0) {
-        // Right-click on article
-        cy.get('[class*="article"]').first().rightclick({ force: true });
-
-        // Look for "Open in browser" option
-        cy.get('body').then(($body2) => {
-          if ($body2.find(/open.*browser|在浏览器中打开/i).length > 0) {
-            cy.contains(/open.*browser|在浏览器中打开/i).should('exist');
-          } else {
-            cy.log('Open in browser option not found in context menu');
-          }
-        });
-      } else {
-        cy.log('No articles found to test open in browser');
-      }
-    });
+    cy.wait('@getArticles');
+    cy.get('[data-article-id="1"]').rightclick();
+    cy.contains('Open in Browser').click();
+    cy.wait('@openBrowser')
+      .its('request.body.url')
+      .should('equal', 'https://example.com/article/1');
   });
 
   it('should translate orphaned article text next to media', () => {
