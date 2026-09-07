@@ -467,6 +467,7 @@ describe('Article Operations', () => {
       body: { content: '<p>Article context for AI chat</p>', cached: true },
     }).as('chatArticleContent');
     cy.intercept('POST', '/api/articles/read*', { statusCode: 200, body: { success: true } });
+    cy.intercept('GET', '/api/ai/profiles', { statusCode: 200, body: [] });
     cy.intercept('GET', '/api/ai/chat/sessions*', (req) => {
       req.reply({ statusCode: 200, body: sessions });
     }).as('chatSessions');
@@ -565,8 +566,7 @@ describe('Article Operations', () => {
     cy.contains('.chat-panel', 'Persisted answer').should('be.visible');
 
     cy.get('[data-testid="chat-new-session"]').click();
-    cy.wait('@createChatSession');
-    cy.wait('@chatMessages');
+    cy.get('@createChatSession.all').should('have.length', 1);
     cy.contains('.chat-panel', 'Persisted answer').should('not.exist');
     cy.get('[data-testid="chat-session-switcher"]').click();
     cy.get('.chat-panel [data-session-id="1"]').click();
