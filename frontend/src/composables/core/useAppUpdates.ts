@@ -1,7 +1,7 @@
 /**
  * Composable for app update checking and installation
  */
-import { ref, type Ref } from 'vue';
+import { onScopeDispose, ref, type Ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { UpdateInfo, DownloadResponse, InstallResponse } from '@/types/settings';
 
@@ -17,6 +17,12 @@ export function useAppUpdates() {
   const downloadBytesWritten = ref(0);
   const downloadTotalBytes = ref(0);
   const downloadErrorCode = ref('');
+  let progressInterval: ReturnType<typeof window.setInterval> | undefined;
+  let activeRequestId = '';
+  onScopeDispose(() => {
+    window.clearInterval(progressInterval);
+    activeRequestId = '';
+  });
 
   function createDownloadRequestId(): string {
     if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -28,10 +34,12 @@ export function useAppUpdates() {
   async function fetchDownloadProgress(requestId: string): Promise<void> {
     try {
       const res = await fetch(
-        `/api/download-update/progress?request_id=${encodeURIComponent(requestId)}`
+        `/api/download-update/progress?request_id=${encodeURIComponent(requestId)}`,
+        { signal: AbortSignal.timeout(5000) }
       );
       if (!res.ok) return;
       const progress = await res.json();
+      if (activeRequestId !== requestId) return;
       downloadBytesWritten.value = Number(progress.bytes_written) || 0;
       downloadTotalBytes.value = Number(progress.total_bytes) || 0;
       downloadProgressKnown.value = !progress.indeterminate && downloadTotalBytes.value > 0;
@@ -101,6 +109,7 @@ export function useAppUpdates() {
    * Download and install update
    */
   async function downloadAndInstallUpdate() {
+    if (downloadingUpdate.value || installingUpdate.value) return;
     if (!updateInfo.value || !updateInfo.value.download_url) {
       window.showToast(t('common.errors.errorCheckingUpdates'), 'error');
       return;
@@ -113,7 +122,8 @@ export function useAppUpdates() {
     downloadTotalBytes.value = 0;
     downloadErrorCode.value = '';
     const requestId = createDownloadRequestId();
-    const progressInterval = window.setInterval(() => {
+    activeRequestId = requestId;
+    progressInterval = window.setInterval(() => {
       void fetchDownloadProgress(requestId);
     }, 300);
 
@@ -130,7 +140,7 @@ export function useAppUpdates() {
       });
 
       window.clearInterval(progressInterval);
-      await fetchDownloadProgress(requestId);
+      activeRequestId = '';
 
       if (!downloadRes.ok) {
         const errorData = await downloadRes.json().catch(() => ({}));
@@ -146,6 +156,7 @@ export function useAppUpdates() {
       }
 
       downloadingUpdate.value = false;
+      installingUpdate.value = true;
       downloadProgress.value = 100;
       downloadProgressKnown.value = true;
       downloadBytesWritten.value = Number(downloadData.bytes_written) || downloadBytesWritten.value;
@@ -185,6 +196,8 @@ export function useAppUpdates() {
     } catch (e) {
       console.error('Update error:', e);
       window.clearInterval(progressInterval);
+      activeRequestId = '';
+      const failedDuringDownload = downloadingUpdate.value;
       downloadingUpdate.value = false;
       installingUpdate.value = false;
 
@@ -196,8 +209,11 @@ export function useAppUpdates() {
         window.showToast(downloadErrorMessage(errorCode), 'error');
       } else if (errorMessage.includes('INSTALL_ERROR')) {
         window.showToast(t('setting.update.installFailed'), 'error');
+      } else if (failedDuringDownload) {
+        downloadErrorCode.value = 'download_network_error';
+        window.showToast(downloadErrorMessage(downloadErrorCode.value), 'error');
       } else {
-        window.showToast(t('common.errors.errorCheckingUpdates'), 'error');
+        window.showToast(t('setting.update.installFailed'), 'error');
       }
     }
   }

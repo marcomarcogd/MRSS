@@ -58,7 +58,7 @@ const emit = defineEmits<{
 }>();
 
 // Modal close handling
-useModalClose(() => handleClose(), props.zIndex);
+const { zIndex: modalZIndex } = useModalClose(() => handleClose(), props.zIndex);
 
 // Track if modal is open
 const isOpen = ref(true);
@@ -167,7 +167,7 @@ onUnmounted(() => {
       'fixed inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm p-2 sm:p-4',
       animation ? 'animate-fade-in' : '',
     ]"
-    :style="{ zIndex }"
+    :style="{ zIndex: modalZIndex }"
     :data-modal-backdrop="closeOnClickOutside ? 'true' : undefined"
     :data-modal-open="isOpen ? 'true' : undefined"
     @click.self="handleBackdropClick"

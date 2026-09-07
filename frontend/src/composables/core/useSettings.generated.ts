@@ -16,6 +16,7 @@ export function generateInitialSettings(): SettingsData {
     ai_api_key: settingsDefaults.ai_api_key,
     ai_chat_enabled: settingsDefaults.ai_chat_enabled,
     ai_chat_profile_id: settingsDefaults.ai_chat_profile_id,
+    ai_chat_quick_prompts: settingsDefaults.ai_chat_quick_prompts,
     ai_custom_headers: settingsDefaults.ai_custom_headers,
     ai_endpoint: settingsDefaults.ai_endpoint,
     ai_model: settingsDefaults.ai_model,
@@ -32,6 +33,7 @@ export function generateInitialSettings(): SettingsData {
     baidu_app_id: settingsDefaults.baidu_app_id,
     baidu_secret_key: settingsDefaults.baidu_secret_key,
     close_to_tray: settingsDefaults.close_to_tray,
+    confirm_mark_as_read: settingsDefaults.confirm_mark_as_read,
     content_font_family: settingsDefaults.content_font_family,
     content_font_size: settingsDefaults.content_font_size,
     content_line_height: settingsDefaults.content_line_height,
@@ -91,6 +93,7 @@ export function generateInitialSettings(): SettingsData {
     proxy_type: settingsDefaults.proxy_type,
     proxy_username: settingsDefaults.proxy_username,
     refresh_mode: settingsDefaults.refresh_mode,
+    remember_article_position: settingsDefaults.remember_article_position,
     retry_timeout_seconds: settingsDefaults.retry_timeout_seconds,
     rsshub_api_key: settingsDefaults.rsshub_api_key,
     rsshub_enabled: settingsDefaults.rsshub_enabled,
@@ -101,6 +104,9 @@ export function generateInitialSettings(): SettingsData {
     show_article_preview_images: settingsDefaults.show_article_preview_images,
     show_floating_toc: settingsDefaults.show_floating_toc,
     show_hidden_articles: settingsDefaults.show_hidden_articles,
+    sidebar_category_order: settingsDefaults.sidebar_category_order,
+    sidebar_pinned_items: settingsDefaults.sidebar_pinned_items,
+    sidebar_sort_mode: settingsDefaults.sidebar_sort_mode,
     startup_on_boot: settingsDefaults.startup_on_boot,
     summary_enabled: settingsDefaults.summary_enabled,
     summary_length: settingsDefaults.summary_length,
@@ -138,6 +144,7 @@ export function parseSettingsData(data: Record<string, string>): SettingsData {
     ai_api_key: data.ai_api_key || settingsDefaults.ai_api_key,
     ai_chat_enabled: data.ai_chat_enabled === 'true',
     ai_chat_profile_id: data.ai_chat_profile_id || settingsDefaults.ai_chat_profile_id,
+    ai_chat_quick_prompts: data.ai_chat_quick_prompts || settingsDefaults.ai_chat_quick_prompts,
     ai_custom_headers: data.ai_custom_headers || settingsDefaults.ai_custom_headers,
     ai_endpoint: data.ai_endpoint || settingsDefaults.ai_endpoint,
     ai_model: data.ai_model || settingsDefaults.ai_model,
@@ -155,6 +162,7 @@ export function parseSettingsData(data: Record<string, string>): SettingsData {
     baidu_app_id: data.baidu_app_id || settingsDefaults.baidu_app_id,
     baidu_secret_key: data.baidu_secret_key || settingsDefaults.baidu_secret_key,
     close_to_tray: data.close_to_tray === 'true',
+    confirm_mark_as_read: data.confirm_mark_as_read === 'true',
     content_font_family: data.content_font_family || settingsDefaults.content_font_family,
     content_font_size: parseInt(data.content_font_size) || settingsDefaults.content_font_size,
     content_line_height: data.content_line_height || settingsDefaults.content_line_height,
@@ -229,6 +237,7 @@ export function parseSettingsData(data: Record<string, string>): SettingsData {
     proxy_type: data.proxy_type || settingsDefaults.proxy_type,
     proxy_username: data.proxy_username || settingsDefaults.proxy_username,
     refresh_mode: data.refresh_mode || settingsDefaults.refresh_mode,
+    remember_article_position: data.remember_article_position === 'true',
     retry_timeout_seconds:
       parseInt(data.retry_timeout_seconds) || settingsDefaults.retry_timeout_seconds,
     rsshub_api_key: data.rsshub_api_key || settingsDefaults.rsshub_api_key,
@@ -240,6 +249,9 @@ export function parseSettingsData(data: Record<string, string>): SettingsData {
     show_article_preview_images: data.show_article_preview_images === 'true',
     show_floating_toc: data.show_floating_toc === 'true',
     show_hidden_articles: data.show_hidden_articles === 'true',
+    sidebar_category_order: data.sidebar_category_order || settingsDefaults.sidebar_category_order,
+    sidebar_pinned_items: data.sidebar_pinned_items || settingsDefaults.sidebar_pinned_items,
+    sidebar_sort_mode: data.sidebar_sort_mode || settingsDefaults.sidebar_sort_mode,
     startup_on_boot: data.startup_on_boot === 'true',
     summary_enabled: data.summary_enabled === 'true',
     summary_length: data.summary_length || settingsDefaults.summary_length,
@@ -279,6 +291,8 @@ export function buildAutoSavePayload(settingsRef: Ref<SettingsData>): Record<str
       settingsRef.value.ai_chat_enabled ?? settingsDefaults.ai_chat_enabled
     ).toString(),
     ai_chat_profile_id: settingsRef.value.ai_chat_profile_id ?? settingsDefaults.ai_chat_profile_id,
+    ai_chat_quick_prompts:
+      settingsRef.value.ai_chat_quick_prompts ?? settingsDefaults.ai_chat_quick_prompts,
     ai_custom_headers: settingsRef.value.ai_custom_headers ?? settingsDefaults.ai_custom_headers,
     ai_endpoint: settingsRef.value.ai_endpoint ?? settingsDefaults.ai_endpoint,
     ai_model: settingsRef.value.ai_model ?? settingsDefaults.ai_model,
@@ -305,6 +319,9 @@ export function buildAutoSavePayload(settingsRef: Ref<SettingsData>): Record<str
     baidu_app_id: settingsRef.value.baidu_app_id ?? settingsDefaults.baidu_app_id,
     baidu_secret_key: settingsRef.value.baidu_secret_key ?? settingsDefaults.baidu_secret_key,
     close_to_tray: (settingsRef.value.close_to_tray ?? settingsDefaults.close_to_tray).toString(),
+    confirm_mark_as_read: (
+      settingsRef.value.confirm_mark_as_read ?? settingsDefaults.confirm_mark_as_read
+    ).toString(),
     content_font_family:
       settingsRef.value.content_font_family ?? settingsDefaults.content_font_family,
     content_font_size: (
@@ -414,6 +431,9 @@ export function buildAutoSavePayload(settingsRef: Ref<SettingsData>): Record<str
     proxy_type: settingsRef.value.proxy_type ?? settingsDefaults.proxy_type,
     proxy_username: settingsRef.value.proxy_username ?? settingsDefaults.proxy_username,
     refresh_mode: settingsRef.value.refresh_mode ?? settingsDefaults.refresh_mode,
+    remember_article_position: (
+      settingsRef.value.remember_article_position ?? settingsDefaults.remember_article_position
+    ).toString(),
     retry_timeout_seconds: (
       settingsRef.value.retry_timeout_seconds ?? settingsDefaults.retry_timeout_seconds
     ).toString(),
@@ -436,6 +456,11 @@ export function buildAutoSavePayload(settingsRef: Ref<SettingsData>): Record<str
     show_hidden_articles: (
       settingsRef.value.show_hidden_articles ?? settingsDefaults.show_hidden_articles
     ).toString(),
+    sidebar_category_order:
+      settingsRef.value.sidebar_category_order ?? settingsDefaults.sidebar_category_order,
+    sidebar_pinned_items:
+      settingsRef.value.sidebar_pinned_items ?? settingsDefaults.sidebar_pinned_items,
+    sidebar_sort_mode: settingsRef.value.sidebar_sort_mode ?? settingsDefaults.sidebar_sort_mode,
     startup_on_boot: (
       settingsRef.value.startup_on_boot ?? settingsDefaults.startup_on_boot
     ).toString(),

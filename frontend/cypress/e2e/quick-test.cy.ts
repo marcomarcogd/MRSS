@@ -8,7 +8,7 @@ describe('Quick Smoke Test', () => {
 
   it('should find settings button', () => {
     cy.visit('/');
-    cy.get('button').filter('[title="Settings"], [title="设置"]').should('exist');
+    cy.get('button').filter('[title^="Settings"], [title^="设置"]').should('exist');
   });
 
   it('should find add feed button', () => {

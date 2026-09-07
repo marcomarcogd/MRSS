@@ -794,6 +794,48 @@
       "category": "ai",
       "encrypted": false,
       "frontend_key": "aiSearchProfileId"
+    },
+    "confirm_mark_as_read": {
+      "type": "bool",
+      "default": true,
+      "category": "reading",
+      "encrypted": false,
+      "frontend_key": "confirm_mark_as_read"
+    },
+    "remember_article_position": {
+      "type": "bool",
+      "default": true,
+      "category": "reading",
+      "encrypted": false,
+      "frontend_key": "remember_article_position"
+    },
+    "ai_chat_quick_prompts": {
+      "type": "string",
+      "default": "[]",
+      "category": "ai",
+      "encrypted": false,
+      "frontend_key": "ai_chat_quick_prompts"
+    },
+    "sidebar_sort_mode": {
+      "type": "string",
+      "default": "manual",
+      "category": "reading",
+      "encrypted": false,
+      "frontend_key": "sidebar_sort_mode"
+    },
+    "sidebar_pinned_items": {
+      "type": "string",
+      "default": "[]",
+      "category": "reading",
+      "encrypted": false,
+      "frontend_key": "sidebar_pinned_items"
+    },
+    "sidebar_category_order": {
+      "type": "string",
+      "default": "[]",
+      "category": "reading",
+      "encrypted": false,
+      "frontend_key": "sidebar_category_order"
     }
   }
 }

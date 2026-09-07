@@ -26,13 +26,16 @@ import { useResizablePanels } from './composables/ui/useResizablePanels';
 import { useWindowState } from './composables/core/useWindowState';
 import { useAppUpdates } from './composables/core/useAppUpdates';
 import { useSettings } from './composables/core/useSettings';
+import { useCustomCSS } from './composables/ui/useCustomCSS';
 import { resolveFontFamily } from './utils/fontDetector';
 import type { Feed } from './types/models';
 import { useDailyReports } from './composables/dailyReport/useDailyReports';
+import type { TabName } from './types/settings';
 
 const store = useAppStore();
 const { t } = useI18n();
 const { settings } = useSettings();
+useCustomCSS(() => settings.value.custom_css_file);
 
 const uiFontSize = computed(() => {
   const value = Number(settings.value.ui_font_size);
@@ -47,6 +50,7 @@ watchEffect(() => {
 });
 
 onUnmounted(() => {
+  store.startAutoRefresh(0);
   const rootStyle = document.documentElement.style;
   rootStyle.removeProperty('--ui-font-family');
   rootStyle.removeProperty('--ui-font-size');
@@ -57,6 +61,7 @@ const showAddFeed = ref(false);
 const showEditFeed = ref(false);
 const feedToEdit = ref<Feed | null>(null);
 const showSettings = ref(false);
+const settingsInitialTab = ref<TabName>('general');
 const showDiscoverBlogs = ref(false);
 const feedToDiscover = ref<Feed | null>(null);
 const isSidebarOpen = ref(true);
@@ -131,7 +136,7 @@ const windowState = useWindowState();
 windowState.init();
 
 // Initialize keyboard shortcuts
-const { shortcuts } = useKeyboardShortcuts({
+const { shortcuts, shortcutsEnabled } = useKeyboardShortcuts({
   onOpenSettings: () => {
     showSettings.value = true;
   },
@@ -217,6 +222,8 @@ onMounted(async () => {
     }
 
     updateCheckEnabled = data.update_check_enabled !== 'false';
+
+    shortcutsEnabled.value = data.shortcuts_enabled !== 'false';
 
     // Load saved shortcuts
     if (data.shortcuts) {
@@ -314,7 +321,9 @@ window.addEventListener('show-edit-feed', (e) => {
   feedToEdit.value = customEvent.detail;
   showEditFeed.value = true;
 });
-window.addEventListener('show-settings', () => {
+window.addEventListener('show-settings', (e) => {
+  const requestedTab = (e as CustomEvent<{ tab?: TabName }>).detail?.tab;
+  settingsInitialTab.value = requestedTab || 'general';
   showSettings.value = true;
 });
 window.addEventListener('show-discover-blogs', (e) => {
@@ -417,7 +426,11 @@ function onFeedUpdated(): void {
       @close="showEditFeed = false"
       @updated="onFeedUpdated"
     />
-    <SettingsModal v-if="showSettings" @close="showSettings = false" />
+    <SettingsModal
+      v-if="showSettings"
+      :initial-tab="settingsInitialTab"
+      @close="showSettings = false"
+    />
     <DiscoverFeedsModal
       v-if="showDiscoverBlogs && feedToDiscover"
       :feed="feedToDiscover"

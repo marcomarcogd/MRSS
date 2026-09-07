@@ -1,4 +1,10 @@
 @import 'tailwindcss';
+
+/* Decorative icons must not replace the button as the native tooltip target. */
+button[title] > svg,
+button[title] > img {
+  pointer-events: none;
+}
 @config "../tailwind.config.js";
 
 @layer base {
@@ -8,8 +14,11 @@
     --bg-tertiary: #e9ecef;
     --text-primary: #212529;
     --text-secondary: #6c757d;
+    --text-tertiary: #868e96;
     --accent-color: #007bff;
     --accent-hover: #0056b3;
+    --accent-fill: #007bff;
+    --accent-fill-hover: #0056b3;
     --border-color: #dee2e6;
     --mark-bg-color: rgba(255, 220, 100, 0.4);
     --table-stripe-color: rgba(0, 0, 0, 0.04);
@@ -18,6 +27,10 @@
     --ui-font-family: Inter, 'Noto Sans CJK SC', system-ui, sans-serif;
     --ui-font-size: 16px;
     --ui-font-scale: 1;
+    --ui-radius-control: 0.5rem;
+    --ui-radius-surface: 0.75rem;
+    --ui-control-height: 2.375rem;
+    --ui-transition-fast: 150ms ease;
   }
 
   .dark-mode {
@@ -26,14 +39,26 @@
     --bg-tertiary: #2d2d2d;
     --text-primary: #e0e0e0;
     --text-secondary: #a0a0a0;
+    --text-tertiary: #808080;
     --accent-color: #4daafc;
     --accent-hover: #2b87d9;
+    --accent-fill: #347fbd;
+    --accent-fill-hover: #2b6c9f;
     --border-color: #3e3e42;
     --mark-bg-color: rgba(255, 220, 100, 0.25);
     --table-stripe-color: rgba(255, 255, 255, 0.06);
     --code-bg-color: #1e1e1e;
     --code-border-color: #3e3e42;
   }
+}
+
+/* Keep accent text vivid while softening large filled surfaces in dark mode. */
+.dark-mode .bg-accent {
+  background-color: var(--accent-fill);
+}
+
+.dark-mode .hover\:bg-accent-hover:hover {
+  background-color: var(--accent-fill-hover);
 }
 
 body {
@@ -67,6 +92,12 @@ textarea,
   -moz-user-select: text;
   -ms-user-select: text;
   user-select: text;
+}
+
+/* Keep keyboard focus feedback consistent across native and custom controls. */
+:where(button, a, input, textarea, select, [role='button']):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent-color) 65%, transparent);
+  outline-offset: 2px;
 }
 
 /* Allow text selection in article content area */

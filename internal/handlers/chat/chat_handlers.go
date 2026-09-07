@@ -30,6 +30,7 @@ type ChatRequest struct {
 	ArticleURL     string        `json:"article_url,omitempty"`
 	ArticleContent string        `json:"article_content,omitempty"`
 	IsFirstMessage bool          `json:"is_first_message,omitempty"`
+	ProfileID      int64         `json:"profile_id,omitempty"`
 }
 
 // ChatResponse represents the response from the AI chat
@@ -104,7 +105,17 @@ func HandleAIChat(h *core.Handler, w http.ResponseWriter, r *http.Request) {
 	// Get AI settings - try ProfileProvider first
 	var apiKey, endpoint, model string
 	if h.AIProfileProvider != nil {
-		cfg, err := h.AIProfileProvider.GetConfigForFeature(ai.FeatureChat)
+		var cfg *ai.ClientConfig
+		var err error
+		if req.ProfileID > 0 {
+			cfg, err = h.AIProfileProvider.GetConfigForProfile(req.ProfileID)
+		} else {
+			cfg, err = h.AIProfileProvider.GetConfigForFeature(ai.FeatureChat)
+		}
+		if req.ProfileID > 0 && err != nil {
+			writeChatError(w, ai.UserFacingErrorForCode(ai.ErrorCodeConfigurationInvalid), sessionID)
+			return
+		}
 		if err == nil && cfg != nil && (cfg.APIKey != "" || cfg.Endpoint != "") {
 			apiKey = cfg.APIKey
 			endpoint = cfg.Endpoint
@@ -170,7 +181,10 @@ func HandleAIChat(h *core.Handler, w http.ResponseWriter, r *http.Request) {
 
 	// Extract thinking content and remove tags
 	respContent := result.Content
-	thinking := ai.ExtractThinking(respContent)
+	thinking := result.Thinking
+	if thinking == "" {
+		thinking = ai.ExtractThinking(respContent)
+	}
 	respContent = ai.RemoveThinkingTags(respContent)
 
 	// Convert markdown response to HTML
@@ -292,7 +306,7 @@ func estimateChatTokens(messages []ChatMessage, response string) int {
 	return totalChars / 4
 }
 
-// createHTTPClientWithProxy creates an HTTP client with global proxy settings if enabled
+// createHTTPClientWithProxy creates the canonical HTTP client with global proxy settings.
 func createHTTPClientWithProxy(h *core.Handler) (*http.Client, error) {
 	return httputil.CreateHTTPClientWithProxySettings(h.DB, 60*time.Second)
 }

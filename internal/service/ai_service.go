@@ -172,7 +172,7 @@ func (s *aiService) TestConfig(ctx context.Context) error {
 	return err
 }
 
-// createHTTPClientWithProxy creates an HTTP client with global proxy settings if enabled
+// createHTTPClientWithProxy creates the canonical HTTP client with global proxy settings.
 func (s *aiService) createHTTPClientWithProxy() (*http.Client, error) {
 	return httputil.CreateHTTPClientWithProxySettings(s.db, 30*time.Second)
 }

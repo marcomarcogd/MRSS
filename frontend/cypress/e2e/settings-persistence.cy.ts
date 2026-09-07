@@ -39,7 +39,7 @@ describe('Settings Persistence', () => {
 
     // Open settings modal - find the gear icon button
     cy.get('button')
-      .filter('[title="Settings"], [title="设置"]')
+      .filter('[title^="Settings"], [title^="设置"]')
       .should('exist')
       .click({ force: true });
 
@@ -63,7 +63,7 @@ describe('Settings Persistence', () => {
 
     // Reopen settings to verify the change persisted
     cy.get('button')
-      .filter('[title="Settings"], [title="设置"]')
+      .filter('[title^="Settings"], [title^="设置"]')
       .should('exist')
       .click({ force: true });
 
@@ -83,7 +83,7 @@ describe('Settings Persistence', () => {
 
     // Open settings
     cy.get('button')
-      .filter('[title="Settings"], [title="设置"]')
+      .filter('[title^="Settings"], [title^="设置"]')
       .should('exist')
       .click({ force: true });
 
@@ -117,7 +117,7 @@ describe('Settings Persistence', () => {
 
     // Reopen settings to verify
     cy.get('button')
-      .filter('[title="Settings"], [title="设置"]')
+      .filter('[title^="Settings"], [title^="设置"]')
       .should('exist')
       .click({ force: true });
     cy.wait('@getSettings');
@@ -267,9 +267,7 @@ describe('Settings Persistence', () => {
       req.reply({
         delay: 250,
         body: {
-          outline: [
-            { id: 'draft-news', title: 'Draft News', instruction: 'Prioritize key news.' },
-          ],
+          outline: [{ id: 'draft-news', title: 'Draft News', instruction: 'Prioritize key news.' }],
         },
       });
     }).as('optimizeDailyReportOutline');
@@ -422,7 +420,7 @@ describe('Settings Persistence', () => {
 
     // Open settings
     cy.get('button')
-      .filter('[title="Settings"], [title="设置"]')
+      .filter('[title^="Settings"], [title^="设置"]')
       .should('exist')
       .click({ force: true });
 
@@ -458,7 +456,7 @@ describe('Settings Persistence', () => {
     cy.get('body').type('{esc}');
     cy.wait(500);
     cy.get('button')
-      .filter('[title="Settings"], [title="设置"]')
+      .filter('[title^="Settings"], [title^="设置"]')
       .should('exist')
       .click({ force: true });
     cy.wait('@getSettings');
@@ -476,7 +474,7 @@ describe('Settings Persistence', () => {
 
     // Open settings
     cy.get('button')
-      .filter('[title="Settings"], [title="设置"]')
+      .filter('[title^="Settings"], [title^="设置"]')
       .should('exist')
       .click({ force: true });
     cy.wait('@getSettings');
@@ -506,7 +504,7 @@ describe('Settings Persistence', () => {
     cy.wait(500);
 
     cy.get('button')
-      .filter('[title="Settings"], [title="设置"]')
+      .filter('[title^="Settings"], [title^="设置"]')
       .should('exist')
       .click({ force: true });
     cy.wait('@getSettings');
@@ -521,7 +519,7 @@ describe('Settings Persistence', () => {
 
     // Open settings
     cy.get('button')
-      .filter('[title="Settings"], [title="设置"]')
+      .filter('[title^="Settings"], [title^="设置"]')
       .should('exist')
       .click({ force: true });
     cy.wait('@getSettings');
@@ -552,7 +550,7 @@ describe('Settings Persistence', () => {
     // Reopen and verify the change was saved
     cy.wait(500);
     cy.get('button')
-      .filter('[title="Settings"], [title="设置"]')
+      .filter('[title^="Settings"], [title^="设置"]')
       .should('exist')
       .click({ force: true });
     cy.wait('@getSettings');
@@ -568,9 +566,23 @@ describe('Settings Persistence', () => {
 
   it('updates the AI usage limit immediately and refreshes usage while visible', () => {
     let usage = 120;
-    let savedLimit = '200';
+    let savedLimit = '20000';
     let usageRequests = 0;
 
+    cy.fixture('settings').then((fixtureSettings) => {
+      cy.intercept('GET', '/api/settings', (req) => {
+        req.reply({
+          statusCode: 200,
+          body: {
+            ...fixtureSettings,
+            language: 'en-US',
+            theme: 'light',
+            update_check_enabled: 'false',
+            ai_usage_limit: savedLimit,
+          },
+        });
+      }).as('getSettings');
+    });
     cy.intercept('GET', '/api/ai/profiles', { statusCode: 200, body: [] });
     cy.intercept('GET', '/api/ai-usage', (req) => {
       usageRequests += 1;
@@ -593,14 +605,14 @@ describe('Settings Persistence', () => {
 
     cy.clock();
     cy.get('button')
-      .filter('[title="Settings"], [title="设置"]')
+      .filter('[title^="Settings"], [title^="设置"]')
       .should('exist')
       .click({ force: true });
     cy.wait('@getSettings');
     cy.contains('button', /^AI$/i).click({ force: true });
     cy.wait('@getAIUsage');
 
-    cy.get('[data-testid="ai-usage-status"]').should('contain.text', '120 / 200');
+    cy.get('[data-testid="ai-usage-status"]').should('contain.text', '120 / 20,000');
     cy.get('[data-testid="ai-usage-limit-input"]').clear().type('400');
     cy.get('[data-testid="ai-usage-status"]').should('contain.text', '120 / 400');
 
@@ -694,7 +706,7 @@ describe('Settings Persistence', () => {
     cy.wait('@layoutFeeds');
     cy.wait('@layoutArticles');
 
-    cy.get('button[title="Settings"]').click();
+    cy.get('button[title^="Settings"]').click();
     cy.contains('button', /^Reading$/).click();
     layoutSelector().should('contain.text', 'Card');
     cy.wait(150);
@@ -726,7 +738,7 @@ describe('Settings Persistence', () => {
     cy.reload();
     cy.wait('@layoutFeeds');
     cy.wait('@layoutArticles');
-    cy.get('button[title="Settings"]').click();
+    cy.get('button[title^="Settings"]').click();
     cy.contains('button', /^Reading$/).click();
     layoutSelector().should('contain.text', 'Normal');
     cy.then(() => {
@@ -806,7 +818,7 @@ describe('Settings Persistence', () => {
         initialArticleTitleSize = parseFloat(getComputedStyle($title[0]).fontSize);
       });
 
-    cy.get('button[title="Settings"]').click();
+    cy.get('button[title^="Settings"]').click();
     cy.contains('button', /^General$/).click();
 
     cy.get('.setting-item').then(($items) => {
@@ -874,7 +886,7 @@ describe('Settings Persistence', () => {
       expect(style.fontFamily).to.contain('Inter');
       expect(style.fontFamily).not.to.contain('Georgia');
     });
-    cy.get('button[title="Settings"]').click();
+    cy.get('button[title^="Settings"]').click();
     cy.contains('button', /^General$/).click();
     cy.contains('.setting-item', 'Interface Font Family')
       .find('button.select-trigger')
@@ -933,7 +945,7 @@ describe('Settings Persistence', () => {
 
     cy.reload();
     cy.wait('@baselineFeeds');
-    cy.get('button[title="Settings"]').click();
+    cy.get('button[title^="Settings"]').click();
     cy.wait('@baselineSettings');
     cy.wait(700);
     cy.contains('button', /^Feeds$/).click();
@@ -943,7 +955,7 @@ describe('Settings Persistence', () => {
     cy.wait(700);
     cy.then(() => expect(savedBodies).to.have.length(0));
 
-    cy.get('button[title="Settings"]').click();
+    cy.get('button[title^="Settings"]').click();
     cy.wait('@baselineSettings');
     cy.contains('.setting-item', 'Theme').find('button.select-trigger').click();
     cy.contains('.select-option', 'Dark').click({ force: true });
@@ -985,7 +997,7 @@ describe('Settings Persistence', () => {
 
     cy.reload();
     cy.wait('@translationModeFeeds');
-    cy.get('button[title="Settings"]').click();
+    cy.get('button[title^="Settings"]').click();
     cy.contains('button', /^Content$/).click();
 
     cy.contains('label', 'Manual translation').find('input[type="radio"]').should('be.checked');
@@ -994,7 +1006,7 @@ describe('Settings Persistence', () => {
 
     cy.get('body').type('{esc}');
     cy.get('[data-settings-modal="true"]').should('not.exist');
-    cy.get('button[title="Settings"]').click();
+    cy.get('button[title^="Settings"]').click();
     cy.wait('@translationModeSettings');
     cy.contains('button', /^Content$/).click();
     cy.contains('label', 'Automatic translation').find('input[type="radio"]').should('be.checked');

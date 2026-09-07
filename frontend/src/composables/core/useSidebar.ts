@@ -2,6 +2,8 @@ import { computed, ref, watch, type Ref } from 'vue';
 import { useAppStore } from '@/stores/app';
 import { useI18n } from 'vue-i18n';
 import { openInBrowser } from '@/utils/browser';
+import { useSidebarSort } from '@/composables/ui/useSidebarSort';
+import { useSettings } from '@/composables/core/useSettings';
 import type { Feed } from '@/types/models';
 
 interface TreeNode {
@@ -18,6 +20,9 @@ interface TreeData {
 
 export function useSidebar() {
   const store = useAppStore();
+  const contentOptionsFeed = ref<Feed | null>(null);
+  const { compareFeeds, isPinned, togglePin } = useSidebarSort();
+  const { settings } = useSettings();
   const { t } = useI18n();
 
   // Load saved category state from localStorage
@@ -83,6 +88,14 @@ export function useSidebar() {
     if (uncategorized.length > 0) {
       categories.add('uncategorized');
     }
+    function sortFeeds(nodes: Record<string, TreeNode>) {
+      for (const node of Object.values(nodes)) {
+        node._feeds.sort(compareFeeds);
+        sortFeeds(node._children);
+      }
+    }
+    sortFeeds(t);
+    uncategorized.sort(compareFeeds);
     return { tree: t, uncategorized, categories };
   });
 
@@ -95,7 +108,7 @@ export function useSidebar() {
     let countsSource: Record<number | string, number>;
     switch (store.currentFilter) {
       case 'favorites':
-        countsSource = store.filterCounts.favorites_unread;
+        countsSource = store.filterCounts.favorites;
         break;
       case 'readLater':
         countsSource = store.filterCounts.read_later_unread;
@@ -116,7 +129,11 @@ export function useSidebar() {
       if (feed.category) {
         const unreadCount = countsSource[feed.id] || 0;
         if (unreadCount > 0) {
-          counts[feed.category] = (counts[feed.category] || 0) + unreadCount;
+          const parts = feed.category.split('/');
+          for (let i = 1; i <= parts.length; i++) {
+            const path = parts.slice(0, i).join('/');
+            counts[path] = (counts[path] || 0) + unreadCount;
+          }
         }
       }
     });
@@ -137,7 +154,7 @@ export function useSidebar() {
     // Determine which counts to use based on current filter
     switch (store.currentFilter) {
       case 'favorites':
-        return store.filterCounts.favorites_unread;
+        return store.filterCounts.favorites;
       case 'readLater':
         return store.filterCounts.read_later_unread;
       case 'unread':
@@ -205,7 +222,25 @@ export function useSidebar() {
 
   // Feed actions
   async function handleFeedAction(action: string, feed: Feed): Promise<void> {
+    if (action === 'contentOptions') {
+      contentOptionsFeed.value = feed;
+      return;
+    }
+    if (action === 'pin') {
+      await togglePin(`feed:${feed.id}`);
+      return;
+    }
     if (action === 'markAllRead') {
+      if (settings.value.confirm_mark_as_read) {
+        const confirmed = await window.showConfirm({
+          title: t('article.action.markAllReadConfirmTitle'),
+          message: t('article.action.markAllReadConfirmMessage'),
+          confirmText: t('common.confirm'),
+          cancelText: t('common.cancel'),
+          isDanger: false,
+        });
+        if (!confirmed) return;
+      }
       await store.markAllAsRead(feed.id);
       window.showToast(t('article.action.markedAllAsRead'), 'success');
     } else if (action === 'refreshFeed') {
@@ -238,7 +273,7 @@ export function useSidebar() {
       window.dispatchEvent(new CustomEvent('show-edit-feed', { detail: feed }));
     } else if (action === 'openWebsite') {
       // Handle RSSHub URLs - need to transform rsshub:// to full URL
-      let urlToOpen = feed.website_url || feed.url;
+      let urlToOpen = feed.link || feed.website_url || feed.url;
       if (urlToOpen.startsWith('rsshub://')) {
         try {
           const response = await fetch('/api/rsshub/transform-url', {
@@ -301,6 +336,11 @@ export function useSidebar() {
       danger?: boolean;
     }> = [];
 
+    items.push({
+      label: t(isPinned(`feed:${feed.id}`) ? 'sidebar.order.unpinItem' : 'sidebar.order.pinItem'),
+      action: 'pin',
+      icon: 'PhPushPin',
+    });
     // For FreshRSS feeds, show "Sync Feed" instead of "Refresh Feed"
     if (feed.is_freshrss_source) {
       items.push({
@@ -333,6 +373,12 @@ export function useSidebar() {
       });
     }
 
+    items.push({
+      label: t('modal.feed.contentOptions'),
+      action: 'contentOptions',
+      icon: 'PhArticle',
+    });
+
     // Only add edit and delete options for non-FreshRSS feeds
     if (!feed.is_freshrss_source) {
       items.push({ separator: true });
@@ -360,7 +406,21 @@ export function useSidebar() {
 
   // Category actions
   async function handleCategoryAction(action: string, categoryName: string): Promise<void> {
+    if (action === 'pin') {
+      await togglePin(`category:${categoryName}`);
+      return;
+    }
     if (action === 'markAllRead') {
+      if (settings.value.confirm_mark_as_read) {
+        const confirmed = await window.showConfirm({
+          title: t('article.action.markAllReadConfirmTitle'),
+          message: t('article.action.markAllReadConfirmMessage'),
+          confirmText: t('common.confirm'),
+          cancelText: t('common.cancel'),
+          isDanger: false,
+        });
+        if (!confirmed) return;
+      }
       // Use the category parameter for the API call
       const category = categoryName === 'uncategorized' ? '' : categoryName;
       await fetch(`/api/articles/mark-all-read?category=${encodeURIComponent(category)}`, {
@@ -368,6 +428,51 @@ export function useSidebar() {
       });
       store.fetchUnreadCounts();
       window.showToast(t('article.action.markedAllAsRead'), 'success');
+    } else if (action === 'dissolve' || action === 'unsubscribeCategory') {
+      const category = categoryName === 'uncategorized' ? '' : categoryName;
+      const feeds = store.feeds.filter(
+        (feed) =>
+          feed.category === category ||
+          (category !== '' && feed.category.startsWith(category + '/'))
+      );
+      if (feeds.some((feed) => feed.is_freshrss_source)) {
+        window.showToast(t('setting.freshrss.feedLocked'), 'info');
+        return;
+      }
+      const dissolve = action === 'dissolve';
+      const confirmed = await window.showConfirm({
+        title: t(
+          dissolve ? 'sidebar.categoryActions.dissolve' : 'sidebar.categoryActions.unsubscribe'
+        ),
+        message: t(
+          dissolve
+            ? 'sidebar.categoryActions.dissolveConfirm'
+            : 'sidebar.categoryActions.unsubscribeConfirm',
+          { name: categoryName, count: feeds.length }
+        ),
+        confirmText: t('common.action.confirm'),
+        cancelText: t('common.action.cancel'),
+        isDanger: !dissolve,
+      });
+      if (!confirmed) return;
+      try {
+        const response = await fetch('/api/feeds/category', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ category, action: dissolve ? 'dissolve' : 'unsubscribe' }),
+        });
+        if (!response.ok) throw new Error(await response.text());
+        store.currentArticleId = null;
+        store.currentFeedId = null;
+        store.currentCategory = null;
+        await store.fetchFeeds();
+        await store.fetchArticles();
+        await store.fetchUnreadCounts();
+        await store.fetchFilterCounts();
+        window.showToast(t('sidebar.categoryActions.done'), 'success');
+      } catch {
+        window.showToast(t('sidebar.categoryActions.failed'), 'error');
+      }
     } else if (action === 'rename') {
       const newName = await window.showInput({
         title: t('modal.feed.renameCategory'),
@@ -411,7 +516,13 @@ export function useSidebar() {
     e.preventDefault();
     e.stopPropagation();
 
-    const items: Array<{ label?: string; action?: string; icon?: string; separator?: boolean }> = [
+    const items: Array<{
+      label?: string;
+      action?: string;
+      icon?: string;
+      separator?: boolean;
+      danger?: boolean;
+    }> = [
       {
         label: t('article.action.markAllAsReadFeed'),
         action: 'markAllRead',
@@ -420,8 +531,37 @@ export function useSidebar() {
     ];
 
     if (categoryName !== 'uncategorized') {
+      items.push({
+        label: t(
+          isPinned(`category:${categoryName}`) ? 'sidebar.order.unpinItem' : 'sidebar.order.pinItem'
+        ),
+        action: 'pin',
+        icon: 'PhPushPin',
+      });
       items.push({ separator: true });
       items.push({ label: t('modal.feed.renameCategory'), action: 'rename', icon: 'ph-pencil' });
+    }
+
+    const category = categoryName === 'uncategorized' ? '' : categoryName;
+    const synced = store.feeds.some(
+      (feed) =>
+        (feed.category === category ||
+          (category !== '' && feed.category.startsWith(category + '/'))) &&
+        feed.is_freshrss_source
+    );
+    if (!synced) {
+      if (category)
+        items.push({
+          label: t('sidebar.categoryActions.dissolve'),
+          action: 'dissolve',
+          icon: 'PhFolderMinus',
+        });
+      items.push({
+        label: t('sidebar.categoryActions.unsubscribe'),
+        action: 'unsubscribeCategory',
+        icon: 'PhTrash',
+        danger: true,
+      });
     }
 
     window.dispatchEvent(
@@ -476,6 +616,7 @@ export function useSidebar() {
   }
 
   return {
+    contentOptionsFeed,
     tree,
     categoryUnreadCounts,
     feedUnreadCounts,

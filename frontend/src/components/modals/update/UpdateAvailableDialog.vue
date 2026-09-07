@@ -180,7 +180,6 @@ onUnmounted(() => {
           {{ t('setting.update.downloadManually') }}
         </button>
       </div>
-
       <p v-if="!updateInfo.download_url" class="text-text-secondary text-xs mt-4">
         {{ t('setting.update.noInstallerAvailable') }}
         <a

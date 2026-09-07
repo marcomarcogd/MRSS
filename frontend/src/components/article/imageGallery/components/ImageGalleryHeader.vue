@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n';
-import { PhList, PhTextT, PhTextTSlash, PhEye, PhEyeSlash } from '@phosphor-icons/vue';
+import { PhCircle, PhList, PhTextT, PhTextTSlash } from '@phosphor-icons/vue';
 
 interface Props {
   showTextOverlay: boolean;
@@ -41,7 +41,7 @@ const { t } = useI18n();
     <div class="flex items-center gap-2">
       <!-- Show only unread toggle button -->
       <button
-        class="p-1 sm:p-1.5 rounded hover:bg-bg-tertiary text-text-primary transition-colors"
+        class="p-1 sm:p-1.5 rounded hover:bg-bg-tertiary text-text-secondary transition-colors cursor-pointer"
         :class="showOnlyUnread ? 'text-accent' : ''"
         :title="
           showOnlyUnread
@@ -50,13 +50,12 @@ const { t } = useI18n();
         "
         @click="emit('toggleShowOnlyUnread')"
       >
-        <PhEyeSlash v-if="showOnlyUnread" :size="20" />
-        <PhEye v-else :size="20" />
+        <PhCircle :size="20" :weight="showOnlyUnread ? 'fill' : 'regular'" />
       </button>
 
       <!-- Toggle text overlay button -->
       <button
-        class="p-1 sm:p-1.5 rounded hover:bg-bg-tertiary text-text-primary transition-colors"
+        class="p-1 sm:p-1.5 rounded hover:bg-bg-tertiary text-text-secondary transition-colors cursor-pointer"
         :title="showTextOverlay ? t('setting.reading.hideText') : t('setting.reading.showText')"
         @click="emit('toggleTextOverlay')"
       >

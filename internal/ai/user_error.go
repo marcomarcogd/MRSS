@@ -6,6 +6,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -59,22 +61,27 @@ func ClassifyUserFacingError(err error) UserFacingError {
 		return userFacingError(ErrorCodeRequestFailed)
 	}
 
+	message := strings.ToLower(err.Error())
+	statusCode := providerStatusCode(message)
 	var statusErr *HTTPStatusError
 	if errors.As(err, &statusErr) {
+		statusCode = statusErr.StatusCode
+	}
+	if statusCode > 0 {
 		switch {
-		case statusErr.StatusCode == http.StatusTooManyRequests:
+		case statusCode == http.StatusTooManyRequests:
 			return userFacingError(ErrorCodeRateLimited)
-		case statusErr.StatusCode == http.StatusUnauthorized || statusErr.StatusCode == http.StatusForbidden:
+		case statusCode == http.StatusUnauthorized || statusCode == http.StatusForbidden:
 			return userFacingError(ErrorCodeAuthenticationFailed)
-		case statusErr.StatusCode == http.StatusPaymentRequired:
+		case statusCode == http.StatusPaymentRequired:
 			return userFacingError(ErrorCodePaymentRequired)
-		case statusErr.StatusCode == http.StatusNotFound:
+		case statusCode == http.StatusNotFound:
 			return userFacingError(ErrorCodeModelOrEndpointNotFound)
-		case statusErr.StatusCode == http.StatusRequestEntityTooLarge:
+		case statusCode == http.StatusRequestEntityTooLarge:
 			return userFacingError(ErrorCodeRequestTooLarge)
-		case statusErr.StatusCode >= http.StatusInternalServerError:
+		case statusCode >= http.StatusInternalServerError:
 			return userFacingError(ErrorCodeProviderUnavailable)
-		case statusErr.StatusCode >= http.StatusBadRequest:
+		case statusCode >= http.StatusBadRequest:
 			return userFacingError(ErrorCodeProviderRejectedRequest)
 		}
 	}
@@ -87,7 +94,6 @@ func ClassifyUserFacingError(err error) UserFacingError {
 		return userFacingError(ErrorCodeNetwork)
 	}
 
-	message := strings.ToLower(err.Error())
 	switch {
 	case strings.Contains(message, "usage limit"), strings.Contains(message, "token limit"):
 		return userFacingError(ErrorCodeUsageLimitReached)
@@ -100,6 +106,17 @@ func ClassifyUserFacingError(err error) UserFacingError {
 	default:
 		return userFacingError(ErrorCodeRequestFailed)
 	}
+}
+
+var providerStatusPattern = regexp.MustCompile(`(?i)(?:status|http)[^0-9]{0,12}([1-5][0-9]{2})`)
+
+func providerStatusCode(message string) int {
+	match := providerStatusPattern.FindStringSubmatch(message)
+	if len(match) != 2 {
+		return 0
+	}
+	statusCode, _ := strconv.Atoi(match[1])
+	return statusCode
 }
 
 // UserFacingErrorForCode returns the canonical safe message and HTTP status

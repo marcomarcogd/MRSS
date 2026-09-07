@@ -1,7 +1,11 @@
 <script setup lang="ts">
+import BaseModal from '@/components/common/BaseModal.vue';
+import FeedContentOptions from '@/components/modals/feed/parts/FeedContentOptions.vue';
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useAppStore } from '@/stores/app';
 import { useI18n } from 'vue-i18n';
+import { useSidebarSort, sidebarSortModes } from '@/composables/ui/useSidebarSort';
+import { useCategoryOrder } from '@/composables/ui/useCategoryOrder';
 import { useDragDrop } from '@/composables/ui/useDragDrop';
 import { useSidebar } from '@/composables/core/useSidebar';
 import { useSettings } from '@/composables/core/useSettings';
@@ -17,6 +21,8 @@ import {
   PhCheck,
   PhPushPin,
   PhFloppyDisk,
+  PhSortAscending,
+  PhCaretDown,
 } from '@phosphor-icons/vue';
 import type { Feed } from '@/types/models';
 import type { FilterCondition, SavedFilter } from '@/types/filter';
@@ -122,6 +128,12 @@ const editingFilter = ref<SavedFilter | null>(null);
 const draggingFilterId = ref<number | null>(null);
 
 // Compact mode setting (layout_mode === 'compact')
+const { entries: categoryEntries } = useCategoryOrder();
+const { mode: sidebarSortMode, setMode: setSidebarSortMode } = useSidebarSort();
+const sortMenuRef = ref<HTMLElement | null>(null);
+const showSortMenu = ref(false);
+const currentSidebarSortLabel = computed(() => t(`sidebar.order.${sidebarSortMode.value}`));
+
 const compactMode = computed(() => {
   return settings.value.layout_mode === 'compact';
 });
@@ -139,6 +151,7 @@ onMounted(async () => {
   window.addEventListener('layout-mode-changed', handleLayoutModeChange);
   // Listen for category expansion events
   window.addEventListener('categories-expanded', handleCategoriesExpanded);
+  document.addEventListener('click', handleSortMenuClickOutside);
 });
 
 // Handle layout mode changes
@@ -161,7 +174,24 @@ function handleCategoriesExpanded() {
 onUnmounted(() => {
   window.removeEventListener('layout-mode-changed', handleLayoutModeChange);
   window.removeEventListener('categories-expanded', handleCategoriesExpanded);
+  document.removeEventListener('click', handleSortMenuClickOutside);
+  if (autoExpandTimeout) clearTimeout(autoExpandTimeout);
 });
+
+function handleSortMenuClickOutside(event: MouseEvent) {
+  if (
+    showSortMenu.value &&
+    event.target instanceof Node &&
+    !sortMenuRef.value?.contains(event.target)
+  ) {
+    showSortMenu.value = false;
+  }
+}
+
+function selectSidebarSortMode(mode: string) {
+  showSortMenu.value = false;
+  void setSidebarSortMode(mode);
+}
 
 // Edit mode for drag reordering
 const isEditMode = ref(false);
@@ -175,6 +205,7 @@ function toggleEditMode() {
 }
 
 const {
+  contentOptionsFeed,
   tree,
   categoryUnreadCounts,
   feedUnreadCounts,
@@ -256,6 +287,11 @@ const {
 
 // Handle drag events
 function handleDragStart(feedId: number, event: Event) {
+  if (sidebarSortMode.value !== 'manual') {
+    event.preventDefault();
+    window.showToast(t('sidebar.order.manualRequired'), 'info');
+    return;
+  }
   const feed = store.feeds?.find((f) => f.id === feedId);
   if (feed?.is_freshrss_source) {
     event.preventDefault();
@@ -269,6 +305,7 @@ function handleDragStart(feedId: number, event: Event) {
 }
 
 function handleDragEnd() {
+  isDragging.value = false;
   onDragEnd();
 }
 
@@ -662,12 +699,60 @@ function handleFilterDragEnd() {
             </div>
           </div>
 
+          <div ref="sortMenuRef" class="relative px-2 py-1">
+            <button
+              type="button"
+              class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-text-secondary transition-colors hover:bg-bg-tertiary hover:text-text-primary"
+              :title="t('sidebar.order.sort')"
+              :aria-label="t('sidebar.order.sort')"
+              :aria-expanded="showSortMenu"
+              @click="showSortMenu = !showSortMenu"
+              @keydown.esc="showSortMenu = false"
+            >
+              <PhSortAscending :size="15" class="shrink-0" />
+              <span class="min-w-0 flex-1 truncate text-left">{{ currentSidebarSortLabel }}</span>
+              <PhCaretDown
+                :size="12"
+                class="shrink-0 transition-transform"
+                :class="showSortMenu ? 'rotate-180' : ''"
+              />
+            </button>
+            <Transition
+              enter-active-class="transition duration-100 ease-out"
+              enter-from-class="-translate-y-1 opacity-0"
+              enter-to-class="translate-y-0 opacity-100"
+              leave-active-class="transition duration-75 ease-in"
+              leave-from-class="translate-y-0 opacity-100"
+              leave-to-class="-translate-y-1 opacity-0"
+            >
+              <div
+                v-if="showSortMenu"
+                class="absolute left-2 right-2 top-full z-30 overflow-hidden rounded-lg border border-border bg-bg-primary py-1 shadow-xl"
+              >
+                <button
+                  v-for="mode in sidebarSortModes"
+                  :key="mode"
+                  type="button"
+                  class="flex w-full items-center gap-2 px-2.5 py-2 text-left text-xs text-text-primary transition-colors hover:bg-bg-tertiary"
+                  :class="sidebarSortMode === mode ? 'bg-bg-secondary text-accent' : ''"
+                  @click="selectSidebarSortMode(mode)"
+                >
+                  <PhCheck
+                    :size="14"
+                    class="shrink-0"
+                    :class="sidebarSortMode === mode ? 'opacity-100' : 'opacity-0'"
+                  />
+                  <span>{{ t(`sidebar.order.${mode}`) }}</span>
+                </button>
+              </div>
+            </Transition>
+          </div>
           <!-- Categories List -->
           <div
             class="categories-list sidebar-hover-scrollbar flex-1 overflow-y-auto overflow-x-hidden"
           >
             <SidebarCategory
-              v-for="(data, name) in filteredTree.tree"
+              v-for="[name, data] in categoryEntries(filteredTree.tree)"
               :key="name"
               :name="name"
               :feeds="data._feeds"
@@ -678,10 +763,13 @@ function handleFilterDragEnd() {
               :unread-count="categoryUnreadCounts[name] || 0"
               :current-feed-id="store.currentFeedId"
               :feed-unread-counts="feedUnreadCounts"
+              :category-counts="categoryUnreadCounts"
+              :category-entries="categoryEntries"
               :is-drag-over="dragOverCategory === name"
               :is-edit-mode="isEditMode"
               :drop-preview="dropPreview"
               :dragging-feed-id="draggingFeedId"
+              :drag-over-path="dragOverCategory"
               :is-category-open="checkIsCategoryOpen"
               :compact-mode="compactMode"
               @toggle="() => toggleCategory(name)"
@@ -694,12 +782,12 @@ function handleFilterDragEnd() {
               @feed-context-menu="onFeedContextMenu"
               @dragstart="(feedId: number, e: Event) => handleDragStart(feedId, e)"
               @dragend="handleDragEnd"
-              @feed-drag-over="(feedId: number | null, e: Event) => handleDragOver(name, feedId, e)"
+              @feed-drag-over="handleDragOver"
               @category-drag-over="
                 (categoryName: string, e: Event) => handleCategoryDragOver(categoryName, e)
               "
               @dragleave="(categoryName: string, e: Event) => handleDragLeave(categoryName, e)"
-              @drop="() => handleDrop(name, data._feeds)"
+              @drop="handleDrop"
             />
 
             <!-- Uncategorized -->
@@ -716,10 +804,13 @@ function handleFilterDragEnd() {
               :unread-count="categoryUnreadCounts['uncategorized'] || 0"
               :current-feed-id="store.currentFeedId"
               :feed-unread-counts="feedUnreadCounts"
+              :category-counts="categoryUnreadCounts"
+              :category-entries="categoryEntries"
               :is-drag-over="dragOverCategory === 'uncategorized'"
               :is-edit-mode="isEditMode"
               :drop-preview="dropPreview"
               :dragging-feed-id="draggingFeedId"
+              :drag-over-path="dragOverCategory"
               :is-category-open="checkIsCategoryOpen"
               :compact-mode="compactMode"
               @toggle="toggleCategory('uncategorized')"
@@ -729,14 +820,12 @@ function handleFilterDragEnd() {
               @feed-context-menu="onFeedContextMenu"
               @dragstart="(feedId: number, e: Event) => handleDragStart(feedId, e)"
               @dragend="handleDragEnd"
-              @feed-drag-over="
-                (feedId: number | null, e: Event) => handleDragOver('uncategorized', feedId, e)
-              "
+              @feed-drag-over="handleDragOver"
               @category-drag-over="
                 (categoryName: string, e: Event) => handleCategoryDragOver(categoryName, e)
               "
               @dragleave="(categoryName: string, e: Event) => handleDragLeave(categoryName, e)"
-              @drop="() => handleDrop('uncategorized', filteredTree.uncategorized)"
+              @drop="handleDrop"
             />
           </div>
 
@@ -826,6 +915,14 @@ function handleFilterDragEnd() {
       @save="handleEditFilter"
     />
   </Teleport>
+  <BaseModal
+    v-if="contentOptionsFeed"
+    :title="t('modal.feed.contentOptions') + ' · ' + contentOptionsFeed.title"
+    size="lg"
+    @close="contentOptionsFeed = null"
+  >
+    <FeedContentOptions :feed-id="contentOptionsFeed.id" />
+  </BaseModal>
 </template>
 
 <style scoped>

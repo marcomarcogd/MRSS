@@ -62,7 +62,7 @@ git clone https://github.com/marcomarcogd/MRSS.git
 cd MRSS
 go mod download
 cd frontend && npm ci && cd ..
-go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.8
+go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.15
 task build
 ```
 
@@ -92,3 +92,5 @@ MRSS 是基于 [DevXDojo/MrRSS](https://github.com/DevXDojo/MrRSS) 修改的非�
 MRSS 按 [GNU GPL-3.0](LICENSE) 许可证发布，保留原始许可证、既有版权声明和 Git 历史。本发行版对应源码位于 [marcomarcogd/MRSS](https://github.com/marcomarcogd/MRSS)。本软件不提供任何担保，详情请参阅许可证。
 
 复刻版问题请提交到 [MRSS Issues](https://github.com/marcomarcogd/MRSS/issues)；准备贡献给上游的修复，应另行遵循上游项目的贡献流程。
+
+浏览器阅读界面的本地启动方法见[浏览器界面](docs/SERVER_MODE/README.md)。

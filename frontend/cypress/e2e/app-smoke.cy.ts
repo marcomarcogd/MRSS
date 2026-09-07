@@ -62,7 +62,7 @@ describe('Application Smoke Tests', () => {
 
     // Open settings - find the gear icon button
     cy.get('button')
-      .filter('[title="Settings"], [title="设置"]')
+      .filter('[title^="Settings"], [title^="设置"]')
       .should('exist')
       .click({ force: true });
 
@@ -177,7 +177,7 @@ describe('Application Smoke Tests', () => {
 
     // Open settings
     cy.get('button')
-      .filter('[title="Settings"], [title="设置"]')
+      .filter('[title^="Settings"], [title^="设置"]')
       .should('exist')
       .click({ force: true });
     cy.wait(500);

@@ -17,42 +17,23 @@ type AITranslator struct {
 	Model         string
 	SystemPrompt  string
 	CustomHeaders string
-	httpClient    *http.Client
 	client        *ai.Client
+	httpClient    *http.Client
 }
 
 // NewAITranslator creates a new AI translator with the given credentials.
 // endpoint should be the full API URL (e.g., "https://api.openai.com/v1/chat/completions" for OpenAI, "http://localhost:11434/api/generate" for Ollama)
 // model should be the model name (e.g., "gpt-4o-mini", "claude-3-haiku-20240307")
 func NewAITranslator(apiKey, endpoint, model string) *AITranslator {
-	defaults := config.Get()
-	// Default to OpenAI endpoint if not specified
-	if endpoint == "" {
-		endpoint = defaults.AIEndpoint
-	}
-	// Default to a cost-effective model if not specified
-	if model == "" {
-		model = defaults.AIModel
-	}
-
-	httpClient, err := CreateHTTPClientWithProxy(nil, 30*time.Second)
-	if err != nil {
-		httpClient = &http.Client{Timeout: 30 * time.Second}
-	}
-	translator := &AITranslator{
-		APIKey:        apiKey,
-		Endpoint:      strings.TrimSuffix(endpoint, "/"),
-		Model:         model,
-		SystemPrompt:  "",
-		CustomHeaders: "",
-		httpClient:    httpClient,
-	}
-	translator.rebuildClient()
-	return translator
+	return newAITranslator(apiKey, endpoint, model, nil)
 }
 
-// NewAITranslatorWithDB creates a new AI translator with database for proxy support
+// NewAITranslatorWithDB creates a new AI translator with database for proxy support.
 func NewAITranslatorWithDB(apiKey, endpoint, model string, db DBInterface) *AITranslator {
+	return newAITranslator(apiKey, endpoint, model, db)
+}
+
+func newAITranslator(apiKey, endpoint, model string, db DBInterface) *AITranslator {
 	defaults := config.Get()
 	if endpoint == "" {
 		endpoint = defaults.AIEndpoint
@@ -63,7 +44,7 @@ func NewAITranslatorWithDB(apiKey, endpoint, model string, db DBInterface) *AITr
 
 	httpClient, err := CreateHTTPClientWithProxy(db, 30*time.Second)
 	if err != nil {
-		// Fallback to default client if proxy creation fails
+		// Keep a usable HTTP/2-capable fallback when proxy settings are invalid.
 		httpClient = &http.Client{Timeout: 30 * time.Second}
 	}
 
@@ -75,11 +56,23 @@ func NewAITranslatorWithDB(apiKey, endpoint, model string, db DBInterface) *AITr
 		CustomHeaders: "",
 		httpClient:    httpClient,
 	}
-	translator.rebuildClient()
+	translator.recreateClient()
 	return translator
 }
 
-func (t *AITranslator) rebuildClient() {
+// SetSystemPrompt sets a custom system prompt for the translator.
+func (t *AITranslator) SetSystemPrompt(prompt string) {
+	t.SystemPrompt = prompt
+	t.recreateClient()
+}
+
+// SetCustomHeaders sets custom headers for AI requests.
+func (t *AITranslator) SetCustomHeaders(headers string) {
+	t.CustomHeaders = headers
+	t.recreateClient()
+}
+
+func (t *AITranslator) recreateClient() {
 	clientConfig := ai.ClientConfig{
 		APIKey:        t.APIKey,
 		Endpoint:      t.Endpoint,
@@ -89,18 +82,6 @@ func (t *AITranslator) rebuildClient() {
 		Timeout:       30 * time.Second,
 	}
 	t.client = ai.NewClientWithHTTPClient(clientConfig, t.httpClient)
-}
-
-// SetSystemPrompt sets a custom system prompt for the translator.
-func (t *AITranslator) SetSystemPrompt(prompt string) {
-	t.SystemPrompt = prompt
-	t.rebuildClient()
-}
-
-// SetCustomHeaders sets custom headers for AI requests.
-func (t *AITranslator) SetCustomHeaders(headers string) {
-	t.CustomHeaders = headers
-	t.rebuildClient()
 }
 
 // Translate translates text to the target language using an OpenAI-compatible API.

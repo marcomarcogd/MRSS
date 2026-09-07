@@ -5,6 +5,18 @@ All notable changes to MRSS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### 中文
+
+- 合入官方 v1.3.31 的设置搜索、阅读进度、段落翻译、侧栏排序、规则备份、全文提取和 AI 聊天增强；保留 MRSS 日报、字体、更新源及跨平台打包定制。
+- 翻译继续使用手动、自动、关闭三种模式，新增标题及 Ctrl/Command 点击段落翻译；Wails 与前端 runtime 对齐 beta.15。
+
+### English
+
+- Integrate upstream v1.3.31 settings search, reading progress, paragraph translation, sidebar sorting, rule backups, full-text extraction and AI chat enhancements while preserving MRSS daily reports, fonts, update source and platform packaging.
+- Keep the existing manual, automatic and off translation modes, with on-demand title and Ctrl/Command-click paragraph translation; align Wails and its frontend runtime at beta.15.
+
 ## [1.7.0] - 2026-08-19
 
 ### 中文
@@ -331,6 +343,134 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Fixed article cards reloading stale layout settings and preventing users from switching away from card layout. (#987)
+
+## [Unreleased]
+
+## [1.3.31] - 2026-09-06
+
+### Added
+
+- Add a copy-title action to the article toolbar. (#1088)
+- Add an option to disable restoring the last reading position for each article. (#1089)
+- Add AI chat profile switching, a shortcut to AI settings, and per-message copy actions. (#1092)
+- Add a reload action to the feed editing dialog. (#1093)
+- Add built-in summary and question suggestions to AI chat, plus user-managed custom prompts. (#1096)
+
+### Changed
+
+- Size toast notifications to their content while preserving a responsive maximum width. (#1074)
+- Center the settings search field independently of the surrounding header controls. (#1075)
+- Add clear hover feedback to selected dropdown options. (#1076)
+- Soften filled accent backgrounds in dark mode without muting accent-colored text. (#1079)
+- Align feed extraction options with the spacing used by other advanced settings. (#1081)
+- Use the shared dropdown control in statistics settings. (#1082)
+- Unify settings dropdown backgrounds. (#1087)
+- Widen AI profile selectors so profile names remain readable. (#1090)
+- Align article body content with its title and summary. (#1094)
+- Use consistent toolbar colors and pointer feedback in the multimedia gallery. (#1086, #1095)
+
+### Fixed
+
+- Preserve the AI settings scroll position when dependent controls expand or collapse. (#1072)
+- Use distinct, meaningful icons for article context-menu actions. (#1073)
+- Keep the selected article visible when returning to its feed and when closing card view. (#1077, #1078)
+- Refresh system-tray labels after changing the application language. (#1080)
+- Remove the duplicate native clear control from settings search. (#1083)
+- Remove duplicate discovery progress states and actions, correct selected-feed counts, and restore tertiary text styling. (#1084)
+- Open a feed's website homepage instead of its subscription document when metadata is available. (#1085)
+- Keep the settings modal above the floating AI chat panel. (#1091)
+
+## [1.3.30] - 2026-09-06
+
+### Added
+
+- Add bilingual settings search with ranked, keyboard-accessible results that open the exact setting without hiding navigation. (#1067)
+- Add an opt-out confirmation setting for bulk mark-as-read actions across article and sidebar menus. (#1063)
+- Add a floating back-to-top button for long articles. (#1057)
+- Show a live reading-progress bar while scrolling through an article. (#1058)
+
+### Changed
+
+- Replace the sidebar's boxed native sort field with a lightweight menu aligned with the surrounding navigation controls. (#1071)
+- Unify shared button, form-control, dropdown, settings-card and keyboard-focus styling. (#1071)
+- Standardize read and unread controls on hollow and filled circle icons across article views. (#1070)
+- Show publication timestamps to minute precision when hovering article dates. (#1066)
+- Let the up-to-date status card shrink to its content when no download action is present. (#1065)
+- Replace the misleading empty unread-list error copy with a clear all-caught-up state. (#1064)
+- Center article bodies at a readable 68-character line width with more consistent paragraph and list spacing. (#1059)
+
+### Fixed
+
+- Localize AI chat failures and feed update-status tooltips instead of exposing English backend values. (#1062)
+- Keep AI feature toggles anchored while their dependent settings expand or collapse. (#1061)
+- Use the theme's neutral primary text color consistently in AI profile forms and article chat. (#1060)
+- Keep the article-summary heading stationary when generated content and action buttons appear. (#1068)
+- Let collapsed article-summary cards shrink to their header instead of leaving a large blank area. (#1056)
+- Keep the article list anchored at the selected item after marking newer or older articles as read. (#1055)
+
+## [1.3.29] - 2026-09-05
+
+### Added
+
+- Configure per-subscription full-text CSS selection and removal, including local extraction settings for FreshRSS feeds. (#908)
+- Save and replace encrypted Cookies scoped to an exact website origin for feed and article requests. (#828)
+- Render Markdown feed bodies, tables and code fences while preserving language and math markers. (#799)
+- Pin categories and subscriptions within their level, and sort the sidebar by name, count, latest article or saved custom order. (#548)
+- Export versioned JSON automation-rule backups and import validated rules without replacing existing rules or immediately applying them to old articles. (#455)
+- Add confirmed category dissolution and bulk unsubscribe actions, with atomic updates and protection for FreshRSS-managed subscriptions. (#508)
+- Drag sibling categories, including nested folders, into a persistent custom order in sidebar edit mode. (#757, #587)
+- Added on-demand translation with a title button and Ctrl/Command-click paragraph translation, while retaining automatic translation by default (#736).
+- Add selected-text search with Google, Bing, Baidu, and DuckDuckGo in the article reader, preserving native menus outside plain text selections. (#358)
+
+### Changed
+
+- Document the existing browser reader, frontend/server build sequence, local URL, and server data directory in English and Chinese (#421).
+- Keep custom CSS active across the whole application, including startup and views without an open article; support replacement and deletion without stale requests restoring old styles (#672).
+- Show current, customizable keyboard shortcuts in navigation, article, search, and toolbar hints; hide shortcut hints when shortcuts are disabled. (#567)
+- Update website dependencies, goquery, and Wails to beta.15 with a matching frontend runtime. (#1047, #1048)
+
+### Fixed
+
+- Distinguish native Gemini from its compatible Chat Completions API, use the selected model in native URLs, preserve system instructions and multipart answers, and document provider setup in both languages (#542).
+- Complete native Claude Messages integration: detect custom `/messages` routes, normalize official base URLs, separate chat system instructions, and preserve native protocol errors (#656).
+- Close macOS windows to the tray on the first click; fullscreen windows hide after the native exit event, and reopening cancels a pending hide and focuses the reader (#796).
+- Preserve maximized windows when restoring from the tray, tray menu, or a second instance; avoid replaying window bounds and accidentally unmaximizing via Restore (#320).
+- Remove blocking external font and icon requests during startup; the interface can render on restricted or offline networks (#626).
+- Recover empty or expired article caches, invalidate both cache layers on reload, and preserve saved reading content during automatic age cleanup. (#795)
+- Schedule size cleanup after refresh tasks; remove eligible content oldest-first while retaining fresh, favorite and read-later content. (#805)
+- Recover older articles that have left the RSS window and discard stale reader requests, retaining saved descriptions when the source is unavailable. (#948)
+- Automatically fetch full text once per selected article, including empty RSS entries, with manual retry and isolation from late responses. (#982)
+- Decode article page encodings, resolve images against redirect destinations, retain common lazy images, and support semantic-container extraction fallback. (#601)
+- Balance gallery columns using decoded image dimensions, reserve lazy-image space, preserve visible scroll anchors, and deduplicate paginated entries. (#605)
+- Stabilize feed drag indicators over icons, row gaps and empty categories, and keep drag auto-scrolling tied to the pointer. (#501)
+- Show favorite counts for subscriptions and nested categories, and keep read favorites visible regardless of the unread-only preference. (#653)
+- Image gallery articles now honor per-feed and global external-browser preferences, including video feeds (#779).
+- Support browser clipboard access with native fallback and report failures from the article toolbar copy-link action. (#427)
+- Return from favorites, read later, or search to an article's feed without stale filters or losing articles outside the first page; add a feed navigation context-menu action. (#561)
+- Keep button hover hints consistent when the pointer is over a decorative icon. (#696)
+- Prevent automatic refresh loops when the configured interval exceeds the browser timer limit. (#1046, #1051)
+- Keep the selected article visible during background refreshes, discard stale navigation responses, and avoid duplicate articles when paging. (#874, #1052)
+- Use consistent proxy-aware HTTP transport for AI profile tests, translation, summaries, and chat, preserving custom configuration and escaped proxy credentials. (#1044, #1050)
+- Translate mixed text and media article content while retaining inline links and emphasis, supporting retries, and ignoring stale translation results. (#909, #1053)
+- Report real update download progress, retry interrupted transfers, isolate concurrent downloads, reject invalid partial responses, and provide a manual download fallback. (#1043, #1049)
+
+## [1.3.28] - 2026-08-29
+
+### Added
+
+- Persist article AI chat exchanges in the existing chat session tables so conversations remain accessible after creating a new conversation, switching sessions, or restarting the app. (#1038) (@marcomarcogd)
+
+### Changed
+
+- Makes AI search results explainable and navigable. (#1027) (@marcomarcogd)
+- Updates the AI usage card immediately while the user edits the token limit and refreshes actual usage while the AI settings page remains visible. (#1028) (@marcomarcogd)
+- Classifies AI provider and transport failures into stable, user-facing error codes and short localized messages. (#1034) (@marcomarcogd)
+
+### Fixed
+
+- Makes SaveArticles atomic under SQLite write contention. (#1029) (@marcomarcogd)
+- Keep toast notifications inside narrow application windows even when messages contain long continuous text. (#1036) (@marcomarcogd)
+- Restore a stable, aligned feed-management table in Settings and keep row interaction inside the settings workflow. (#1023) (@marcomarcogd)
 
 ## [1.3.27] - 2026-08-22
 

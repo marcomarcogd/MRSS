@@ -16,7 +16,10 @@ describe('Theme and Language Switching', () => {
     cy.wait('@getFeeds', { timeout: 10000 });
 
     // Open settings
-    cy.get('button').filter('[title="Settings"], [title="设置"]').should('exist').click({ force: true });
+    cy.get('button')
+      .filter('[title^="Settings"], [title^="设置"]')
+      .should('exist')
+      .click({ force: true });
     cy.wait('@getSettings');
 
     // Navigate to general tab
@@ -52,7 +55,10 @@ describe('Theme and Language Switching', () => {
     cy.wait('@getFeeds', { timeout: 10000 });
 
     // Open settings and change theme
-    cy.get('button').filter('[title="Settings"], [title="设置"]').should('exist').click({ force: true });
+    cy.get('button')
+      .filter('[title^="Settings"], [title^="设置"]')
+      .should('exist')
+      .click({ force: true });
     cy.wait('@getSettings');
 
     cy.contains(/general|常规/i).click({ force: true });
@@ -82,7 +88,10 @@ describe('Theme and Language Switching', () => {
     cy.wait('@getFeeds', { timeout: 10000 });
 
     // Open settings
-    cy.get('button').filter('[title="Settings"], [title="设置"]').should('exist').click({ force: true });
+    cy.get('button')
+      .filter('[title^="Settings"], [title^="设置"]')
+      .should('exist')
+      .click({ force: true });
     cy.wait('@getSettings');
 
     // Navigate to general tab
@@ -125,7 +134,10 @@ describe('Theme and Language Switching', () => {
     cy.wait('@getFeeds', { timeout: 10000 });
 
     // Open settings and change language
-    cy.get('button').filter('[title="Settings"], [title="设置"]').should('exist').click({ force: true });
+    cy.get('button')
+      .filter('[title^="Settings"], [title^="设置"]')
+      .should('exist')
+      .click({ force: true });
     cy.wait('@getSettings');
 
     cy.contains(/general|常规/i).click({ force: true });
@@ -159,12 +171,18 @@ describe('Theme and Language Switching', () => {
         cy.wait(2000);
 
         // Verify Chinese language persisted by opening settings
-        cy.get('button').filter('[title="Settings"], [title="设置"]').should('exist').click({ force: true });
+        cy.get('button')
+          .filter('[title^="Settings"], [title^="设置"]')
+          .should('exist')
+          .click({ force: true });
         cy.wait('@getSettings', { timeout: 5000 });
         cy.contains(/general|常规/i).click({ force: true });
 
         // Check the language selector value directly with retries
-        cy.get('[data-testid="language-selector"]', { timeout: 10000 }).should('have.value', 'zh-CN');
+        cy.get('[data-testid="language-selector"]', { timeout: 10000 }).should(
+          'have.value',
+          'zh-CN'
+        );
       } else {
         cy.log('Language selector not found - skipping test');
       }
@@ -176,7 +194,10 @@ describe('Theme and Language Switching', () => {
     cy.wait('@getFeeds', { timeout: 10000 });
 
     // Open settings
-    cy.get('button').filter('[title="Settings"], [title="设置"]').should('exist').click({ force: true });
+    cy.get('button')
+      .filter('[title^="Settings"], [title^="设置"]')
+      .should('exist')
+      .click({ force: true });
     cy.wait('@getSettings');
 
     // Navigate to general tab
@@ -204,7 +225,10 @@ describe('Theme and Language Switching', () => {
     cy.wait('@getFeeds', { timeout: 10000 });
 
     // Switch to dark theme
-    cy.get('button').filter('[title="Settings"], [title="设置"]').should('exist').click({ force: true });
+    cy.get('button')
+      .filter('[title^="Settings"], [title^="设置"]')
+      .should('exist')
+      .click({ force: true });
     cy.wait('@getSettings');
 
     cy.contains(/general|常规/i).click({ force: true });

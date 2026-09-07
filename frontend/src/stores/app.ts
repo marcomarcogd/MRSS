@@ -51,13 +51,17 @@ export function createAutoRefreshScheduler(
   };
 
   const schedule = (currentGeneration: number) => {
-    if (currentGeneration !== generation || intervalMs <= 0) return;
+    if (currentGeneration !== generation || intervalMs <= 0) {
+      return;
+    }
 
     const remaining = Math.max(0, nextRefreshAt - now());
     timer = setTimeout(
       () => {
         timer = null;
-        if (currentGeneration !== generation || intervalMs <= 0) return;
+        if (currentGeneration !== generation || intervalMs <= 0) {
+          return;
+        }
 
         const currentTime = now();
         if (currentTime < nextRefreshAt) {
@@ -66,12 +70,15 @@ export function createAutoRefreshScheduler(
         }
 
         // Advance directly to the next future deadline. If the computer slept
-        // across several intervals, trigger one catch-up refresh only.
+        // across several intervals, this triggers one catch-up refresh instead
+        // of replaying every missed interval.
         const missedIntervals = Math.floor((currentTime - nextRefreshAt) / intervalMs);
         nextRefreshAt += (missedIntervals + 1) * intervalMs;
         schedule(currentGeneration);
 
-        if (canRefresh()) void onRefresh();
+        if (canRefresh()) {
+          void onRefresh();
+        }
       },
       Math.min(remaining, MAX_TIMER_DELAY_MS)
     );
@@ -87,8 +94,11 @@ export function createAutoRefreshScheduler(
   return {
     start(minutes: number) {
       stop();
+
       const requestedInterval = minutes * MINUTE_MS;
-      if (!Number.isFinite(requestedInterval) || requestedInterval <= 0) return;
+      if (!Number.isFinite(requestedInterval) || requestedInterval <= 0) {
+        return;
+      }
 
       intervalMs = requestedInterval;
       nextRefreshAt = now() + intervalMs;
@@ -136,7 +146,7 @@ export interface AppActions {
   setFeed: (feedId: number) => void;
   selectFeedInArticleList: (feedId: number, articleId?: number) => void;
   setCategory: (category: string) => void;
-  fetchArticles: (append?: boolean, preserveExisting?: boolean) => Promise<void>;
+  fetchArticles: (append?: boolean, preserveExisting?: boolean | 'navigation') => Promise<void>;
   loadMore: () => Promise<void>;
   fetchFeeds: () => Promise<void>;
   fetchUnreadCounts: () => Promise<void>;
@@ -213,6 +223,7 @@ export const useAppStore = defineStore('app', () => {
   // Refresh progress
   const refreshProgress = ref<RefreshProgress>({ isRunning: false });
   let latestFeedsRequestId = 0;
+  let latestArticlesRequestId = 0;
   let activeFeedsRequests = 0;
 
   // Actions - Article Management
@@ -247,14 +258,28 @@ export const useAppStore = defineStore('app', () => {
 
   function selectFeedInArticleList(feedId: number, articleId?: number): void {
     currentView.value = 'articles';
+    const selected = navigableArticles.value.find((article) => article.id === articleId);
     currentFilter.value = 'all';
     currentFeedId.value = feedId;
     currentCategory.value = null;
     tempSelection.value = { feedId, category: null };
+    activeFilters.value = [];
+    isFilterLoading.value = false;
+    filteredArticlesFromServer.value = [];
+    articleNavigationContext.value = null;
+    searchQuery.value = '';
+    showOnlyUnread.value = false;
+    localStorage.setItem('showOnlyUnread', 'false');
+    articles.value = articles.value.filter((article) => article.feed_id === feedId);
+    if (selected && !articles.value.some((article) => article.id === selected.id)) {
+      articles.value.push(selected);
+    }
     if (articleId !== undefined) {
       currentArticleId.value = articleId;
     }
-    fetchArticles();
+    window.dispatchEvent(new CustomEvent('article-feed-selected'));
+    void fetchFilterCounts();
+    void fetchArticles(false, 'navigation');
   }
 
   function setCategory(category: string): void {
@@ -290,10 +315,11 @@ export const useAppStore = defineStore('app', () => {
 
   async function fetchArticles(
     append: boolean = false,
-    preserveExisting: boolean = false
+    preserveExisting: boolean | 'navigation' = false
   ): Promise<void> {
-    if (isLoading.value) return;
+    if (isLoading.value && (append || preserveExisting === true)) return;
 
+    const requestId = ++latestArticlesRequestId;
     const previousArticles = articles.value;
 
     // If not appending, reset to page 1 and clear articles
@@ -310,21 +336,32 @@ export const useAppStore = defineStore('app', () => {
 
     let url = `/api/articles?page=${page.value}&limit=${limit}`;
     if (currentFilter.value) url += `&filter=${currentFilter.value}`;
-    if (showOnlyUnread.value && currentFilter.value !== 'unread') url += '&only_unread=true';
+    if (
+      showOnlyUnread.value &&
+      currentFilter.value !== 'unread' &&
+      currentFilter.value !== 'favorites'
+    )
+      url += '&only_unread=true';
     if (currentFeedId.value) url += `&feed_id=${currentFeedId.value}`;
     if (currentCategory.value !== null)
       url += `&category=${encodeURIComponent(currentCategory.value)}`;
 
     try {
       const res = await fetch(url);
+      if (!res.ok) throw new Error(`Failed to fetch articles: HTTP ${res.status}`);
       const data: Article[] = (await res.json()) || [];
+      if (!Array.isArray(data)) throw new Error('Invalid article response');
+      if (requestId !== latestArticlesRequestId) return;
 
       if (data.length < limit) {
         hasMore.value = false;
       }
 
       if (append) {
-        articles.value = [...articles.value, ...data];
+        // A selected article retained during refresh may reappear on this page.
+        // Use the fresh copy at its proper position instead of rendering it twice.
+        const pageIds = new Set(data.map((article) => article.id));
+        articles.value = [...articles.value.filter((article) => !pageIds.has(article.id)), ...data];
       } else {
         articles.value = preserveExisting
           ? preserveSelectedArticle(data, previousArticles, currentArticleId.value)
@@ -333,7 +370,7 @@ export const useAppStore = defineStore('app', () => {
     } catch {
       // Error handled silently
     } finally {
-      isLoading.value = false;
+      if (requestId === latestArticlesRequestId) isLoading.value = false;
     }
   }
 

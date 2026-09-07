@@ -45,7 +45,7 @@ describe('Auto Update Feature', () => {
       cy.title().should('eq', 'MRSS');
       cy.wait('@getFeeds', { timeout: 10000 });
       cy.get('button')
-        .filter('[title="Settings"], [title="设置"]')
+        .filter('[title^="Settings"], [title^="设置"]')
         .should('exist')
         .click({ force: true });
       cy.contains(/about|关于/i).click({ force: true });
@@ -58,7 +58,7 @@ describe('Auto Update Feature', () => {
 
       // Open settings modal
       cy.get('button')
-        .filter('[title="Settings"], [title="设置"]')
+        .filter('[title^="Settings"], [title^="设置"]')
         .should('exist')
         .click({ force: true });
 
@@ -80,7 +80,7 @@ describe('Auto Update Feature', () => {
 
       // Open settings modal
       cy.get('button')
-        .filter('[title="Settings"], [title="设置"]')
+        .filter('[title^="Settings"], [title^="设置"]')
         .should('exist')
         .click({ force: true });
 
@@ -112,7 +112,7 @@ describe('Auto Update Feature', () => {
 
       // Open settings and enable auto update
       cy.get('button')
-        .filter('[title="Settings"], [title="设置"]')
+        .filter('[title^="Settings"], [title^="设置"]')
         .should('exist')
         .click({ force: true });
 
@@ -133,7 +133,7 @@ describe('Auto Update Feature', () => {
 
       // Reopen settings
       cy.get('button')
-        .filter('[title="Settings"], [title="设置"]')
+        .filter('[title^="Settings"], [title^="设置"]')
         .should('exist')
         .click({ force: true });
       cy.wait('@getSettings');
@@ -326,7 +326,7 @@ describe('Auto Update Feature', () => {
 
       // Open settings modal
       cy.get('button')
-        .filter('[title="Settings"], [title="设置"]')
+        .filter('[title^="Settings"], [title^="设置"]')
         .should('exist')
         .click({ force: true });
 
@@ -355,7 +355,7 @@ describe('Auto Update Feature', () => {
 
       // Open settings modal
       cy.get('button')
-        .filter('[title="Settings"], [title="设置"]')
+        .filter('[title^="Settings"], [title^="设置"]')
         .should('exist')
         .click({ force: true });
 
@@ -490,47 +490,58 @@ describe('Auto Update Feature', () => {
   });
 
   describe('Error Handling', () => {
-    it('should handle download failure gracefully', () => {
-      // Enable startup update checks.
-      cy.intercept('GET', '/api/settings', {
-        statusCode: 200,
-        body: {
-          update_check_enabled: 'true',
-          theme: 'light',
-          language: 'en-US',
-          update_interval: '30',
-        },
-      }).as('getSettings');
+    [false, true].forEach((forceNetworkError) => {
+      it(`should handle ${forceNetworkError ? 'transport' : 'server'} download failure gracefully`, () => {
+        // Enable startup update checks.
+        cy.intercept('GET', '/api/settings', {
+          statusCode: 200,
+          body: {
+            update_check_enabled: 'true',
+            theme: 'light',
+            language: 'en-US',
+            update_interval: '30',
+          },
+        }).as('getSettings');
 
-      // Mock update check API
-      cy.intercept('GET', '/api/check-updates', {
-        statusCode: 200,
-        body: mockUpdateInfo,
-      }).as('checkUpdates');
+        // Mock update check API
+        cy.intercept('GET', '/api/check-updates', {
+          statusCode: 200,
+          body: mockUpdateInfo,
+        }).as('checkUpdates');
 
-      // Mock download failure
-      cy.intercept('POST', '/api/download-update', {
-        statusCode: 500,
-        body: { success: false, error_code: 'download_network_error' },
-      }).as('downloadUpdate');
+        // Mock download failure
+        cy.intercept(
+          'POST',
+          '/api/download-update',
+          forceNetworkError
+            ? { forceNetworkError: true }
+            : {
+                statusCode: 500,
+                body: { success: false, error_code: 'download_network_error' },
+              }
+        ).as('downloadUpdate');
+        cy.intercept('POST', '/api/install-update', () => {
+          throw new Error('Installation must not start after a failed download');
+        });
 
-      cy.visit('/');
-      cy.wait('@getFeeds');
+        cy.visit('/');
+        cy.wait('@getFeeds');
 
-      // Wait for update dialog to appear
-      cy.wait(4000);
-      cy.contains(/update available|有可用更新/i, { timeout: 5000 }).should('be.visible');
+        // Wait for update dialog to appear
+        cy.wait(4000);
+        cy.contains(/update available|有可用更新/i, { timeout: 5000 }).should('be.visible');
 
-      // Click "Update Now" button
-      cy.contains(/update now|立即更新/i).click();
+        // Click "Update Now" button
+        cy.contains(/update now|立即更新/i).click();
 
-      // Wait for download attempt
-      cy.wait('@downloadUpdate');
+        // Wait for download attempt
+        cy.wait('@downloadUpdate');
 
-      // Verify error message is shown (via toast notification)
-      cy.get('.toast-container').should('exist');
-      cy.contains(/release page|发布页/i).should('be.visible');
-      cy.contains(/network|网络/i).should('be.visible');
+        // Verify error message is shown (via toast notification)
+        cy.get('.toast-container').should('exist');
+        cy.contains(/release page|发布页/i).should('be.visible');
+        cy.contains(/network|网络/i).should('be.visible');
+      });
     });
 
     it('should handle update check failure gracefully', () => {
@@ -538,7 +549,7 @@ describe('Auto Update Feature', () => {
 
       // Open settings modal
       cy.get('button')
-        .filter('[title="Settings"], [title="设置"]')
+        .filter('[title^="Settings"], [title^="设置"]')
         .should('exist')
         .click({ force: true });
 

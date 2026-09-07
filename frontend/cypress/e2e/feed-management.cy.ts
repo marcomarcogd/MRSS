@@ -16,7 +16,7 @@ describe('Feed Management', () => {
   it('should add a new feed', () => {
     // Look for add feed button in the sidebar footer (+ icon)
     cy.get('button')
-      .filter('[title="Add Feed"], [title="添加订阅"]')
+      .filter('[title^="Add Feed"], [title^="添加订阅"]')
       .should('exist')
       .click({ force: true });
 
@@ -214,13 +214,13 @@ describe('Feed Management settings list', () => {
 
   const openFeedSettings = () => {
     cy.get('button')
-      .filter('[title="Settings"], [title="设置"]')
+      .filter('[title^="Settings"], [title^="设置"]')
       .should('exist')
       .click({ force: true });
     cy.get('[data-settings-modal="true"] .sidebar-tab-btn')
       .contains(/Feeds|订阅源|订阅/i)
       .click({ force: true });
-    cy.get('[data-testid="feed-list"]').should('be.visible');
+    cy.get('[data-testid="feed-list"]').scrollIntoView().should('be.visible');
   };
 
   const makeFeed = (id: number, title: string, url = `https://feeds.example.com/${id}`) => ({
@@ -397,6 +397,20 @@ describe('Feed Management settings list', () => {
 
     cy.get('[data-settings-modal="true"]').should('be.visible');
     cy.contains('h3', /Edit Feed|编辑订阅/).should('not.exist');
+    cy.get('[data-settings-modal="true"] [data-feed-id="1"]').click();
+    cy.contains('h3', /Edit Feed|编辑订阅/)
+      .should('be.visible')
+      .closest('[data-modal-open="true"]')
+      .then(($editModal) => {
+        cy.get('[data-settings-modal="true"]').then(($settingsModal) => {
+          expect(Number($editModal.css('z-index'))).to.be.greaterThan(
+            Number($settingsModal.css('z-index'))
+          );
+        });
+      });
+    cy.get('body').type('{esc}');
+    cy.contains('h3', /Edit Feed|编辑订阅/).should('not.exist');
+    cy.get('[data-settings-modal="true"]').should('be.visible');
     cy.get('[data-settings-modal="true"] [data-feed-id="2"]').click();
     cy.contains('h3', /Edit Feed|编辑订阅/).should('not.exist');
     cy.get('[data-settings-modal="true"]').should('be.visible');
@@ -415,7 +429,11 @@ describe('Feed Management settings list', () => {
     cy.contains('button', /Manage Tags|管理标签/).click();
     cy.get('[data-testid="tag-management-empty"]').should('be.visible');
     cy.get('[data-settings-modal="true"]').should('exist');
-    cy.contains('h3', /Manage Tags|管理标签/).parent().parent().find('button').click();
+    cy.contains('h3', /Manage Tags|管理标签/)
+      .parent()
+      .parent()
+      .find('button')
+      .click();
     cy.get('[data-settings-modal="true"]').should('be.visible');
   });
 

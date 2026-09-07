@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { withShortcut } from '@/composables/ui/shortcutBindings';
 import { useAppStore } from '@/stores/app';
 import { useI18n } from 'vue-i18n';
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick, type Ref } from 'vue';
@@ -9,8 +10,6 @@ import {
   PhFunnel,
   PhTrash,
   PhCheckCircle,
-  PhEye,
-  PhEyeSlash,
   PhCircle,
   PhClock,
   PhLightning,
@@ -45,6 +44,7 @@ const showRefreshTooltip = ref(false);
 const temporarilyKeepArticles = ref<Set<number>>(new Set());
 // Flag to control when scroll position should be restored
 const shouldRestoreScroll = ref(false);
+const pendingFeedArticleId = ref<number | null>(null);
 
 // Card mode modal state
 const showCardModal = ref(false);
@@ -58,6 +58,25 @@ const hasScrolledToBottom = ref(false);
 // Layout mode computed
 const layoutMode = computed(() => settings.value.layout_mode || 'normal');
 const isCardMode = computed(() => layoutMode.value === 'card');
+
+async function scrollPendingFeedArticleIntoView(): Promise<void> {
+  const articleId = pendingFeedArticleId.value;
+  if (!articleId || !listRef.value) return;
+
+  await nextTick();
+  const articleElement = listRef.value.querySelector<HTMLElement>(
+    `[data-article-id="${articleId}"]`
+  );
+  if (articleElement) {
+    articleElement.scrollIntoView({ block: 'nearest' });
+    pendingFeedArticleId.value = null;
+  }
+}
+
+function onArticleFeedSelected(): void {
+  pendingFeedArticleId.value = store.currentArticleId;
+  void scrollPendingFeedArticleIntoView();
+}
 
 interface Props {
   isSidebarOpen?: boolean;
@@ -93,6 +112,10 @@ const isAISearchEnabled = computed(() => settings.value.ai_search_enabled);
 const filteredArticlesFromServer = computed(() => store.filteredArticlesFromServer);
 const isFilterLoading = computed(() => store.isFilterLoading);
 
+const applyUnreadFilter = computed(
+  () => store.showOnlyUnread && store.currentFilter !== 'favorites'
+);
+
 // Computed filtered articles - optimized to avoid excessive recomputation
 const filteredArticles = computed(() => {
   const usesClientSideUnreadFilter = activeFilters.value.length > 0 || isAISearchActive.value;
@@ -100,7 +123,7 @@ const filteredArticles = computed(() => {
   // If AI search is active, use AI search results
   if (isAISearchActive.value) {
     let articles = aiSearchResults.value;
-    if (store.showOnlyUnread) {
+    if (applyUnreadFilter.value) {
       articles = articles.filter(
         (article) =>
           !article.is_read ||
@@ -118,13 +141,13 @@ const filteredArticles = computed(() => {
   // Using a simpler filter that avoids Set.has() calls when possible
   if (
     usesClientSideUnreadFilter &&
-    store.showOnlyUnread &&
+    applyUnreadFilter.value &&
     temporarilyKeepArticles.value.size > 0
   ) {
     articles = articles.filter(
       (article) => !article.is_read || temporarilyKeepArticles.value.has(article.id)
     );
-  } else if (usesClientSideUnreadFilter && store.showOnlyUnread) {
+  } else if (usesClientSideUnreadFilter && applyUnreadFilter.value) {
     // Fast path when no temporarily kept articles
     articles = articles.filter((article) => !article.is_read);
   }
@@ -196,10 +219,47 @@ function searchFieldLabel(field: 'title' | 'summary' | 'content'): string {
   return t(`aiSearch.matchFields.${field}`);
 }
 
-const { showArticleContextMenu } = useArticleActions(t, defaultViewMode, async () => {
-  await store.fetchUnreadCounts();
-  await store.fetchFilterCounts();
-});
+const { showArticleContextMenu } = useArticleActions(
+  t,
+  defaultViewMode,
+  async () => {
+    await store.fetchUnreadCounts();
+    await store.fetchFilterCounts();
+  },
+  preserveRelativeReadPosition
+);
+
+async function preserveRelativeReadPosition(
+  referenceArticle: Article,
+  direction: 'above' | 'below'
+): Promise<void> {
+  const list = listRef.value;
+  const anchor = list?.querySelector<HTMLElement>(`[data-article-id="${referenceArticle.id}"]`);
+  const anchorTop = anchor?.getBoundingClientRect().top;
+  const referenceTime = new Date(referenceArticle.published_at).getTime();
+
+  if (Number.isFinite(referenceTime)) {
+    filteredArticles.value.forEach((article) => {
+      const publishedTime = new Date(article.published_at).getTime();
+      if (
+        Number.isFinite(publishedTime) &&
+        (direction === 'above' ? publishedTime > referenceTime : publishedTime < referenceTime)
+      ) {
+        article.is_read = true;
+      }
+    });
+  }
+
+  await nextTick();
+  if (list && anchorTop !== undefined) {
+    const updatedAnchor = list.querySelector<HTMLElement>(
+      `[data-article-id="${referenceArticle.id}"]`
+    );
+    if (updatedAnchor) {
+      list.scrollTop += updatedAnchor.getBoundingClientRect().top - anchorTop;
+    }
+  }
+}
 
 // Virtual rendering: only render visible articles + buffer
 const visibleArticles = computed(() => {
@@ -309,6 +369,7 @@ onMounted(async () => {
   window.addEventListener('toggle-filter', onToggleFilter);
   // Listen for mark-all-read events (from keyboard shortcut)
   window.addEventListener('mark-all-as-read', onMarkAllAsRead);
+  window.addEventListener('article-feed-selected', onArticleFeedSelected);
 });
 
 // Watch for articles array length changes (list content changes)
@@ -330,6 +391,9 @@ watch(
 watch(
   () => store.articles,
   async () => {
+    if (pendingFeedArticleId.value) {
+      await scrollPendingFeedArticleIntoView();
+    }
     // Re-setup observer to observe newly added articles
     if (translationSettings.value.mode === 'auto' && listRef.value) {
       await nextTick();
@@ -417,11 +481,13 @@ onBeforeUnmount(() => {
   window.removeEventListener('refresh-articles', onRefreshArticles);
   window.removeEventListener('toggle-filter', onToggleFilter);
   window.removeEventListener('mark-all-as-read', onMarkAllAsRead);
+  window.removeEventListener('article-feed-selected', onArticleFeedSelected);
 });
 
 interface CustomEventDetail {
   mode?: string;
   targetLang?: string;
+  triggerMode?: string;
 }
 
 // Event handlers
@@ -615,14 +681,15 @@ async function refreshArticles(): Promise<void> {
 }
 
 async function markAllAsRead(): Promise<void> {
-  // Show confirmation dialog
-  const confirmed = await window.showConfirm({
-    title: t('article.action.markAllReadConfirmTitle'),
-    message: t('article.action.markAllReadConfirmMessage'),
-    confirmText: t('common.confirm'),
-    cancelText: t('common.cancel'),
-    isDanger: false,
-  });
+  const confirmed = settings.value.confirm_mark_as_read
+    ? await window.showConfirm({
+        title: t('article.action.markAllReadConfirmTitle'),
+        message: t('article.action.markAllReadConfirmMessage'),
+        confirmText: t('common.confirm'),
+        cancelText: t('common.cancel'),
+        isDanger: false,
+      })
+    : true;
 
   if (!confirmed) {
     return;
@@ -739,10 +806,17 @@ async function openCardModal(article: Article): Promise<void> {
   }
 }
 
-function closeCardModal(): void {
+async function closeCardModal(): Promise<void> {
+  const articleId = cardModalArticle.value?.id;
   showCardModal.value = false;
   cardModalArticle.value = null;
   cardModalContent.value = '';
+
+  if (!articleId || !listRef.value) return;
+  await nextTick();
+  listRef.value
+    .querySelector<HTMLElement>(`[data-article-id="${articleId}"]`)
+    ?.scrollIntoView({ block: 'nearest' });
 }
 
 function cardModalPrevious(): void {
@@ -844,6 +918,8 @@ const shouldShowBottomMarkAllRead = computed(() => {
   );
 });
 
+const isUnreadEmptyState = computed(() => store.currentFilter === 'unread' || store.showOnlyUnread);
+
 // Mark all currently visible articles as read
 async function markAllVisibleAsRead(): Promise<void> {
   const articleIds = filteredArticles.value.map((a) => a.id);
@@ -903,12 +979,13 @@ async function markAllVisibleAsRead(): Promise<void> {
           </button>
           <button
             class="text-text-secondary hover:text-text-primary hover:bg-bg-tertiary p-1 sm:p-1.5 rounded transition-colors"
-            :title="t('article.action.markAllRead')"
+            :title="withShortcut(t('article.action.markAllRead'), 'markAllRead')"
             @click="markAllAsRead"
           >
             <PhCheckCircle :size="18" class="sm:w-5 sm:h-5" />
           </button>
           <button
+            v-if="store.currentFilter !== 'favorites'"
             class="text-text-secondary hover:text-text-primary hover:bg-bg-tertiary p-1 sm:p-1.5 rounded transition-colors"
             :class="store.showOnlyUnread ? 'text-accent' : ''"
             :title="
@@ -918,10 +995,10 @@ async function markAllVisibleAsRead(): Promise<void> {
             "
             @click="store.toggleShowOnlyUnread()"
           >
-            <component
-              :is="store.showOnlyUnread ? PhEyeSlash : PhEye"
+            <PhCircle
               :size="18"
               class="sm:w-5 sm:h-5"
+              :weight="store.showOnlyUnread ? 'fill' : 'regular'"
             />
           </button>
           <div class="relative">
@@ -947,7 +1024,7 @@ async function markAllVisibleAsRead(): Promise<void> {
           >
             <button
               class="text-text-secondary hover:text-text-primary hover:bg-bg-tertiary p-1 sm:p-1.5 rounded transition-colors"
-              :title="t('article.action.refresh')"
+              :title="withShortcut(t('article.action.refresh'), 'refreshFeeds')"
               @click="refreshArticles"
             >
               <PhArrowClockwise
@@ -1090,9 +1167,18 @@ async function markAllVisibleAsRead(): Promise<void> {
         v-if="
           filteredArticles.length === 0 && !store.isLoading && !isFilterLoading && !isAISearchActive
         "
-        class="p-4 sm:p-5 text-center text-text-secondary text-sm sm:text-base"
+        class="flex flex-col items-center p-6 sm:p-8 text-center text-text-secondary"
       >
-        {{ t('article.content.noArticles') }}
+        <template v-if="isUnreadEmptyState">
+          <PhCheckCircle :size="40" weight="duotone" class="mb-3 text-green-500" />
+          <div class="text-base font-medium text-text-primary">
+            {{ t('article.list.allCaughtUp') }}
+          </div>
+          <div class="mt-1 text-sm">{{ t('article.list.noUnreadArticles') }}</div>
+        </template>
+        <template v-else>
+          {{ t('article.content.noArticles') }}
+        </template>
       </div>
 
       <!-- AI Search no results message -->

@@ -8,6 +8,7 @@ export interface SettingsData {
   ai_api_key: string;
   ai_chat_enabled: boolean;
   ai_chat_profile_id: string;
+  ai_chat_quick_prompts: string;
   ai_custom_headers: string;
   ai_endpoint: string;
   ai_model: string;
@@ -24,6 +25,7 @@ export interface SettingsData {
   baidu_app_id: string;
   baidu_secret_key: string;
   close_to_tray: boolean;
+  confirm_mark_as_read: boolean;
   content_font_family: string;
   content_font_size: number;
   content_line_height: string;
@@ -83,6 +85,7 @@ export interface SettingsData {
   proxy_type: string;
   proxy_username: string;
   refresh_mode: string;
+  remember_article_position: boolean;
   retry_timeout_seconds: number;
   rsshub_api_key: string;
   rsshub_enabled: boolean;
@@ -93,6 +96,9 @@ export interface SettingsData {
   show_article_preview_images: boolean;
   show_floating_toc: boolean;
   show_hidden_articles: boolean;
+  sidebar_category_order: string;
+  sidebar_pinned_items: string;
+  sidebar_sort_mode: string;
   startup_on_boot: boolean;
   summary_enabled: boolean;
   summary_length: string;

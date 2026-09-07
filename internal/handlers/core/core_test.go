@@ -687,7 +687,21 @@ func TestDailyReportDeepSeekUsesPortablePlainTextMode(t *testing.T) {
 
 	db := newDailyReportTestDB(t)
 	defer db.Close()
-	endpoint := strings.Replace(server.URL, "127.0.0.1", "0.0.0.0", 1) + "/deepseek/v1/chat/completions"
+	// Keep a DeepSeek host while routing all requests through the local mock.
+	// Protocol selection now gives explicit API paths priority over URL substrings.
+	proxyURL, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("parse mock proxy: %v", err)
+	}
+	for key, value := range map[string]string{
+		"proxy_enabled": "true", "proxy_type": "http",
+		"proxy_host": proxyURL.Hostname(), "proxy_port": proxyURL.Port(),
+	} {
+		if err := db.SetSetting(key, value); err != nil {
+			t.Fatalf("configure mock proxy %s: %v", key, err)
+		}
+	}
+	endpoint := "http://deepseek.example/v1/chat/completions"
 	profileID, err := db.CreateAIProfile(&models.AIProfile{
 		Name: "DeepSeek native JSON", Endpoint: endpoint, Model: "deepseek-test", IsDefault: true,
 	})

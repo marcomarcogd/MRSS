@@ -21,6 +21,7 @@ type Defaults struct {
 	AIAPIKey                      string `json:"ai_api_key"`
 	AIChatEnabled                 bool   `json:"ai_chat_enabled"`
 	AIChatProfileId               string `json:"ai_chat_profile_id"`
+	AIChatQuickPrompts            string `json:"ai_chat_quick_prompts"`
 	AICustomHeaders               string `json:"ai_custom_headers"`
 	AIEndpoint                    string `json:"ai_endpoint"`
 	AIModel                       string `json:"ai_model"`
@@ -37,6 +38,7 @@ type Defaults struct {
 	BaiduAppId                    string `json:"baidu_app_id"`
 	BaiduSecretKey                string `json:"baidu_secret_key"`
 	CloseToTray                   bool   `json:"close_to_tray"`
+	ConfirmMarkAsRead             bool   `json:"confirm_mark_as_read"`
 	ContentFontFamily             string `json:"content_font_family"`
 	ContentFontSize               int    `json:"content_font_size"`
 	ContentLineHeight             string `json:"content_line_height"`
@@ -96,6 +98,7 @@ type Defaults struct {
 	ProxyType                     string `json:"proxy_type"`
 	ProxyUsername                 string `json:"proxy_username"`
 	RefreshMode                   string `json:"refresh_mode"`
+	RememberArticlePosition       bool   `json:"remember_article_position"`
 	RetryTimeoutSeconds           int    `json:"retry_timeout_seconds"`
 	RsshubAPIKey                  string `json:"rsshub_api_key"`
 	RsshubEnabled                 bool   `json:"rsshub_enabled"`
@@ -106,6 +109,9 @@ type Defaults struct {
 	ShowArticlePreviewImages      bool   `json:"show_article_preview_images"`
 	ShowFloatingToc               bool   `json:"show_floating_toc"`
 	ShowHiddenArticles            bool   `json:"show_hidden_articles"`
+	SidebarCategoryOrder          string `json:"sidebar_category_order"`
+	SidebarPinnedItems            string `json:"sidebar_pinned_items"`
+	SidebarSortMode               string `json:"sidebar_sort_mode"`
 	StartupOnBoot                 bool   `json:"startup_on_boot"`
 	SummaryEnabled                bool   `json:"summary_enabled"`
 	SummaryLength                 string `json:"summary_length"`
@@ -155,6 +161,8 @@ func GetString(key string) string {
 		return strconv.FormatBool(defaults.AIChatEnabled)
 	case "ai_chat_profile_id":
 		return defaults.AIChatProfileId
+	case "ai_chat_quick_prompts":
+		return defaults.AIChatQuickPrompts
 	case "ai_custom_headers":
 		return defaults.AICustomHeaders
 	case "ai_endpoint":
@@ -187,6 +195,8 @@ func GetString(key string) string {
 		return defaults.BaiduSecretKey
 	case "close_to_tray":
 		return strconv.FormatBool(defaults.CloseToTray)
+	case "confirm_mark_as_read":
+		return strconv.FormatBool(defaults.ConfirmMarkAsRead)
 	case "content_font_family":
 		return defaults.ContentFontFamily
 	case "content_font_size":
@@ -305,6 +315,8 @@ func GetString(key string) string {
 		return defaults.ProxyUsername
 	case "refresh_mode":
 		return defaults.RefreshMode
+	case "remember_article_position":
+		return strconv.FormatBool(defaults.RememberArticlePosition)
 	case "retry_timeout_seconds":
 		return strconv.Itoa(defaults.RetryTimeoutSeconds)
 	case "rsshub_api_key":
@@ -325,6 +337,12 @@ func GetString(key string) string {
 		return strconv.FormatBool(defaults.ShowFloatingToc)
 	case "show_hidden_articles":
 		return strconv.FormatBool(defaults.ShowHiddenArticles)
+	case "sidebar_category_order":
+		return defaults.SidebarCategoryOrder
+	case "sidebar_pinned_items":
+		return defaults.SidebarPinnedItems
+	case "sidebar_sort_mode":
+		return defaults.SidebarSortMode
 	case "startup_on_boot":
 		return strconv.FormatBool(defaults.StartupOnBoot)
 	case "summary_enabled":

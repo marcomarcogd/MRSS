@@ -161,6 +161,45 @@ func TestAITranslate_RemovesThinkingBlocks(t *testing.T) {
 	}
 }
 
+func TestAITranslatorRetainsHTTPClientAfterConfigurationChanges(t *testing.T) {
+	translator := NewAITranslator("apikey", "https://api.test", "m1")
+	requestCount := 0
+	injectedClient := &http.Client{Transport: rtFunc(func(req *http.Request) (*http.Response, error) {
+		requestCount++
+		if req.Header.Get("X-Gateway") != "enabled" {
+			t.Fatalf("expected custom header to be retained, got %q", req.Header.Get("X-Gateway"))
+		}
+		bodyBytes, err := io.ReadAll(req.Body)
+		if err != nil {
+			t.Fatalf("failed to read request body: %v", err)
+		}
+		if !strings.Contains(string(bodyBytes), "Custom translation prompt") {
+			t.Fatalf("expected custom system prompt in request: %s", string(bodyBytes))
+		}
+		body := `{"choices":[{"message":{"content":"Bonjour"}}]}`
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Header:     http.Header{"Content-Type": {"application/json"}},
+		}, nil
+	}), Timeout: 5 * time.Second}
+
+	translator.httpClient = injectedClient
+	translator.SetSystemPrompt("Custom translation prompt")
+	translator.SetCustomHeaders(`{"X-Gateway":"enabled"}`)
+
+	translated, err := translator.Translate("Hello", "fr")
+	if err != nil {
+		t.Fatalf("Translate failed: %v", err)
+	}
+	if translated != "Bonjour" {
+		t.Fatalf("expected Bonjour, got %q", translated)
+	}
+	if requestCount != 1 {
+		t.Fatalf("expected injected transport to receive one request, got %d", requestCount)
+	}
+}
+
 func TestAITranslatorNegotiatesHTTP2WithCompatibleGateway(t *testing.T) {
 	t.Setenv(httputil.InsecureSkipTLSVerifyEnv, "true")
 

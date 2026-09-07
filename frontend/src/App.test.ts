@@ -156,7 +156,7 @@ describe('App', () => {
     const toast = readFileSync('src/components/common/Toast.vue', 'utf8');
     const chat = readFileSync('src/components/article/ArticleChatPanel.vue', 'utf8');
     expect(toast).toContain('overflow-wrap: anywhere');
-    expect(toast).toContain('calc(100vw-2rem)');
+    expect(toast).toMatch(/calc\(100vw\s*-\s*2rem\)/);
     expect(chat).not.toContain('v-html="msg.html || msg.content"');
   });
 
@@ -562,6 +562,23 @@ describe('App', () => {
     const indexHtml = readFileSync('index.html', 'utf8');
     expect(indexHtml).not.toContain('fonts.googleapis.com');
     expect(indexHtml).not.toContain('fonts.gstatic.com');
+  });
+
+  it('preserves the selected article during a background refresh', () => {
+    const selected = { id: 75, title: 'Selected article' };
+    const fresh = [{ id: 1, title: 'Fresh article' }];
+
+    expect(preserveSelectedArticle(fresh, [selected], 75)).toEqual([fresh[0], selected]);
+    expect(preserveSelectedArticle([selected], [selected], 75)).toEqual([selected]);
+    expect(preserveSelectedArticle(fresh, [selected], null)).toEqual(fresh);
+  });
+
+  it('keeps long toast messages inside narrow viewports', () => {
+    const toast = readFileSync('src/components/common/Toast.vue', 'utf8');
+    expect(toast).toMatch(/calc\(100vw\s*-\s*2rem\)/);
+    expect(toast).toContain('overflow-wrap: anywhere');
+    expect(toast).toContain('min-w-0 flex-1');
+    expect(toast).toContain('shrink-0');
   });
 
   it('renders and reacts to interface typography settings', async () => {

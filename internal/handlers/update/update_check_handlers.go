@@ -81,7 +81,11 @@ func isNetworkError(err error) bool {
 }
 
 func createUpdateHTTPClient(h *core.Handler, timeout time.Duration) (*http.Client, error) {
-	client, err := httputil.CreateHTTPClientWithProxySettings(h.DB, timeout)
+	var settings httputil.ProxySettingsProvider
+	if h != nil && h.DB != nil {
+		settings = h.DB
+	}
+	client, err := httputil.CreateHTTPClientWithProxySettings(settings, timeout)
 	if err != nil {
 		return nil, err
 	}

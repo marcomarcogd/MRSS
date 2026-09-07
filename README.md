@@ -22,7 +22,7 @@ MRSS is a privacy-focused, cross-platform desktop RSS reader with translation, l
 - Smart discovery, filters, rules, tags, image gallery, and full-text fetching
 - FreshRSS, RSSHub, Obsidian, Notion, and Zotero integrations
 - Light/dark themes, configurable interface and article typography, and keyboard shortcuts
-- Portable desktop packages and an API-only server image
+- Portable desktop packages, a browser reader, and a server image
 
 ## Download
 
@@ -62,7 +62,7 @@ git clone https://github.com/marcomarcogd/MRSS.git
 cd MRSS
 go mod download
 cd frontend && npm ci && cd ..
-go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.8
+go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.15
 task build
 ```
 
@@ -92,3 +92,5 @@ MRSS is an unofficial modified fork based on [DevXDojo/MrRSS](https://github.com
 MRSS is distributed under the [GNU General Public License v3.0](LICENSE). The original license, copyright notices, and Git history are preserved. Source code for this distribution is available at [marcomarcogd/MRSS](https://github.com/marcomarcogd/MRSS). The software is provided without warranty; see the license for details.
 
 Report fork-specific bugs through [MRSS Issues](https://github.com/marcomarcogd/MRSS/issues). Changes intended for upstream should follow the upstream project's contribution process separately.
+
+Browser reader setup: [Browser interface](docs/SERVER_MODE/README.md).

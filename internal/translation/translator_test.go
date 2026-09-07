@@ -156,7 +156,7 @@ func TestAITranslatorKeepsHTTPClientWhenConfigurationChanges(t *testing.T) {
 	}))
 	defer server.Close()
 
-	translator := NewAITranslator("test-key", server.URL, "test-model")
+	translator := NewAITranslator("test-key", server.URL+"/v1/chat/completions", "test-model")
 	originalClient := translator.httpClient
 	translator.SetSystemPrompt("Translate exactly")
 	translator.SetCustomHeaders(`{"X-Test-Header":"kept"}`)

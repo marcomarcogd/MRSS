@@ -60,13 +60,13 @@ describe('Article Operations', () => {
     cy.wait('@getArticles', { timeout: 10000 });
 
     // Look for filter buttons
-    cy.get('button[title="Unread"], button[title="未读"]').click({ force: true });
+    cy.get('button[title^="Unread"], button[title^="未读"]').click({ force: true });
 
     // Wait a bit for the filter to apply
     cy.wait(500);
 
     // Verify filter button is clickable
-    cy.get('button[title="Unread"], button[title="未读"]').should('exist');
+    cy.get('button[title^="Unread"], button[title^="未读"]').should('exist');
   });
 
   it('should filter articles by favorites', () => {
@@ -74,13 +74,13 @@ describe('Article Operations', () => {
     cy.wait('@getArticles', { timeout: 10000 });
 
     // Click favorites filter
-    cy.get('button[title="Favorites"], button[title="收藏"]').click({ force: true });
+    cy.get('button[title^="Favorites"], button[title^="收藏"]').click({ force: true });
 
     // Wait a bit for the filter to apply
     cy.wait(500);
 
     // Verify filter button is clickable
-    cy.get('button[title="Favorites"], button[title="收藏"]').should('exist');
+    cy.get('button[title^="Favorites"], button[title^="收藏"]').should('exist');
   });
 
   it('should mark all articles as read', () => {
@@ -355,7 +355,7 @@ describe('Article Operations', () => {
 
     // The next result is marked read when opened, but must remain selected and
     // renderable while the unread-only preference is active.
-    cy.get('button[title="Next Article"]').click();
+    cy.get('button[title^="Next Article"]').click();
     cy.wait('@searchArticleContent');
     cy.contains('Body for search result 102').should('be.visible');
     cy.get('[data-article-id="102"]').should('exist');
@@ -365,7 +365,7 @@ describe('Article Operations', () => {
     cy.get('body').trigger('keydown', { key: 'j' });
     cy.wait('@searchArticleContent');
     cy.contains('Body for search result 103').should('be.visible');
-    cy.get('button[title="Previous Article"]').click();
+    cy.get('button[title^="Previous Article"]').click();
     cy.wait('@searchArticleContent');
     cy.contains('Body for search result 102').should('be.visible');
 
@@ -403,7 +403,7 @@ describe('Article Operations', () => {
     cy.get('.article-card-item[data-article-id="101"]').click();
     cy.wait('@searchArticleContent');
     cy.contains('Body for search result 101').should('be.visible');
-    cy.get('button[title="Next Article"]').should('be.visible').click();
+    cy.get('button[title^="Next Article"]').should('be.visible').click();
     cy.wait('@searchArticleContent');
     cy.contains('Body for search result 102').should('be.visible');
   });
@@ -445,6 +445,7 @@ describe('Article Operations', () => {
     const timestamp = () => new Date().toISOString();
 
     cy.intercept('/api/**', { statusCode: 200, body: {} });
+    cy.intercept('GET', '/api/ai/profiles', { statusCode: 200, body: [] });
     cy.intercept('GET', '/api/settings', { statusCode: 200, body: settingsState });
     cy.intercept('GET', '/api/feeds', { statusCode: 200, body: [feed] }).as('chatFeeds');
     cy.intercept('GET', '/api/tags', { statusCode: 200, body: [] });
@@ -508,6 +509,17 @@ describe('Article Operations', () => {
         created_at: timestamp(),
       };
       stored.push(userMessage);
+      if (lastMessage === 'trigger failure') {
+        messages.set(sessionID, stored);
+        req.reply({
+          statusCode: 500,
+          body: {
+            error: 'Failed to get response from AI. Please try again.',
+            session_id: sessionID,
+          },
+        });
+        return;
+      }
       if (lastMessage === 'trigger rate limit') {
         messages.set(sessionID, stored);
         req.reply({
@@ -568,6 +580,14 @@ describe('Article Operations', () => {
       'be.visible'
     );
     cy.contains('RAW_CHAT_PROVIDER_JSON_MUST_NOT_RENDER').should('not.exist');
+
+    cy.get('input[placeholder="Type a message..."]').type('trigger failure{enter}');
+    cy.wait('@aiChat');
+    cy.wait('@chatMessages');
+    cy.contains('.chat-panel', 'trigger failure').should('be.visible');
+    cy.contains('The AI service is temporarily unavailable. Please try again later.').should(
+      'be.visible'
+    );
   });
 
   it('should translate only on demand in manual mode and respect off mode', () => {

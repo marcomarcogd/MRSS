@@ -204,7 +204,10 @@ describe('Auto Update - Quick Validation', () => {
     cy.wait('@getFeeds');
 
     // Open settings
-    cy.get('button').filter('[title="Settings"], [title="设置"]').should('exist').click({ force: true });
+    cy.get('button')
+      .filter('[title^="Settings"], [title^="设置"]')
+      .should('exist')
+      .click({ force: true });
 
     // Navigate to General tab
     cy.contains(/general|常规/i).click({ force: true });

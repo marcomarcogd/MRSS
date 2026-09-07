@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onBeforeUnmount, computed, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { PhSpinnerGap, PhArticleNyTimes } from '@phosphor-icons/vue';
+import { PhSpinnerGap, PhArticleNyTimes, PhArrowUp } from '@phosphor-icons/vue';
 import type { Article } from '@/types/models';
 import ArticleTitle from './parts/ArticleTitle.vue';
 import ArticleSummary from './parts/ArticleSummary.vue';
@@ -22,7 +22,9 @@ import {
 import { useSettings } from '@/composables/core/useSettings';
 import { useAppStore } from '@/stores/app';
 import { openInBrowser } from '@/utils/browser';
-import { proxyImagesInHtml, isMediaCacheEnabled } from '@/utils/mediaProxy';
+import { wrapOrphanedTextNodes } from '@/utils/translationParagraphs';
+import { useArticleSelectionMenu } from '@/composables/article/useArticleSelectionMenu';
+import { useFullArticle } from '@/composables/article/useFullArticle';
 import './ArticleContent.css';
 
 interface SummaryResult {
@@ -60,6 +62,7 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{
   retryLoadContent: [];
   translationState: [state: ManualTranslationState];
+  showTranslations: [];
 }>();
 
 type ManualTranslationState = 'idle' | 'loading' | 'ready';
@@ -78,13 +81,14 @@ const isChatPanelOpen = ref(false);
 const articleScrollContainer = ref<HTMLElement | null>(null);
 const ARTICLE_SCROLL_POSITIONS_KEY = 'mrssArticleScrollPositions';
 const LEGACY_ARTICLE_SCROLL_POSITIONS_KEY = 'mrrssArticleScrollPositions';
+const readingProgress = ref(0);
+const showBackToTop = ref(false);
+const { onContextMenu: onTextContextMenu } = useArticleSelectionMenu(articleScrollContainer);
 let scrollSaveTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingScrollRestoreArticleId: number | null = null;
 let pendingScrollRestoreAttempts = 0;
 
 // Full-text fetching state
-const isFetchingFullArticle = ref(false);
-const fullArticleContent = ref('');
 const autoShowAllContent = ref(false);
 
 // Computed property to determine if auto-expand should be enabled for this feed
@@ -151,15 +155,9 @@ const showFloatingToc = computed(() => appSettings.value.show_floating_toc);
 
 // Computed to check if full-text fetching should be shown
 const showFullTextButton = computed(() => {
-  // For XPath feeds without content, show button even if articleContent is empty
-  const feed = store.feeds.find((f) => f.id === props.article.feed_id);
-  const isXPathFeedWithoutContent =
-    feed && (feed.type === 'HTML+XPath' || feed.type === 'XML+XPath') && !props.articleContent;
-
   return (
     appSettings.value.full_text_fetch_enabled &&
     !props.isLoadingContent &&
-    (props.articleContent || isXPathFeedWithoutContent) && // Allow empty content for XPath feeds
     props.article?.url &&
     props.showContent &&
     !fullArticleContent.value // Don't show if we already have full content
@@ -197,6 +195,7 @@ const shouldTranslateNow = computed(
     autoTranslationEnabled.value ||
     (translationMode.value === 'manual' && manualTranslationState.value !== 'idle')
 );
+const manualTranslation = computed(() => translationMode.value === 'manual');
 const targetLanguage = computed(() => translationSettings.value.targetLang);
 
 // Current article summary
@@ -245,7 +244,7 @@ function loadArticleScrollPositions(): Record<string, number> {
 
 function saveArticleScrollPosition(articleId: number | null | undefined = props.article?.id) {
   const container = articleScrollContainer.value;
-  if (!container || !articleId) return;
+  if (!appSettings.value.remember_article_position || !container || !articleId) return;
 
   const positions = loadArticleScrollPositions();
   positions[String(articleId)] = Math.round(container.scrollTop);
@@ -261,6 +260,8 @@ function saveArticleScrollPosition(articleId: number | null | undefined = props.
 }
 
 function scheduleSaveArticleScrollPosition() {
+  if (!appSettings.value.remember_article_position) return;
+
   if (pendingScrollRestoreArticleId === props.article?.id) {
     return;
   }
@@ -274,9 +275,39 @@ function scheduleSaveArticleScrollPosition() {
   }, 200);
 }
 
+function updateReadingProgress() {
+  const container = articleScrollContainer.value;
+  if (!container) {
+    readingProgress.value = 0;
+    return;
+  }
+
+  const scrollableHeight = container.scrollHeight - container.clientHeight;
+  showBackToTop.value = container.scrollTop > 480;
+  readingProgress.value =
+    scrollableHeight > 0
+      ? Math.min(100, Math.max(0, (container.scrollTop / scrollableHeight) * 100))
+      : 100;
+}
+
+function handleArticleScroll() {
+  updateReadingProgress();
+  scheduleSaveArticleScrollPosition();
+}
+
+function scrollToArticleTop() {
+  articleScrollContainer.value?.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
 function restoreArticleScrollPosition(articleId: number | null | undefined = props.article?.id) {
   const container = articleScrollContainer.value;
   if (!container || !articleId) return;
+
+  if (!appSettings.value.remember_article_position) {
+    pendingScrollRestoreArticleId = null;
+    pendingScrollRestoreAttempts = 0;
+    return;
+  }
 
   const savedTop = loadArticleScrollPositions()[String(articleId)];
   if (savedTop === undefined) {
@@ -314,7 +345,8 @@ async function loadSettings() {
 async function translateText(
   text: string,
   force: boolean = false,
-  updateTranslationStatus: boolean = true
+  updateTranslationStatus: boolean = true,
+  requestIsCurrent: () => boolean = () => true
 ): Promise<TranslationResult> {
   if (!text || !translationEnabled.value) {
     return { text: '', html: '', failed: false };
@@ -335,6 +367,7 @@ async function translateText(
 
     if (res.ok) {
       const data = await res.json();
+      if (!requestIsCurrent()) return { text: '', html: '', failed: false };
 
       // Check if translation was skipped
       if (updateTranslationStatus && (data.skipped === 'true' || data.skipped === true)) {
@@ -352,10 +385,10 @@ async function translateText(
         failed: false,
       };
     } else {
-      window.showToast(t('common.errors.translatingContent'), 'error');
+      if (requestIsCurrent()) window.showToast(t('common.errors.translatingContent'), 'error');
     }
   } catch {
-    window.showToast(t('common.errors.translating'), 'error');
+    if (requestIsCurrent()) window.showToast(t('common.errors.translating'), 'error');
   }
   return { text: '', html: '', failed: true };
 }
@@ -382,7 +415,12 @@ async function translateSummary(result: SummaryResult | null): Promise<boolean> 
 
   const requestId = summaryTranslationRequestId;
   isTranslatingSummary.value = true;
-  const translation = await translateText(result.summary, false, false);
+  const translation = await translateText(
+    result.summary,
+    false,
+    false,
+    () => requestId === summaryTranslationRequestId
+  );
 
   if (requestId !== summaryTranslationRequestId) {
     return false;
@@ -401,7 +439,8 @@ async function forceTranslateContent() {
   if (!displayContent.value) return;
 
   lastTranslatedArticleId.value = null;
-  await translateContentParagraphs(displayContent.value);
+  lastTranslatedContentHash.value = '';
+  await translateContentParagraphs(displayContent.value, true);
 }
 
 function resetVisibleTranslations() {
@@ -462,67 +501,22 @@ async function startManualTranslation(): Promise<void> {
 
 defineExpose({ startManualTranslation });
 
-// Fetch full article content from the original URL
-// @param showErrors - whether to show error toasts (default: true for manual clicks, false for auto-fetch)
-async function fetchFullArticle(showErrors: boolean = true) {
-  if (!props.article?.id) return;
-
-  isFetchingFullArticle.value = true;
-  try {
-    const res = await fetch(`/api/articles/fetch-full?id=${props.article.id}`, {
-      method: 'POST',
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-      let content = data.content || '';
-
-      // Proxy images if media cache is enabled
-      const cacheEnabled = await isMediaCacheEnabled();
-      if (cacheEnabled && content) {
-        // Use feed URL as referer for anti-hotlinking (more reliable than article URL)
-        const feedUrl = data.feed_url || props.article.url;
-        content = proxyImagesInHtml(content, feedUrl);
-      }
-
-      fullArticleContent.value = content;
-      if (showErrors) {
-        window.showToast(t('article.action.fullArticleFetched'), 'success');
-      }
-
-      // After fetching full content, regenerate summary and trigger translation
-      if (props.article) {
-        // Generate summary if we should wait for full content
-        // This handles the case where:
-        // 1. Summary uses AI auto trigger OR local algorithm
-        // 2. AND auto-show all content is enabled
-        if (shouldWaitForFullContentBeforeSummary.value) {
-          setTimeout(() => generateSummary(props.article), 100);
-        }
-
-        if (shouldTranslateNow.value) {
-          // Only translate content, not title (title translation is cached in DB)
-          // Content hash will automatically detect new content and trigger translation
-          // Wait for DOM to update with new content before translating
-          await nextTick();
-          await translateContentParagraphs(fullArticleContent.value);
-        }
-      }
-    } else {
-      console.error('Error fetching full article:', res.status);
-      if (showErrors) {
-        window.showToast(t('common.errors.fetchingFullArticle'), 'error');
-      }
-    }
-  } catch (e) {
-    console.error('Error fetching full article:', e);
-    if (showErrors) {
-      window.showToast(t('common.errors.fetchingFullArticle'), 'error');
-    }
-  } finally {
-    isFetchingFullArticle.value = false;
-  }
-}
+const { fullArticleContent, isFetchingFullArticle, fetchFullArticle } = useFullArticle({
+  article: () => props.article,
+  enabled: () => appSettings.value.full_text_fetch_enabled,
+  automatic: () => shouldAutoExpandContent.value,
+  loading: () => props.isLoadingContent,
+  onSuccess: () => window.showToast(t('article.action.fullArticleFetched'), 'success'),
+  onError: () => window.showToast(t('common.errors.fetchingFullArticle'), 'error'),
+  onContent: async (content) => {
+    const article = props.article;
+    if (shouldWaitForFullContentBeforeSummary.value) void generateSummary(article);
+    await nextTick();
+    if (props.article.id !== article.id) return;
+    enhanceRendering('.prose-content');
+    if (shouldTranslateNow.value) await translateContentParagraphs(content);
+  },
+});
 
 // Generate summary for the current article
 async function generateSummary(article: Article, force: boolean = false) {
@@ -536,6 +530,7 @@ async function generateSummary(article: Article, force: boolean = false) {
   }
 
   const result = await generateSummaryComposable(article, displayContent.value, force);
+  if (props.article.id !== article.id) return;
 
   // Update the article summary in store for caching
   if (result?.summary && result.source !== 'rss') {
@@ -574,13 +569,17 @@ const shouldWaitForFullContentBeforeSummary = computed(() => {
   if (!shouldAutoGen) return false;
 
   // If summary is auto-generated and auto-expand content is enabled, wait for full content
-  return shouldAutoExpandContent.value;
+  return appSettings.value.full_text_fetch_enabled && shouldAutoExpandContent.value;
 });
 
 // Translate title
 async function translateTitle(article: Article, manualRequest: boolean = false): Promise<boolean> {
-  const expectedMode = manualRequest ? 'manual' : 'auto';
-  if (translationMode.value !== expectedMode || !article?.title) return true;
+  if (
+    !translationEnabled.value ||
+    (!manualRequest && !autoTranslationEnabled.value) ||
+    !article?.title
+  )
+    return true;
   if (isTranslatingTitle.value) return true;
 
   isTranslatingTitle.value = true;
@@ -622,6 +621,13 @@ async function translateTitle(article: Article, manualRequest: boolean = false):
   }
 }
 
+async function translateTitleManually() {
+  const article = props.article;
+  if (await translateTitle(article, true)) {
+    if (props.article.id === article.id) emit('showTranslations');
+  }
+}
+
 // Simple hash function for content (for detecting content changes)
 function simpleHash(str: string): string {
   let hash = 0;
@@ -633,27 +639,20 @@ function simpleHash(str: string): string {
   return hash.toString(36);
 }
 
-// RSS content can contain direct text nodes next to media or other HTML. The
-// translation pipeline works on semantic text elements, so wrap those orphaned
-// text nodes without changing the stored article HTML.
-function wrapOrphanedTextNodes(container: Element): void {
-  const blockContainers = [
-    container,
-    ...Array.from(container.querySelectorAll('div,section,article')),
-  ];
-  blockContainers.forEach((block) => {
-    Array.from(block.childNodes).forEach((node) => {
-      if (node.nodeType !== Node.TEXT_NODE || !node.textContent?.trim()) return;
-      const paragraph = document.createElement('p');
-      paragraph.textContent = node.textContent;
-      block.replaceChild(paragraph, node);
-    });
-  });
-}
-
 // Translate content paragraphs while preserving inline elements (formulas, code, images)
-async function translateContentParagraphs(content: string): Promise<boolean> {
+async function translateContentParagraphs(
+  content: string,
+  force: boolean = false,
+  paragraph?: HTMLElement
+): Promise<boolean> {
   if (!translationEnabled.value || !content) {
+    return true;
+  }
+
+  if (!shouldTranslateNow.value && !force) {
+    await nextTick();
+    const prose = articleScrollContainer.value?.querySelector('.prose-content');
+    if (prose) wrapOrphanedTextNodes(prose);
     return true;
   }
 
@@ -663,6 +662,8 @@ async function translateContentParagraphs(content: string): Promise<boolean> {
   // Prevent duplicate translations for the same content
   // Check both article ID and content hash to handle RSS content vs full content
   if (
+    !force &&
+    !paragraph &&
     lastTranslatedArticleId.value === props.article?.id &&
     lastTranslatedContentHash.value === contentHash
   ) {
@@ -673,9 +674,11 @@ async function translateContentParagraphs(content: string): Promise<boolean> {
   const articleID = props.article?.id || null;
   const requestID = ++contentTranslationRequestId;
   const requestIsCurrent = () =>
-    requestID === contentTranslationRequestId && props.article?.id === articleID;
-  lastTranslatedArticleId.value = articleID;
-  lastTranslatedContentHash.value = contentHash;
+    requestID === contentTranslationRequestId &&
+    props.article?.id === articleID &&
+    translationEnabled.value;
+  lastTranslatedArticleId.value = paragraph ? null : articleID;
+  lastTranslatedContentHash.value = paragraph ? '' : contentHash;
 
   // Wait for content to render
   await nextTick();
@@ -685,11 +688,19 @@ async function translateContentParagraphs(content: string): Promise<boolean> {
   const proseContainer = articleScrollContainer.value?.querySelector('.prose-content');
   if (!proseContainer) {
     isTranslatingContent.value = false;
+    lastTranslatedArticleId.value = null;
+    lastTranslatedContentHash.value = '';
     return false;
   }
 
   // Remove any existing translations first
-  const existingTranslations = proseContainer.querySelectorAll('.translation-text');
+  if (paragraph && !proseContainer.contains(paragraph)) {
+    isTranslatingContent.value = false;
+    return false;
+  }
+  const existingTranslations = (paragraph || proseContainer).querySelectorAll('.translation-text');
+  if (paragraph?.nextElementSibling?.classList.contains('translation-text'))
+    paragraph.nextElementSibling.remove();
   existingTranslations.forEach((el) => el.remove());
 
   wrapOrphanedTextNodes(proseContainer);
@@ -720,7 +731,9 @@ async function translateContentParagraphs(content: string): Promise<boolean> {
 
   // Process elements level by level to handle nested structures correctly
   // First, get all elements and sort them by depth (shallowest first)
-  const allElements = Array.from(proseContainer.querySelectorAll(textTags.join(',')));
+  const allElements = paragraph
+    ? [paragraph]
+    : Array.from(proseContainer.querySelectorAll(textTags.join(',')));
 
   // Sort by depth (number of ancestors) to process outermost elements first
   allElements.sort((a, b) => {
@@ -810,7 +823,7 @@ async function translateContentParagraphs(content: string): Promise<boolean> {
     if (!textWithPlaceholders || textWithPlaceholders.length < 2) continue;
 
     // Translate the text (with placeholders and link markers)
-    const translation = await translateText(textWithPlaceholders);
+    const translation = await translateText(textWithPlaceholders, force, true, requestIsCurrent);
     if (!requestIsCurrent()) return false;
     if (translation.failed) {
       translationFailed = true;
@@ -881,6 +894,8 @@ async function translateContentParagraphs(content: string): Promise<boolean> {
 
 async function reattachContentInteractions() {
   await nextTick();
+  const prose = articleScrollContainer.value?.querySelector('.prose-content');
+  if (translationEnabled.value && prose) wrapOrphanedTextNodes(prose);
   await reattachImageInteractions();
   attachExternalLinkHandlers();
 }
@@ -929,6 +944,31 @@ function attachExternalLinkHandlers() {
 
 // Clear text selection when clicking outside the selected content
 function handleContainerClick(event: MouseEvent) {
+  const clicked = event.target;
+  if (
+    translationEnabled.value &&
+    (event.ctrlKey || event.metaKey) &&
+    clicked instanceof Element &&
+    !clicked.closest(
+      'a,button,input,textarea,select,code,pre,kbd,.katex,.translation-text,[contenteditable]'
+    )
+  ) {
+    const paragraph = clicked.closest<HTMLElement>('p,li,h1,h2,h3,h4,h5,h6,td,th,figcaption,dt,dd');
+    const prose = articleScrollContainer.value?.querySelector('.prose-content');
+    if (paragraph && prose?.contains(paragraph)) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!isTranslatingContent.value) {
+        const articleId = props.article.id;
+        void translateContentParagraphs(displayContent.value, true, paragraph).then(
+          (translated) => {
+            if (translated && props.article.id === articleId) emit('showTranslations');
+          }
+        );
+      }
+      return;
+    }
+  }
   const selection = window.getSelection();
   if (!selection || selection.toString().length === 0) return;
 
@@ -996,12 +1036,17 @@ async function onSummarySettingsChanged(): Promise<void> {
 
 // Re-translate the RSS summary when translation settings or the target language change.
 async function onTranslationSettingsChanged(): Promise<void> {
+  titleTranslationRequestId += 1;
+  isTranslatingTitle.value = false;
+  contentTranslationRequestId += 1;
+  isTranslatingContent.value = false;
   await loadTranslationSettings();
   clearTranslatedSummary();
 
   if (!props.article) return;
 
   if (autoTranslationEnabled.value) {
+    emit('showTranslations');
     await translateTitle(props.article);
     if (summaryResult.value) {
       await translateSummary(summaryResult.value);
@@ -1029,7 +1074,11 @@ watch(
       if (articleScrollContainer.value) {
         articleScrollContainer.value.scrollTop = 0;
       }
-      pendingScrollRestoreArticleId = newId ?? null;
+      readingProgress.value = 0;
+      showBackToTop.value = false;
+      pendingScrollRestoreArticleId = appSettings.value.remember_article_position
+        ? (newId ?? null)
+        : null;
       pendingScrollRestoreAttempts = 0;
 
       // Cancel any ongoing summary generation for the previous article
@@ -1050,7 +1099,7 @@ watch(
       if (translationMode.value === 'manual') {
         emit('translationState', 'idle');
       }
-      fullArticleContent.value = ''; // Reset full article content when switching articles
+      lastTranslatedContentHash.value = '';
 
       if (props.article) {
         // Check if article has a cached summary first
@@ -1127,16 +1176,6 @@ watch(
       await reattachContentInteractions();
       await restorePendingArticleScrollPosition();
 
-      // Auto-fetch full article if setting is enabled
-      // Don't auto-fetch if we're already fetching
-      if (
-        shouldAutoExpandContent.value &&
-        !fullArticleContent.value &&
-        !isFetchingFullArticle.value
-      ) {
-        setTimeout(() => fetchFullArticle(false), 200);
-      }
-
       // Generate summary if needed
       // But wait for full content if both conditions are met:
       // 1. Summary uses AI auto trigger OR local algorithm
@@ -1164,6 +1203,8 @@ onMounted(async () => {
   if (translationMode.value === 'manual') {
     emit('translationState', 'idle');
   }
+  await nextTick();
+  updateReadingProgress();
   if (props.article) {
     pendingScrollRestoreArticleId = props.article.id;
     pendingScrollRestoreAttempts = 0;
@@ -1201,15 +1242,6 @@ onMounted(async () => {
       // Re-attach image and link event listeners after rendering
       await reattachContentInteractions();
       await restorePendingArticleScrollPosition();
-
-      // Auto-fetch full article if setting is enabled and content is already loaded
-      if (
-        shouldAutoExpandContent.value &&
-        !fullArticleContent.value &&
-        !isFetchingFullArticle.value
-      ) {
-        setTimeout(() => fetchFullArticle(false), 200);
-      }
     }
   }
 });
@@ -1244,6 +1276,7 @@ watch(fullArticleContent, async (content) => {
 onBeforeUnmount(() => {
   manualTranslationRequestId += 1;
   titleTranslationRequestId += 1;
+  isTranslatingTitle.value = false;
   contentTranslationRequestId += 1;
   if (scrollSaveTimer) {
     clearTimeout(scrollSaveTimer);
@@ -1272,10 +1305,24 @@ onBeforeUnmount(() => {
 <template>
   <div class="relative flex-1 overflow-hidden bg-bg-primary">
     <div
+      class="pointer-events-none absolute inset-x-0 top-0 z-20 h-0.5 bg-border/40"
+      role="progressbar"
+      :aria-label="t('article.content.readingProgress')"
+      aria-valuemin="0"
+      aria-valuemax="100"
+      :aria-valuenow="Math.round(readingProgress)"
+    >
+      <div
+        class="h-full bg-accent transition-[width] duration-100 ease-out"
+        :style="{ width: `${readingProgress}%` }"
+      ></div>
+    </div>
+    <div
       ref="articleScrollContainer"
       class="h-full overflow-y-scroll p-3 sm:p-6 scroll-smooth"
       @click="handleContainerClick"
-      @scroll="scheduleSaveArticleScrollPosition"
+      @contextmenu="onTextContextMenu"
+      @scroll="handleArticleScroll"
     >
       <div
         class="max-w-3xl mx-auto bg-bg-primary [container-type:inline-size]"
@@ -1288,12 +1335,17 @@ onBeforeUnmount(() => {
           :article="article"
           :translated-title="showTranslations ? translatedTitle : ''"
           :is-translating-title="isTranslatingTitle"
-          :translation-enabled="shouldTranslateNow && showTranslations"
-          :translation-mode="translationMode"
+          :translation-enabled="translationEnabled"
+          :manual-translation="manualTranslation"
           :translation-skipped="translationSkipped"
           :is-translating-content="isTranslatingContent"
+          @translate-title="translateTitleManually"
           @force-translate="forceTranslateContent"
         />
+
+        <p v-if="translationEnabled && manualTranslation" class="text-xs text-text-secondary mb-4">
+          {{ t('article.translation.manualHint') }}
+        </p>
 
         <!-- Audio Player (if article has audio) -->
         <AudioPlayer
@@ -1355,6 +1407,26 @@ onBeforeUnmount(() => {
       :scroll-container="articleScrollContainer"
     />
 
+    <Transition
+      enter-active-class="transition duration-200 ease-out"
+      enter-from-class="translate-y-2 opacity-0"
+      enter-to-class="translate-y-0 opacity-100"
+      leave-active-class="transition duration-150 ease-in"
+      leave-from-class="translate-y-0 opacity-100"
+      leave-to-class="translate-y-2 opacity-0"
+    >
+      <button
+        v-if="showBackToTop"
+        class="absolute bottom-6 z-30 flex h-10 w-10 items-center justify-center rounded-full border border-border bg-bg-secondary/95 text-text-secondary shadow-lg backdrop-blur-sm transition-colors hover:bg-bg-tertiary hover:text-text-primary"
+        :class="showChatButton && !isChatPanelOpen ? 'right-24' : 'right-6'"
+        :title="t('article.action.backToTop')"
+        :aria-label="t('article.action.backToTop')"
+        @click="scrollToArticleTop"
+      >
+        <PhArrowUp :size="20" />
+      </button>
+    </Transition>
+
     <!-- Chat Button (shown when content is loaded and chat is enabled) -->
     <ArticleChatButton v-if="showChatButton && !isChatPanelOpen" @click="isChatPanelOpen = true" />
 
@@ -1363,7 +1435,11 @@ onBeforeUnmount(() => {
       v-if="isChatPanelOpen"
       :article="article"
       :article-content="articleContent"
-      :settings="{ ai_chat_enabled: appSettings.ai_chat_enabled }"
+      :settings="{
+        ai_chat_enabled: appSettings.ai_chat_enabled,
+        ai_chat_profile_id: appSettings.ai_chat_profile_id,
+        ai_chat_quick_prompts: appSettings.ai_chat_quick_prompts,
+      }"
       @close="isChatPanelOpen = false"
     />
   </div>

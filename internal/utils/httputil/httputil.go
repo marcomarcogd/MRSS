@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -28,16 +29,22 @@ func BuildProxyURL(proxyType, proxyHost, proxyPort, username, password string) s
 		return ""
 	}
 
-	auth := ""
+	proxyURL := &url.URL{
+		Scheme: strings.ToLower(proxyType),
+		Host:   net.JoinHostPort(strings.Trim(proxyHost, "[]"), proxyPort),
+	}
+	if proxyURL.Scheme == "" {
+		proxyURL.Scheme = "http"
+	}
 	if username != "" {
 		if password != "" {
-			auth = username + ":" + password + "@"
+			proxyURL.User = url.UserPassword(username, password)
 		} else {
-			auth = username + "@"
+			proxyURL.User = url.User(username)
 		}
 	}
 
-	return fmt.Sprintf("%s://%s%s:%s", proxyType, auth, proxyHost, proxyPort)
+	return proxyURL.String()
 }
 
 // CreateHTTPClient creates an HTTP client with optional proxy support.

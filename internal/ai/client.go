@@ -131,54 +131,19 @@ func (c *Client) RequestWithConfigContext(ctx context.Context, config RequestCon
 	provider := DetectAPIProvider(c.config.Endpoint)
 	var primaryErr error
 
-	// Try provider-specific format first based on endpoint detection
+	// An explicit protocol must preserve its own errors; retrying unrelated
+	// formats can hide authentication/rate-limit failures and duplicate requests.
 	switch provider {
 	case "gemini":
-		result, err := c.tryFormat(ctx, NewGeminiHandler(), config)
-		if err == nil {
-			return result, nil
-		}
-		primaryErr = err
-		if shouldStopFormatFallback(ctx, err) {
-			return ResponseResult{}, err
-		}
-		// Fall through to other formats
-
+		return c.tryFormat(ctx, NewGeminiHandler(), config)
 	case "anthropic":
-		result, err := c.tryFormat(ctx, &AnthropicHandler{}, config)
-		if err == nil {
-			return result, nil
-		}
-		primaryErr = err
-		if shouldStopFormatFallback(ctx, err) {
-			return ResponseResult{}, err
-		}
-		// Fall through to other formats
-
+		return c.tryFormat(ctx, &AnthropicHandler{}, config)
 	case "deepseek":
-		result, err := c.tryFormat(ctx, &DeepSeekHandler{}, config)
-		if err == nil {
-			return result, nil
-		}
-		primaryErr = err
-		if shouldStopFormatFallback(ctx, err) {
-			return ResponseResult{}, err
-		}
-		// Fall through to other formats
-
+		return c.tryFormat(ctx, &DeepSeekHandler{}, config)
 	case "ollama":
-		result, err := c.tryFormat(ctx, NewOllamaHandler(), config)
-		if err == nil {
-			return result, nil
-		}
-		primaryErr = err
-		if shouldStopFormatFallback(ctx, err) {
-			return ResponseResult{}, err
-		}
-		// Fall through to other formats
-	}
-	if c.config.DisableFormatFallback && primaryErr != nil {
-		return ResponseResult{}, primaryErr
+		return c.tryFormat(ctx, NewOllamaHandler(), config)
+	case "openai":
+		return c.tryFormat(ctx, NewOpenAIHandler(), config)
 	}
 
 	// Try OpenAI format (most common, good fallback)
@@ -243,7 +208,11 @@ func (c *Client) tryFormat(ctx context.Context, handler FormatHandler, config Re
 	}
 
 	// Format endpoint
-	formattedEndpoint := handler.FormatEndpoint(c.config.Endpoint, c.config.Model)
+	model := config.Model
+	if model == "" {
+		model = c.config.Model
+	}
+	formattedEndpoint := handler.FormatEndpoint(c.config.Endpoint, model)
 
 	// Special handling for Ollama: use /api/chat if messages are provided
 	if _, ok := handler.(*OllamaHandler); ok && len(config.Messages) > 0 {
@@ -293,7 +262,7 @@ func (c *Client) sendRequestToEndpointWithHandler(ctx context.Context, jsonBody 
 	}
 
 	// Check if this is a Gemini endpoint that needs API key in URL
-	isGeminiEndpoint := IsGeminiEndpoint(apiURL)
+	_, isGeminiEndpoint := handler.(*GeminiHandler)
 
 	// For Gemini API, add API key as URL query parameter instead of Authorization header
 	if isGeminiEndpoint && c.config.APIKey != "" {

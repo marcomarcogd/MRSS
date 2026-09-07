@@ -3,6 +3,8 @@ import type { TranslationMessages } from '../types';
 const en: TranslationMessages = {
   article: {
     action: {
+      goToFeed: 'Go to Feed',
+      searchWith: 'Search with {engine}',
       addToFavorite: 'Add to Favorites',
       addToReadLater: 'Add to Read Later',
       backToUrl: 'Back to URL',
@@ -25,6 +27,7 @@ const en: TranslationMessages = {
       markBelowReadConfirmTitle: 'Mark Below as Read',
       markAsRead: 'Mark as Read',
       markAsUnread: 'Mark as Unread',
+      backToTop: 'Back to top',
       markBelowAsRead: 'Mark Below as Read',
       markedAllAsRead: 'All articles marked as read',
       markedNArticlesAsRead: 'Marked {count} articles as read',
@@ -64,13 +67,29 @@ const en: TranslationMessages = {
     chat: {
       aiChat: 'AI Chat',
       aiChatError: 'Failed to get response from AI. Please try again.',
+      historySaveFailed: 'The answer was generated but could not be saved to chat history.',
       aiChatInputPlaceholder: 'Type a message...',
       aiChatWelcome: 'Ask me anything about this article!',
       confirmDeleteSession: 'Are you sure you want to delete this chat session?',
       hideThinking: 'Hide Thinking',
-      historySaveFailed: 'The answer was generated but could not be saved to chat history.',
       newChat: 'New Chat',
       noSessions: 'No chat sessions yet',
+      copyMessage: 'Copy message',
+      openAISettings: 'Open AI settings',
+      selectProfile: 'Select AI profile',
+      summarySuggestions: 'Summaries',
+      questionSuggestions: 'Suggested questions',
+      customSuggestions: 'Your prompts',
+      promptConciseSummary: 'Summarize this article in one sentence.',
+      promptKeyPoints: 'List the key points from this article.',
+      promptDetailedSummary: 'Give me a detailed summary of this article.',
+      promptMainContent: 'What is the main content of this article?',
+      promptKeyPeople: 'Who are the key people mentioned?',
+      promptMainViews: 'What are the main viewpoints?',
+      promptKeyInformation: 'What important facts or data should I remember?',
+      promptExplain: 'Explain the difficult ideas in simple terms.',
+      promptAnalyze: "Analyze the article's reasoning and implications.",
+      promptVerify: 'Which claims in this article should be verified?',
       showThinking: 'Show Thinking',
       switchSession: 'Switch chat session',
       thinking: 'Thinking',
@@ -79,6 +98,7 @@ const en: TranslationMessages = {
       fetchingArticleContent: 'Fetching article content from RSS feed...',
       loadingContent: 'Loading content',
       noArticles: 'No articles found.',
+      readingProgress: 'Reading progress',
       noContentAvailable: 'No content available',
       renderContent: 'Render Content',
       selectArticle: 'Select an article to start reading',
@@ -91,6 +111,8 @@ const en: TranslationMessages = {
     list: {
       markAllVisibleAsRead: 'Mark All Visible as Read',
       allArticlesLoaded: 'All articles loaded',
+      allCaughtUp: "You're all caught up",
+      noUnreadArticles: 'There are no unread articles left.',
     },
     navigation: {
       goToAllArticles: 'Go to All Articles',
@@ -120,6 +142,11 @@ const en: TranslationMessages = {
       addToReadLater: 'Add to Read Later',
     },
     translation: {
+      translateTitle: 'Translate title',
+      manualMode: 'Translate on demand',
+      manualHint:
+        'Use Translate title, or Ctrl-click (Command-click on macOS) a paragraph to translate it.',
+      translatingTitle: 'Translating title...',
       aiLimitReached: 'AI usage limit reached. Using free alternatives.',
       original: 'Original',
       translated: 'Translation',
@@ -142,14 +169,14 @@ const en: TranslationMessages = {
     foundResults: 'Found {count} articles',
     noResults: 'No articles found matching your search',
     placeholder: 'Describe what you want to find...',
-    searchFailed: 'AI search failed. Please check your AI settings.',
-    showingResults: 'Showing AI search results',
     relevanceScore: 'Relevance {score}',
     matchFields: {
       title: 'Title match',
       summary: 'Summary match',
       content: 'Content match',
     },
+    searchFailed: 'AI search failed. Please check your AI settings.',
+    showingResults: 'Showing AI search results',
   },
   aiErrors: {
     configuration_invalid:
@@ -364,6 +391,23 @@ const en: TranslationMessages = {
       startDiscovery: 'Start discovery',
     },
     feed: {
+      cookieOrigin: 'Cookie website',
+      cookie: 'Cookie',
+      cookieSaved: 'Saved; leave blank to keep it',
+      clearCookie: 'Remove saved Cookie',
+      cookieHelp:
+        'Enter the exact website origin (scheme and host). Used for feed and article requests to that origin only. Stored encrypted on this device.',
+
+      contentOptions: 'Full-text extraction',
+      contentOptionsHelp:
+        'Applies to this subscription. Leave selectors empty for automatic extraction. Save these settings separately, then fetch the article again.',
+      contentSelector: 'Content CSS selector',
+      removeSelector: 'Remove CSS selector',
+      saveContentOptions: 'Save extraction settings',
+      contentOptionsSaved: 'Extraction settings saved',
+      contentOptionsError:
+        'Unable to load or save extraction settings. Check the selectors and try again.',
+
       adding: 'Adding...',
       addNewFeed: 'Add New Feed',
       addSubscription: 'Add Subscription',
@@ -409,6 +453,9 @@ const en: TranslationMessages = {
       feedName: 'Feed Name',
       feedReordered: 'Feed reordered successfully',
       feedRefreshStarted: 'Feed refresh started',
+      feedRefreshFailed: 'Failed to reload feed',
+      reloadFeed: 'Reload Feed',
+      reloadingFeed: 'Reloading Feed...',
       feedsDeletedSuccess: 'Feeds deleted successfully',
       feedsMovedSuccess: 'Feeds moved successfully',
       feedsSubscribedPartial: 'Partially subscribed: {succeeded}/{total} feeds',
@@ -572,6 +619,11 @@ const en: TranslationMessages = {
     },
   },
   setting: {
+    search: {
+      clear: 'Clear settings search',
+      noResults: 'No matching settings',
+      placeholder: 'Search settings',
+    },
     about: {
       forkNotice: 'MRSS is an unofficial modified fork based on DevXDojo/MrRSS.',
       licenseNotice:
@@ -599,7 +651,8 @@ const en: TranslationMessages = {
       aiSearchEnabled: 'AI Search',
       aiSearchEnabledDesc: 'Use AI to intelligently search articles with keyword expansion',
       endpoint: 'Endpoint',
-      aiEndpointDesc: 'Full API endpoint URL including path',
+      aiEndpointDesc:
+        'Full API URL: /chat/completions, Claude /v1/messages, or Gemini /v1beta (uses the model below)',
       aiEndpointPlaceholder: 'https://api.openai.com/v1/chat/completions',
       aiFeatures: 'AI Features',
       aiModel: 'Model Name',
@@ -644,6 +697,11 @@ const en: TranslationMessages = {
       aiUsageResetSuccess: 'AI usage counter reset successfully',
       aiUsageTokens: 'Tokens Used',
       aiUsageLimitPlaceholder: '0',
+      quickPrompts: 'Custom Chat Prompts',
+      quickPromptsDesc: 'Add reusable questions to the AI chat suggestion cards',
+      quickPromptPlaceholder: 'Enter a question or instruction',
+      quickPromptsHint: 'Press Enter or Add to save a prompt. Duplicate prompts are ignored.',
+      removeQuickPrompt: 'Remove prompt',
       clearAllChats: 'Clear Chat History',
       clearAllChatsButton: 'Clear',
       clearAllChatsConfirm:
@@ -764,7 +822,8 @@ const en: TranslationMessages = {
       translation: 'Translation',
       translationCredentialsRequired: 'Translation service requires API key or credentials',
       translationModeManual: 'Manual translation',
-      translationModeManualDesc: 'Translate only after clicking Translate in the article view',
+      translationModeManualDesc:
+        'Translate an article, its title, or selected paragraphs only when requested',
       translationModeAuto: 'Automatic translation',
       translationModeAutoDesc: 'Automatically translate eligible articles when opened',
       translationModeOff: 'Translation off',
@@ -831,7 +890,7 @@ const en: TranslationMessages = {
       cssApplied: 'Custom CSS is active',
       cssDeleteFailed: 'Failed to delete CSS file',
       cssDeleted: 'CSS file deleted successfully',
-      cssDesc: 'Upload a custom CSS file to style article content in rendered view',
+      cssDesc: 'Upload a custom CSS file to style the application and article content',
       cssGuide: 'View Custom CSS Guide',
       cssUpload: 'Upload CSS',
       cssUploadFailed: 'Failed to upload CSS file',
@@ -1053,6 +1112,11 @@ const en: TranslationMessages = {
         'Automatically display the full content of all articles when viewed as rendered content (may increase loading time)',
       defaultViewMode: 'Article View Mode',
       defaultViewModeDesc: 'Choose how articles should be displayed',
+      confirmMarkAsRead: 'Confirm Bulk Mark as Read',
+      confirmMarkAsReadDesc:
+        'Ask for confirmation before marking all, newer, or older articles as read',
+      rememberArticlePosition: 'Remember article position',
+      rememberArticlePositionDesc: 'Return to the last reading position when reopening an article',
       hideAdvancedSettings: 'Hide Advanced Settings',
       hideFromTimeline: 'Hide from Timeline',
       hideFromTimelineDesc: 'Hide this feed\'s articles from "All Articles" and "Unread" views',
@@ -1109,6 +1173,14 @@ const en: TranslationMessages = {
       addRule: 'Add Rule',
       applyRuleNow: 'Apply Now',
       noActionsSelected: 'Please select at least one action',
+      exportRules: 'Export rules',
+      importRules: 'Import rules',
+      importConfirm:
+        'Append {count} rules to the existing list? Their enabled states will be preserved. They will apply to future refreshes; existing articles will not be processed now.',
+      importSuccess: 'Imported {count} rules',
+      invalidBackup: 'Invalid or unsupported MRSS rules backup. No rules were imported.',
+      backupTooLarge: 'The rules backup exceeds the 5 MB limit.',
+      importFailed: 'Could not import rules. Please reload settings before retrying.',
       noRules: 'No rules defined',
       noRulesHint: 'Create a rule to automatically process articles',
       removeAction: 'Remove Action',
@@ -1196,6 +1268,30 @@ const en: TranslationMessages = {
     },
   },
   sidebar: {
+    categoryActions: {
+      dissolve: 'Dissolve category',
+      unsubscribe: 'Unsubscribe category',
+      dissolveConfirm:
+        'Dissolve "{name}" and its subcategories? Keep all {count} subscriptions and their articles in Uncategorized.',
+      unsubscribeConfirm:
+        'Unsubscribe all {count} feeds in "{name}" and its subcategories? Their articles, including favorites, will be deleted.',
+      done: 'Category updated',
+      failed: 'Could not complete the category operation. Reload before retrying.',
+    },
+    order: {
+      sort: 'Sort categories and feeds',
+      manual: 'Custom order',
+      name_asc: 'Name: A–Z',
+      name_desc: 'Name: Z–A',
+      count_asc: 'Count: low to high',
+      count_desc: 'Count: high to low',
+      latest: 'Latest article first',
+      pinItem: 'Pin to top of this level',
+      unpinItem: 'Unpin',
+      manualRequired: 'Choose Custom order before dragging. Pinned items stay at the top.',
+      dragCategory: 'Drag to reorder sibling categories',
+      saved: 'Category order saved',
+    },
     activity: {
       addFeed: 'Add Feed',
       allArticles: 'All Articles',
