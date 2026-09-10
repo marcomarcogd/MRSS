@@ -106,7 +106,9 @@ async function reloadFeed() {
 
   isReloading.value = true;
   try {
-    const response = await fetch(`/api/feeds/refresh?id=${props.feed.id}`, { method: 'POST' });
+    const response = await fetch(`/api/feeds/refresh?id=${props.feed.id}&reset_read=true`, {
+      method: 'POST',
+    });
     if (!response.ok) throw new Error(`Feed refresh failed: ${response.status}`);
     window.showToast(t('modal.feed.feedRefreshStarted'), 'success');
     store.pollProgress();
@@ -279,7 +281,7 @@ const submitButtonText = computed(() => {
 </script>
 
 <template>
-  <BaseModal :title="modalTitle" size="md" :z-index="60" @close="close">
+  <BaseModal :title="modalTitle" size="md" :z-index="70" @close="close">
     <!-- Form Content -->
     <div class="p-4 sm:p-6 scroll-smooth">
       <div class="mb-3 sm:mb-4">

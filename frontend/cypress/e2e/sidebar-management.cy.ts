@@ -12,6 +12,7 @@ function setup(savedState: Record<string, string> = {}) {
     update_check_enabled: 'false',
     shortcuts_enabled: 'true',
     image_gallery_enabled: 'true',
+    show_unread_counts: 'true',
     sidebar_sort_mode: 'manual',
     sidebar_category_order: '[]',
     sidebar_pinned_items: '[]',

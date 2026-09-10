@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -378,5 +380,126 @@ func TestChatCancellationStopsLocalProviderAndPreservesHistory(t *testing.T) {
 	}
 	if providerCalls.Load() != 2 {
 		t.Fatal("cancelled rate wait called provider")
+	}
+}
+
+func TestTemporaryChatKeepsHistoryDisabledAndSupportsHTTPCancellation(t *testing.T) {
+	for _, cancelRequest := range []bool{false, true} {
+		t.Run(fmt.Sprintf("cancel=%v", cancelRequest), func(t *testing.T) {
+			db, err := database.NewDB(filepath.Join(t.TempDir(), "temporary.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			if err := db.Init(); err != nil {
+				t.Fatal(err)
+			}
+			entered, release, providerCancelled := make(chan struct{}), make(chan struct{}), make(chan struct{})
+			provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.(http.Flusher).Flush()
+				close(entered)
+				select {
+				case <-r.Context().Done():
+					close(providerCancelled)
+				case <-release:
+					_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"temporary answer","reasoning":"temporary thinking"}}]}`))
+				}
+			}))
+			defer provider.Close()
+			defer provider.CloseClientConnections()
+			for key, value := range map[string]string{
+				"ai_chat_enabled": "true", "ai_chat_save_history": "false", "ai_usage_limit": "0",
+				"ai_endpoint": provider.URL + "/v1/chat/completions",
+			} {
+				if err := db.SetSetting(key, value); err != nil {
+					t.Fatal(err)
+				}
+			}
+			tracker := ai.NewUsageTracker(db)
+			tracker.SetMinInterval(0)
+			h := &core.Handler{DB: db, AITracker: tracker}
+			handlerDone := make(chan struct{})
+			api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				defer close(handlerDone)
+				chat.HandleAIChat(h, w, r)
+			}))
+			defer api.Close()
+			defer api.CloseClientConnections()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			payload, _ := json.Marshal(chat.ChatRequest{
+				ArticleID: 1, ArticleTitle: "Temporary context", ArticleContent: "Temporary article",
+				IsFirstMessage: true, Messages: []chat.ChatMessage{{Role: "user", Content: "Do not save"}},
+			})
+			req, err := http.NewRequestWithContext(ctx, http.MethodPost, api.URL, bytes.NewReader(payload))
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Content-Type", "application/json")
+			type outcome struct {
+				status int
+				body   []byte
+				err    error
+			}
+			completed := make(chan outcome, 1)
+			go func() {
+				resp, err := http.DefaultClient.Do(req)
+				if err != nil {
+					completed <- outcome{err: err}
+					return
+				}
+				defer resp.Body.Close()
+				body, err := io.ReadAll(resp.Body)
+				completed <- outcome{status: resp.StatusCode, body: body, err: err}
+			}()
+			await := func(ch <-chan struct{}, label string) {
+				t.Helper()
+				select {
+				case <-ch:
+				case <-time.After(2 * time.Second):
+					t.Fatalf("timed out: %s", label)
+				}
+			}
+			await(entered, "temporary provider start")
+			// Changing the preference during generation must only affect later requests.
+			if err := db.SetSetting("ai_chat_save_history", "true"); err != nil {
+				t.Fatal(err)
+			}
+			if cancelRequest {
+				cancel()
+				await(providerCancelled, "temporary response read cancellation")
+			} else {
+				close(release)
+			}
+			await(handlerDone, "temporary handler completion")
+			select {
+			case result := <-completed:
+				if cancelRequest {
+					if !errors.Is(result.err, context.Canceled) {
+						t.Fatalf("HTTP cancellation error=%v", result.err)
+					}
+				} else {
+					var response chat.ChatResponse
+					if err := json.Unmarshal(result.body, &response); err != nil || result.err != nil || result.status != http.StatusOK || response.SessionID != 0 || response.HistorySaved || response.Response != "temporary answer" || response.Thinking != "temporary thinking" {
+						t.Fatalf("temporary response=%+v body=%s err=%v decode=%v", response, result.body, result.err, err)
+					}
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("temporary HTTP request did not complete")
+			}
+			var sessions, messages int
+			if err := db.QueryRow(`SELECT COUNT(*) FROM chat_sessions`).Scan(&sessions); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.QueryRow(`SELECT COUNT(*) FROM chat_messages`).Scan(&messages); err != nil {
+				t.Fatal(err)
+			}
+			if sessions != 0 || messages != 0 {
+				t.Fatalf("temporary request persisted history: sessions=%d messages=%d", sessions, messages)
+			}
+		})
 	}
 }

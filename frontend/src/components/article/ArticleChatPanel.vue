@@ -47,6 +47,7 @@ interface Props {
     ai_chat_enabled: boolean;
     ai_chat_profile_id: string;
     ai_chat_quick_prompts: string;
+    ai_chat_save_history: boolean;
   };
 }
 
@@ -73,7 +74,9 @@ const editingSessionTitle = ref('');
 const selectedProfileId = ref(props.settings.ai_chat_profile_id || '');
 const boundArticle = ref<Article>({ ...props.article });
 const boundArticleContent = ref(props.articleContent);
+const rebindSession = ref(false);
 const articleMismatch = computed(() => props.article.id !== boundArticle.value.id);
+const saveHistory = computed(() => props.settings.ai_chat_save_history !== false);
 
 watch(
   () => props.articleContent,
@@ -83,12 +86,19 @@ watch(
 );
 
 watch([showSessions, currentSessionId, () => props.article.id], cancelEditSession);
+watch(saveHistory, () => {
+  showSessions.value = false;
+  cancelEditSession();
+});
 
 interface ActiveChatRequest {
   id: string;
   articleId: number;
   draftVersion: number;
   sessionId: number | null;
+  saveHistory: boolean;
+  rebindSession: boolean;
+  isFirstMessage: boolean;
   controller: AbortController;
   stopped: boolean;
 }
@@ -113,7 +123,7 @@ function isCurrentRequest(run: ActiveChatRequest) {
 }
 
 async function cancelRequest(run: ActiveChatRequest) {
-  if (!run.sessionId) return;
+  if (!run.saveHistory || !run.sessionId) return;
   try {
     await fetch('/api/ai-chat/cancel', {
       method: 'POST',
@@ -141,7 +151,7 @@ async function stopGeneration() {
     !activeRequest &&
     boundArticle.value.id === run.articleId &&
     draftVersion === run.draftVersion;
-  if (run.sessionId && stillStopped()) {
+  if (run.saveHistory && run.sessionId && stillStopped()) {
     await loadSessions(stillStopped);
     if (stillStopped()) await selectSession(run.sessionId, true, stillStopped);
   }
@@ -280,7 +290,7 @@ onMounted(async () => {
   if (!selectedProfileId.value && defaultProfile.value) {
     selectedProfileId.value = String(defaultProfile.value.id);
   }
-  await loadSessions(isCurrentView);
+  if (saveHistory.value) await loadSessions(isCurrentView);
   // Auto-select the most recent session if available
   if (isCurrentView() && sessions.value.length > 0) {
     await selectSession(sessions.value[0].id, false, isCurrentView);
@@ -317,7 +327,9 @@ async function selectSession(sessionId: number, force = false, isCurrentView?: (
       if (!isCurrentView() || session.article_id !== boundArticle.value.id) return;
       messages.value = loadedMessages;
       currentSessionId.value = sessionId;
-      // Until an assistant reply is saved, the model still needs article context.
+      rebindSession.value = false;
+      // A cancelled first attempt may have saved only the user question.
+      // Keep article context until an assistant response has been saved.
       isFirstMessage.value = !loadedMessages.some(
         (message: ChatMessage) => message.role === 'assistant'
       );
@@ -340,12 +352,33 @@ function createNewSession() {
   boundArticleContent.value = props.articleContent;
   if (changedArticle) sessions.value = [];
   currentSessionId.value = null;
+  rebindSession.value = false;
   messages.value = [];
   inputMessage.value = '';
   isFirstMessage.value = true;
   showSessions.value = false;
   cancelEditSession();
-  if (changedArticle) void loadSessions();
+  if (changedArticle && saveHistory.value) void loadSessions();
+}
+
+function continueWithCurrentArticle() {
+  if (isLoading.value || !articleMismatch.value) return;
+  ++viewVersion;
+  ++draftVersion;
+  creatingSession = null;
+  boundArticle.value = { ...props.article };
+  boundArticleContent.value = props.articleContent;
+  isFirstMessage.value = true;
+  rebindSession.value = true;
+  const currentSession = sessions.value.find((session) => session.id === currentSessionId.value);
+  if (currentSession) {
+    currentSession.article_id = props.article.id;
+    sessions.value = [currentSession];
+  } else {
+    sessions.value = [];
+  }
+  showSessions.value = false;
+  cancelEditSession();
 }
 
 async function deleteSession(sessionId: number, e: Event) {
@@ -463,11 +496,24 @@ async function sendMessage() {
   const message = inputMessage.value.trim();
   if (!message || disposed || isLoading.value || showSessions.value || articleMismatch.value)
     return;
+  const persistHistory = saveHistory.value;
+  if ((persistHistory && !currentSessionId.value) || (!persistHistory && currentSessionId.value)) {
+    // A new persistence context needs the article even when earlier messages contain an answer.
+    isFirstMessage.value = true;
+  }
+  if (!persistHistory) {
+    // Temporary messages must never be appended to a previously selected saved session.
+    currentSessionId.value = null;
+    creatingSession = null;
+  }
   const run: ActiveChatRequest = {
     id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
     articleId: boundArticle.value.id,
     draftVersion,
     sessionId: currentSessionId.value,
+    saveHistory: persistHistory,
+    rebindSession: rebindSession.value,
+    isFirstMessage: isFirstMessage.value,
     controller: new AbortController(),
     stopped: false,
   };
@@ -475,13 +521,14 @@ async function sendMessage() {
   ++viewVersion;
   const article = { ...boundArticle.value };
   const articleContent = boundArticleContent.value.slice(0, 50000);
+  const profileId = Number(selectedProfileId.value) || undefined;
   isLoading.value = true;
 
   try {
     if (!isCurrentRequest(run)) return;
     // A short, single-flight create gives Stop a stable session ID before the
     // long provider request starts. Do not abort creation and lose its ID.
-    if (!run.sessionId) {
+    if (run.saveHistory && !run.sessionId) {
       const session = await ensureSession(
         run.articleId,
         Array.from(message).slice(0, 60).join(''),
@@ -489,11 +536,14 @@ async function sendMessage() {
       );
       run.sessionId = session.id;
       if (!isCurrentRequest(run)) return;
+      // Consume the cached ID only when a live request takes ownership. A
+      // stopped create can finish before the user retries without duplicating it.
       creatingSession = null;
       currentSessionId.value = session.id;
       sessions.value.unshift(session);
     }
     if (!isCurrentRequest(run)) return;
+    // Preserve the input if session creation fails or is stopped before sending.
     messages.value.push({
       id: 0,
       role: 'user',
@@ -509,15 +559,16 @@ async function sendMessage() {
       headers: { 'Content-Type': 'application/json' },
       signal: run.controller.signal,
       body: JSON.stringify({
-        request_id: run.id,
-        session_id: run.sessionId,
+        request_id: run.saveHistory ? run.id : undefined,
+        session_id: run.saveHistory ? run.sessionId : undefined,
         article_id: run.articleId,
         messages: messages.value.slice(-10),
-        is_first_message: isFirstMessage.value,
+        is_first_message: run.isFirstMessage,
         article_title: article.title,
         article_url: article.url,
         article_content: articleContent,
-        profile_id: Number(selectedProfileId.value) || undefined,
+        profile_id: profileId,
+        rebind_session: run.rebindSession,
       }),
     });
     if (!isCurrentRequest(run)) return;
@@ -533,11 +584,12 @@ async function sendMessage() {
         created_at: new Date().toISOString(),
       });
       isFirstMessage.value = false;
-      if (data.session_id) {
+      rebindSession.value = false;
+      if (run.saveHistory && data.session_id) {
         currentSessionId.value = data.session_id;
         await loadSessions(() => isCurrentRequest(run));
       }
-      if (isCurrentRequest(run) && data.history_saved === false) {
+      if (run.saveHistory && isCurrentRequest(run) && data.history_saved === false) {
         window.showToast(t('article.chat.historySaveFailed'), 'warning');
       }
     } else {
@@ -548,7 +600,7 @@ async function sendMessage() {
           ? (chatError.payload as Record<string, unknown>)
           : null;
       const persistedSessionID = Number(errorPayload?.session_id || 0);
-      if (persistedSessionID > 0) {
+      if (run.saveHistory && persistedSessionID > 0) {
         currentSessionId.value = persistedSessionID;
         await loadSessions(() => isCurrentRequest(run));
         if (!isCurrentRequest(run)) return;
@@ -603,7 +655,7 @@ function handleKeydown(e: KeyboardEvent) {
 }
 
 const currentSessionTitle = computed(() => {
-  if (currentSessionId.value) {
+  if (saveHistory.value && currentSessionId.value) {
     const session = sessions.value.find((s) => s.id === currentSessionId.value);
     return session?.title || t('article.chat.aiChat');
   }
@@ -627,6 +679,7 @@ const currentSessionTitle = computed(() => {
           <div class="flex min-w-0 items-center gap-2 flex-1">
             <PhChatCircleText :size="20" class="shrink-0 text-accent" />
             <button
+              v-if="saveHistory"
               class="flex min-w-0 items-center gap-1 text-sm font-medium hover:text-accent transition-colors"
               :disabled="isLoading"
               :title="t('article.chat.switchSession')"
@@ -636,6 +689,7 @@ const currentSessionTitle = computed(() => {
               <span class="truncate">{{ currentSessionTitle }}</span>
               <PhClockCounterClockwise :size="16" class="shrink-0" />
             </button>
+            <span v-else class="truncate text-sm font-medium">{{ currentSessionTitle }}</span>
           </div>
           <div class="flex shrink-0 items-center gap-1">
             <BaseSelect
@@ -667,8 +721,8 @@ const currentSessionTitle = computed(() => {
             <button
               class="p-1 hover:bg-bg-tertiary rounded-lg transition-colors"
               :title="t('common.close')"
-              @click="closePanel"
               data-testid="chat-close"
+              @click="closePanel"
             >
               <PhX :size="18" class="text-text-secondary" />
             </button>
@@ -700,15 +754,26 @@ const currentSessionTitle = computed(() => {
             <p class="text-xs text-text-secondary">
               {{ t('article.chat.articleMismatch', { title: boundArticle.title }) }}
             </p>
-            <button
-              type="button"
-              class="text-xs text-accent hover:underline disabled:opacity-50"
-              data-testid="chat-new-context"
-              :disabled="isLoading"
-              @click.stop="createNewSession"
-            >
-              {{ t('article.chat.newChatForCurrentArticle') }}
-            </button>
+            <div class="flex flex-wrap gap-x-3 gap-y-1">
+              <button
+                type="button"
+                class="text-xs text-accent hover:underline disabled:opacity-50"
+                data-testid="chat-continue-current-article"
+                :disabled="isLoading"
+                @click.stop="continueWithCurrentArticle"
+              >
+                {{ t('article.chat.continueWithCurrentArticle') }}
+              </button>
+              <button
+                type="button"
+                class="text-xs text-text-secondary hover:text-accent hover:underline disabled:opacity-50"
+                data-testid="chat-new-context"
+                :disabled="isLoading"
+                @click.stop="createNewSession"
+              >
+                {{ t('article.chat.newChatForCurrentArticle') }}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -755,9 +820,15 @@ const currentSessionTitle = computed(() => {
                 <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100">
                   <button
                     class="p-1 hover:bg-bg-primary rounded"
-                    @click="startEditSession(session, $event)"
+                    :title="editingSessionId === session.id ? t('common.cancel') : t('common.edit')"
+                    @click.stop="
+                      editingSessionId === session.id
+                        ? cancelEditSession()
+                        : startEditSession(session, $event)
+                    "
                   >
-                    <PhPencil :size="14" />
+                    <PhX v-if="editingSessionId === session.id" :size="14" />
+                    <PhPencil v-else :size="14" />
                   </button>
                   <button
                     class="p-1 hover:bg-bg-primary rounded text-red-500"
@@ -939,6 +1010,14 @@ const currentSessionTitle = computed(() => {
   -webkit-user-select: text !important;
   -moz-user-select: text !important;
   -ms-user-select: text !important;
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, 0.32),
+    0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+.chat-panel button:not(:disabled),
+.chat-panel [role='button']:not([aria-disabled='true']) {
+  cursor: pointer;
 }
 
 @media (min-width: 768px) {

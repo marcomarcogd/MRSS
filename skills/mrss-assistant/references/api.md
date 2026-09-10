@@ -15,8 +15,10 @@ python skills/mrss-assistant/scripts/generate_api_reference.py docs/SERVER_MODE/
 - Use `GET` endpoints freely for inspection.
 - Ask before `DELETE`, bulk updates, cache clearing, or settings changes.
 - Send JSON request bodies with `Content-Type: application/json` unless an endpoint describes file upload.
-- For cancellable chat, first create a session with `POST /api/ai/chat/session/create` and use the returned `id` as `session_id` in `POST /api/ai-chat`, together with a fresh `request_id` (at most 128 characters).
+- For saved chat, first create a session with `POST /api/ai/chat/session/create` and use the returned `id` as `session_id` in `POST /api/ai-chat`, together with a fresh `request_id` (at most 128 bytes; a UUID is recommended).
 - Stop that generation with `POST /api/ai-chat/cancel` and the same `session_id` and `request_id`. Cancellation is idempotent, including before generation starts or after it finishes. Use a new request ID for the next message; cancelled or completed IDs are retained briefly to reject delayed replays.
+- With `ai_chat_save_history=false`, temporary chat requests omit `session_id` and `request_id`, save no history, and stop when their HTTP request is aborted. `history_saved` reports whether the response was persisted.
+- Continue a saved conversation with another article only after an explicit user choice: send `rebind_session=true`, the same `session_id`, and matching new article metadata/content with `is_first_message=true`.
 - Redact credentials and API keys from user-facing output.
 
 ## Ai
@@ -130,6 +132,7 @@ Parameters:
   - `feed_id` (query, optional): Filter by feed ID
   - `category` (query, optional): Filter by category name
   - `only_unread` (query, optional): Filter for only unread articles
+  - `sort_order` (query, optional): Publication order: newest or oldest
   - `page` (query, optional): Page number (default: 1)
   - `limit` (query, optional): Items per page (default: 50, max: 500)
 
@@ -210,7 +213,7 @@ Request body: see the Swagger schema for full field details.
 
 Get filter-specific feed counts
 
-### `GET /articles/image-gallery`
+### `GET /articles/images`
 
 Get image gallery articles
 
@@ -218,6 +221,8 @@ Parameters:
   - `feed_id` (query, optional): Filter by feed ID
   - `category` (query, optional): Filter by category name
   - `only_unread` (query, optional): Filter for only unread articles
+  - `media_type` (query, optional): Filter by media type: all, images, or videos
+  - `sort_order` (query, optional): Publication order: newest or oldest
   - `page` (query, optional): Page number (default: 1)
   - `limit` (query, optional): Items per page (default: 50)
 
@@ -429,6 +434,7 @@ Refresh a single feed
 
 Parameters:
   - `id` (query, required): Feed ID
+  - `reset_read` (query, optional): Reset existing visible articles to unread before refreshing
 
 ### `POST /feeds/reorder`
 

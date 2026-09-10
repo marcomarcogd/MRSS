@@ -27,7 +27,7 @@ func validChatRequestID(id string) bool {
 // @Produce json
 // @Param request body chat.CancelChatRequest true "Request to cancel"
 // @Success 200 {object} map[string]bool "success"
-// @Failure 400 {object} map[string]string "Invalid request"
+// @Failure 400 {object} response.APIResponse "Invalid request"
 // @Router /ai-chat/cancel [post]
 func HandleCancelAIChat(h *core.Handler, w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {

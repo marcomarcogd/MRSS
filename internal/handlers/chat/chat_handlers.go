@@ -31,6 +31,7 @@ type ChatRequest struct {
 	ArticleURL     string        `json:"article_url,omitempty"`
 	ArticleContent string        `json:"article_content,omitempty"`
 	IsFirstMessage bool          `json:"is_first_message,omitempty"`
+	RebindSession  bool          `json:"rebind_session,omitempty"` // Explicitly continue an existing conversation with a different article
 	ProfileID      int64         `json:"profile_id,omitempty"`
 }
 
@@ -51,16 +52,16 @@ type chatErrorResponse struct {
 
 // HandleAIChat handles chat requests for article discussions
 // @Summary      AI chat with article
-// @Description  Send messages to AI for discussing article content (requires ai_chat_enabled setting). For cancellable requests, create a session first and send its session_id with a unique request_id.
+// @Description  Discuss article content with AI (requires ai_chat_enabled). When ai_chat_save_history is enabled, create a session and send session_id with a unique request_id to support the cancel endpoint. Temporary chats omit both IDs and are cancelled by aborting the HTTP request. Set rebind_session only after explicitly choosing to continue a saved conversation with another article.
 // @Tags         chat
 // @Accept       json
 // @Produce      json
 // @Param        request  body      chat.ChatRequest  true  "Chat request (messages, article info)"
 // @Success      200  {object}  chat.ChatResponse  "AI response (response, html)"
-// @Failure      400  {object}  map[string]string  "Bad request (missing messages)"
-// @Failure      403  {object}  map[string]string  "AI chat is disabled or limit reached"
+// @Failure      400  {object}  chat.chatErrorResponse  "Bad request (missing messages)"
+// @Failure      403  {object}  chat.chatErrorResponse  "AI chat is disabled or limit reached"
 // @Failure      408  {object}  chat.chatErrorResponse  "Chat generation stopped"
-// @Failure      500  {object}  map[string]string  "Internal server error"
+// @Failure      500  {object}  chat.chatErrorResponse  "Internal server error"
 // @Router       /ai-chat [post]
 func HandleAIChat(h *core.Handler, w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -259,6 +260,11 @@ func HandleAIChat(h *core.Handler, w http.ResponseWriter, r *http.Request) {
 }
 
 func persistUserChatMessage(h *core.Handler, req *ChatRequest) (int64, bool, error) {
+	saveHistory, _ := h.DB.GetSetting("ai_chat_save_history")
+	if saveHistory == "false" {
+		return 0, false, nil
+	}
+
 	if req.ArticleID <= 0 {
 		// Backward compatibility for old callers that did not send article_id.
 		return req.SessionID, false, nil
@@ -281,8 +287,16 @@ func persistUserChatMessage(h *core.Handler, req *ChatRequest) (int64, bool, err
 		if err != nil {
 			return sessionID, false, err
 		}
-		if session == nil || session.ArticleID != req.ArticleID {
-			return sessionID, false, fmt.Errorf("chat session does not belong to the article")
+		if session == nil {
+			return sessionID, false, fmt.Errorf("chat session not found")
+		}
+		if session.ArticleID != req.ArticleID {
+			if !req.RebindSession {
+				return sessionID, false, fmt.Errorf("chat session does not belong to the article")
+			}
+			if err := h.DB.RebindChatSession(sessionID, req.ArticleID); err != nil {
+				return sessionID, false, err
+			}
 		}
 	} else {
 		title := []rune(lastUserMessage)

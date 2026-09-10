@@ -16,6 +16,159 @@
     "host": "localhost:1234",
     "basePath": "/api",
     "paths": {
+        "/ai-chat": {
+            "post": {
+                "description": "Discuss article content with AI (requires ai_chat_enabled). When ai_chat_save_history is enabled, create a session and send session_id with a unique request_id to support the cancel endpoint. Temporary chats omit both IDs and are cancelled by aborting the HTTP request. Set rebind_session only after explicitly choosing to continue a saved conversation with another article.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "chat"
+                ],
+                "summary": "AI chat with article",
+                "parameters": [
+                    {
+                        "description": "Chat request (messages, article info)",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/chat.ChatRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "AI response (response, html)",
+                        "schema": {
+                            "$ref": "#/definitions/chat.ChatResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request (missing messages)",
+                        "schema": {
+                            "$ref": "#/definitions/chat.chatErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "AI chat is disabled or limit reached",
+                        "schema": {
+                            "$ref": "#/definitions/chat.chatErrorResponse"
+                        }
+                    },
+                    "408": {
+                        "description": "Chat generation stopped",
+                        "schema": {
+                            "$ref": "#/definitions/chat.chatErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/chat.chatErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/ai-chat/cancel": {
+            "post": {
+                "description": "Cancel one request by session_id and request_id. Repeated, finished, and early cancellation all return success.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "chat"
+                ],
+                "summary": "Stop AI chat generation",
+                "parameters": [
+                    {
+                        "description": "Request to cancel",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/chat.CancelChatRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "boolean"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/response.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/ai/chat/session/create": {
+            "post": {
+                "description": "Create a new chat session for an article",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "chat"
+                ],
+                "summary": "Create chat session",
+                "parameters": [
+                    {
+                        "description": "Session creation request (article_id, title)",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/chat.CreateSessionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Created chat session",
+                        "schema": {
+                            "$ref": "#/definitions/database.ChatSession"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request (missing article_id)",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/ai/profiles": {
             "get": {
                 "description": "Get all AI configuration profiles (without API keys for security)",
@@ -1003,6 +1156,16 @@
                         "in": "query"
                     },
                     {
+                        "enum": [
+                            "newest",
+                            "oldest"
+                        ],
+                        "type": "string",
+                        "description": "Publication order: newest or oldest",
+                        "name": "sort_order",
+                        "in": "query"
+                    },
+                    {
                         "minimum": 1,
                         "type": "integer",
                         "description": "Page number (default: 1)",
@@ -1617,7 +1780,7 @@
                 }
             }
         },
-        "/articles/image-gallery": {
+        "/articles/images": {
             "get": {
                 "description": "Retrieve articles from image-mode feeds (visual/rss-gallery feeds) with pagination",
                 "consumes": [
@@ -1648,6 +1811,22 @@
                         "type": "boolean",
                         "description": "Filter for only unread articles",
                         "name": "only_unread",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by media type: all, images, or videos",
+                        "name": "media_type",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "newest",
+                            "oldest"
+                        ],
+                        "type": "string",
+                        "description": "Publication order: newest or oldest",
+                        "name": "sort_order",
                         "in": "query"
                     },
                     {
@@ -2257,119 +2436,6 @@
                 }
             }
         },
-        "/ai-chat": {
-            "post": {
-                "description": "Send messages to AI for discussing article content (requires ai_chat_enabled setting). For cancellable requests, create a session first and send its session_id with a unique request_id.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "chat"
-                ],
-                "summary": "AI chat with article",
-                "parameters": [
-                    {
-                        "description": "Chat request (messages, article info)",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/chat.ChatRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "AI response (response, html)",
-                        "schema": {
-                            "$ref": "#/definitions/chat.ChatResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request (missing messages)",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "AI chat is disabled or limit reached",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "408": {
-                        "description": "Chat generation stopped",
-                        "schema": {
-                            "$ref": "#/definitions/chat.chatErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal server error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/ai-chat/cancel": {
-            "post": {
-                "description": "Cancel one request by session_id and request_id. Repeated, finished, and early cancellation all return success.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "chat"
-                ],
-                "summary": "Stop AI chat generation",
-                "parameters": [
-                    {
-                        "description": "Request to cancel",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/chat.CancelChatRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "success",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "boolean"
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
         "/chat/message": {
             "delete": {
                 "description": "Delete a specific chat message",
@@ -2626,58 +2692,6 @@
                     },
                     "400": {
                         "description": "Bad request (missing or invalid session_id)",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal server error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/ai/chat/session/create": {
-            "post": {
-                "description": "Create a new chat session for an article",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "chat"
-                ],
-                "summary": "Create chat session",
-                "parameters": [
-                    {
-                        "description": "Session creation request (article_id, title)",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/chat.CreateSessionRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Created chat session",
-                        "schema": {
-                            "$ref": "#/definitions/database.ChatSession"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request (missing article_id)",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -4287,6 +4301,12 @@
                         "name": "id",
                         "in": "query",
                         "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Reset existing visible articles to unread before refreshing",
+                        "name": "reset_read",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -6343,6 +6363,9 @@
                 },
                 "page": {
                     "type": "integer"
+                },
+                "sort_order": {
+                    "type": "string"
                 }
             }
         },
@@ -6428,20 +6451,6 @@
                 }
             }
         },
-        "chat.chatErrorResponse": {
-            "type": "object",
-            "properties": {
-                "error": {
-                    "$ref": "#/definitions/response.ErrorInfo"
-                },
-                "session_id": {
-                    "type": "integer"
-                },
-                "success": {
-                    "type": "boolean"
-                }
-            }
-        },
         "chat.ChatMessage": {
             "type": "object",
             "properties": {
@@ -6480,6 +6489,10 @@
                 },
                 "profile_id": {
                     "type": "integer"
+                },
+                "rebind_session": {
+                    "description": "Explicitly continue an existing conversation with a different article",
+                    "type": "boolean"
                 },
                 "request_id": {
                     "description": "Requires session_id when provided",
@@ -6527,6 +6540,20 @@
             "properties": {
                 "title": {
                     "type": "string"
+                }
+            }
+        },
+        "chat.chatErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "$ref": "#/definitions/response.ErrorInfo"
+                },
+                "session_id": {
+                    "type": "integer"
+                },
+                "success": {
+                    "type": "boolean"
                 }
             }
         },

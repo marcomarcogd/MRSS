@@ -16,14 +16,14 @@ import AIFeatureSettings from './components/modals/settings/ai/AIFeatureSettings
 import type { SettingsData } from './types/settings';
 import ActivityBar from './components/sidebar/ActivityBar.vue';
 import DailyReportCloudConsentModal from './components/dailyReport/DailyReportCloudConsentModal.vue';
+import { setSettingsFromRawData } from './composables/core/useSettings';
 import {
+  useAppStore,
   createAutoRefreshScheduler,
   getAutoRefreshInterval,
   preserveSelectedArticle,
-  useAppStore,
 } from './stores/app';
 import { DailyReportAPIError, useDailyReports } from './composables/dailyReport/useDailyReports';
-import { setSettingsFromRawData } from './composables/core/useSettings';
 import { getAIErrorMessage } from './utils/aiError';
 import {
   getRecommendedFonts,
@@ -753,7 +753,10 @@ describe('AI chat panel size', () => {
       window.dispatchEvent(new Event('resize'));
       expect(panel.style.width).toBe('650px');
       expect(JSON.parse(localStorage.getItem('mrrssChatPanelSize')!).width).toBe(650);
-      vi.spyOn(panel, 'getBoundingClientRect').mockReturnValue({ width: 650, height: 680 } as DOMRect);
+      vi.spyOn(panel, 'getBoundingClientRect').mockReturnValue({
+        width: 650,
+        height: 680,
+      } as DOMRect);
       await wrapper.get('.cursor-nw-resize').trigger('mousedown', { clientX: 100, clientY: 100 });
       document.dispatchEvent(new MouseEvent('mousemove', { clientX: 50, clientY: 60 }));
       document.dispatchEvent(new MouseEvent('mouseup'));
@@ -863,34 +866,49 @@ describe('Article context menu read status', () => {
   it('uses neutral read icons with distinct shapes while preserving status actions and colors', () => {
     const i18n = createI18n({ legacy: false, locale: 'en', messages: { en } });
     let actions: ReturnType<typeof useArticleActions>;
-    const wrapper = mount({
-      setup() {
-        actions = useArticleActions(i18n.global.t, { value: 'rendered' });
-        return {};
+    const wrapper = mount(
+      {
+        setup() {
+          actions = useArticleActions(i18n.global.t, { value: 'rendered' });
+          return {};
+        },
+        template: '<div />',
       },
-      template: '<div />',
-    }, { global: { plugins: [createPinia(), i18n] } });
+      { global: { plugins: [createPinia(), i18n] } }
+    );
     const openMenu = vi.fn();
     window.addEventListener('open-context-menu', openMenu);
     try {
       for (const isRead of [false, true]) {
         const article: Article = {
-          id: 1, feed_id: 1, title: 'Article', url: 'https://example.com/article',
-          published_at: '2026-01-01T00:00:00Z', is_read: isRead,
-          is_favorite: true, is_read_later: true, is_hidden: false,
+          id: 1,
+          feed_id: 1,
+          title: 'Article',
+          url: 'https://example.com/article',
+          published_at: '2026-01-01T00:00:00Z',
+          is_read: isRead,
+          is_favorite: true,
+          is_read_later: true,
+          is_hidden: false,
         };
         actions!.showArticleContextMenu(new MouseEvent('contextmenu'), article);
         const event = openMenu.mock.calls.at(-1)![0] as CustomEvent;
         expect(event.detail.data).toBe(article);
         expect(event.detail.items[0]).toMatchObject({
-          action: 'toggleRead', icon: 'ph-circle', iconColor: 'text-text-secondary',
+          action: 'toggleRead',
+          icon: 'ph-circle',
+          iconColor: 'text-text-secondary',
           iconWeight: isRead ? 'regular' : 'fill',
-          label: i18n.global.t(isRead ? 'article.action.markAsUnread' : 'article.action.markAsRead'),
+          label: i18n.global.t(
+            isRead ? 'article.action.markAsUnread' : 'article.action.markAsRead'
+          ),
         });
-        expect(event.detail.items).toEqual(expect.arrayContaining([
-          expect.objectContaining({ action: 'toggleFavorite', iconColor: 'text-yellow-500' }),
-          expect.objectContaining({ action: 'toggleReadLater', iconColor: 'text-blue-500' }),
-        ]));
+        expect(event.detail.items).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ action: 'toggleFavorite', iconColor: 'text-yellow-500' }),
+            expect.objectContaining({ action: 'toggleReadLater', iconColor: 'text-blue-500' }),
+          ])
+        );
       }
     } finally {
       window.removeEventListener('open-context-menu', openMenu);

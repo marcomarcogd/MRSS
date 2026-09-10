@@ -396,6 +396,7 @@ describe('Article Operations', () => {
       layout_mode: 'normal',
       default_view_mode: 'rendered',
       ai_chat_enabled: 'true',
+      ai_chat_save_history: 'true',
       translation_mode: 'off',
       summary_enabled: 'false',
       full_text_fetch_enabled: 'false',

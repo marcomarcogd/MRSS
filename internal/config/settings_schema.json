@@ -843,6 +843,48 @@
       "category": "reading",
       "encrypted": false,
       "frontend_key": "sidebar_category_order"
+    },
+    "scroll_mark_as_read": {
+      "type": "bool",
+      "default": false,
+      "category": "reading",
+      "encrypted": false,
+      "frontend_key": "scroll_mark_as_read"
+    },
+    "auto_mark_read_enabled": {
+      "type": "bool",
+      "default": false,
+      "category": "reading",
+      "encrypted": false,
+      "frontend_key": "auto_mark_read_enabled"
+    },
+    "auto_mark_read_days": {
+      "type": "int",
+      "default": 7,
+      "category": "reading",
+      "encrypted": false,
+      "frontend_key": "auto_mark_read_days"
+    },
+    "ai_chat_save_history": {
+      "type": "bool",
+      "default": true,
+      "category": "ai",
+      "encrypted": false,
+      "frontend_key": "aiChatSaveHistory"
+    },
+    "show_unread_counts": {
+      "type": "bool",
+      "default": true,
+      "category": "reading",
+      "encrypted": false,
+      "frontend_key": "showUnreadCounts"
+    },
+    "freshrss_provider": {
+      "type": "string",
+      "default": "freshrss",
+      "category": "integrations",
+      "encrypted": false,
+      "frontend_key": "freshRSSProvider"
     }
   }
 }

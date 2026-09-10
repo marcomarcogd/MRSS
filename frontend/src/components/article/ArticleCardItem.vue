@@ -20,6 +20,7 @@ const props = defineProps<Props>();
 const emit = defineEmits<{
   click: [];
   contextmenu: [event: MouseEvent];
+  observeElement: [element: Element | null];
 }>();
 
 const { t, locale } = useI18n();
@@ -123,6 +124,7 @@ function handleImageError(event: Event) {
 
 <template>
   <div
+    :ref="(el) => emit('observeElement', el as Element | null)"
     :data-article-id="article.id"
     :title="withShortcut(t('article.action.openArticle'), 'openArticle')"
     :class="[

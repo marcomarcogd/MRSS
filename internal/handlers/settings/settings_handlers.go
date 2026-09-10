@@ -180,7 +180,11 @@ func persistStartupSettingChange(h *core.Handler, change *startupSettingChange) 
 		return nil
 	}
 
-	if err := setStartupRegistration(change.requested); err != nil {
+	setRegistration := h.SetStartupOnBoot
+	if setRegistration == nil {
+		setRegistration = setStartupRegistration
+	}
+	if err := setRegistration(change.requested); err != nil {
 		return fmt.Errorf("failed to apply startup registration: %w", err)
 	}
 
@@ -189,7 +193,7 @@ func persistStartupSettingChange(h *core.Handler, change *startupSettingChange) 
 		value = "true"
 	}
 	if err := h.DB.SetSetting("startup_on_boot", value); err != nil {
-		rollbackErr := setStartupRegistration(change.previous)
+		rollbackErr := setRegistration(change.previous)
 		if rollbackErr != nil {
 			return fmt.Errorf("failed to persist startup setting: %w; failed to roll back startup registration: %v", err, rollbackErr)
 		}

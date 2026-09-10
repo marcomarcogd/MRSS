@@ -13,6 +13,9 @@ import {
   PhCircle,
   PhClock,
   PhLightning,
+  PhStar,
+  PhSortAscending,
+  PhSortDescending,
 } from '@phosphor-icons/vue';
 import ArticleFilterModal from '../modals/filter/ArticleFilterModal.vue';
 import ArticleItem from './ArticleItem.vue';
@@ -23,6 +26,7 @@ import { useArticleTranslation } from '@/composables/article/useArticleTranslati
 import type { TranslationMode } from '@/composables/article/useArticleTranslation';
 import { useArticleFilter } from '@/composables/article/useArticleFilter';
 import { useArticleActions } from '@/composables/article/useArticleActions';
+import { useArticleSelectionMenu } from '@/composables/article/useArticleSelectionMenu';
 import { useShowPreviewImages } from '@/composables/ui/useShowPreviewImages';
 import { useSettings } from '@/composables/core/useSettings';
 import { parseSettingsData } from '@/composables/core/useSettings.generated';
@@ -45,12 +49,18 @@ const temporarilyKeepArticles = ref<Set<number>>(new Set());
 // Flag to control when scroll position should be restored
 const shouldRestoreScroll = ref(false);
 const pendingFeedArticleId = ref<number | null>(null);
+const scrollReadElements = new Map<number, Element>();
+const scrollReadSeen = new Set<number>();
+const scrollReadPending = new Set<number>();
+let scrollReadObserver: IntersectionObserver | null = null;
 
 // Card mode modal state
 const showCardModal = ref(false);
 const cardModalArticle = ref<Article | null>(null);
 const cardModalContent = ref('');
 const isCardModalLoading = ref(false);
+const recentlyClosedCardId = ref<number | null>(null);
+let cardHighlightTimer: ReturnType<typeof setTimeout> | null = null;
 
 // Track if user has scrolled to bottom
 const hasScrolledToBottom = ref(false);
@@ -122,7 +132,12 @@ const filteredArticles = computed(() => {
 
   // If AI search is active, use AI search results
   if (isAISearchActive.value) {
-    let articles = aiSearchResults.value;
+    let articles = [...aiSearchResults.value].sort((left, right) => {
+      const delta = new Date(left.published_at).getTime() - new Date(right.published_at).getTime();
+      return store.articleSortOrder === 'oldest'
+        ? delta || left.id - right.id
+        : -delta || right.id - left.id;
+    });
     if (applyUnreadFilter.value) {
       articles = articles.filter(
         (article) =>
@@ -228,6 +243,12 @@ const { showArticleContextMenu } = useArticleActions(
   },
   preserveRelativeReadPosition
 );
+const { onContextMenu: showSelectionContextMenu } = useArticleSelectionMenu(listRef);
+
+function handleArticleContextMenu(event: MouseEvent, article: Article): void {
+  showSelectionContextMenu(event);
+  if (!event.defaultPrevented) showArticleContextMenu(event, article);
+}
 
 async function preserveRelativeReadPosition(
   referenceArticle: Article,
@@ -267,6 +288,69 @@ const visibleArticles = computed(() => {
   // Keeping it simple to avoid complexity
   return filteredArticles.value;
 });
+
+async function markArticleAfterScroll(articleId: number): Promise<void> {
+  const article = filteredArticles.value.find((item) => item.id === articleId);
+  if (
+    !settings.value.scroll_mark_as_read ||
+    !article ||
+    article.is_read ||
+    article.is_read_later ||
+    scrollReadPending.has(articleId)
+  ) {
+    return;
+  }
+
+  scrollReadPending.add(articleId);
+  try {
+    const response = await fetch(`/api/articles/read?id=${articleId}&read=true`, {
+      method: 'POST',
+    });
+    if (!response.ok) throw new Error(`Mark as read failed: ${response.status}`);
+    temporarilyKeepArticles.value.add(articleId);
+    handleHoverMarkAsRead(articleId);
+    await store.fetchUnreadCounts();
+    await store.fetchFilterCounts();
+  } catch (error) {
+    console.error('Error marking article as read after scrolling:', error);
+  } finally {
+    scrollReadPending.delete(articleId);
+  }
+}
+
+function setupScrollReadObserver(): void {
+  scrollReadObserver?.disconnect();
+  if (!listRef.value || !('IntersectionObserver' in window)) return;
+
+  scrollReadObserver = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        const articleId = Number((entry.target as HTMLElement).dataset.articleId);
+        if (!articleId) continue;
+        if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
+          scrollReadSeen.add(articleId);
+        } else if (!entry.isIntersecting && scrollReadSeen.delete(articleId)) {
+          void markArticleAfterScroll(articleId);
+        }
+      }
+    },
+    { root: listRef.value, threshold: [0, 0.6] }
+  );
+  scrollReadElements.forEach((element) => scrollReadObserver?.observe(element));
+}
+
+function observeListArticle(element: Element | null, articleId: number): void {
+  observeArticle(element);
+  const previous = scrollReadElements.get(articleId);
+  if (previous) scrollReadObserver?.unobserve(previous);
+  if (!element) {
+    scrollReadElements.delete(articleId);
+    scrollReadSeen.delete(articleId);
+    return;
+  }
+  scrollReadElements.set(articleId, element);
+  scrollReadObserver?.observe(element);
+}
 
 // Helper to truncate text to max length
 function truncateText(text: string, maxLength: number): string {
@@ -346,6 +430,8 @@ onMounted(async () => {
     if (translationSettings.value.mode === 'auto' && listRef.value) {
       setupIntersectionObserver(listRef.value, store.articles);
     }
+    await nextTick();
+    setupScrollReadObserver();
   } catch (e) {
     console.error('Error loading settings:', e);
   }
@@ -467,6 +553,14 @@ onBeforeUnmount(() => {
     clearTimeout(scrollThrottleTimer);
     scrollThrottleTimer = null;
   }
+  if (cardHighlightTimer) {
+    clearTimeout(cardHighlightTimer);
+    cardHighlightTimer = null;
+  }
+  scrollReadObserver?.disconnect();
+  scrollReadObserver = null;
+  scrollReadElements.clear();
+  scrollReadSeen.clear();
   window.removeEventListener(
     'translation-settings-changed',
     onTranslationSettingsChanged as EventListener
@@ -816,6 +910,12 @@ async function closeCardModal(): Promise<void> {
   cardModalContent.value = '';
 
   if (!articleId || !listRef.value) return;
+  recentlyClosedCardId.value = articleId;
+  if (cardHighlightTimer) clearTimeout(cardHighlightTimer);
+  cardHighlightTimer = setTimeout(() => {
+    if (recentlyClosedCardId.value === articleId) recentlyClosedCardId.value = null;
+    cardHighlightTimer = null;
+  }, 1600);
   await nextTick();
   listRef.value
     .querySelector<HTMLElement>(`[data-article-id="${articleId}"]`)
@@ -921,7 +1021,23 @@ const shouldShowBottomMarkAllRead = computed(() => {
   );
 });
 
-const isUnreadEmptyState = computed(() => store.currentFilter === 'unread' || store.showOnlyUnread);
+const isUnreadEmptyState = computed(
+  () =>
+    store.currentFilter !== 'favorites' &&
+    (store.currentFilter === 'unread' || store.showOnlyUnread)
+);
+const isFavoritesEmptyState = computed(() => store.currentFilter === 'favorites');
+
+async function toggleArticleSortOrder(): Promise<void> {
+  const nextOrder = store.articleSortOrder === 'newest' ? 'oldest' : 'newest';
+  store.setArticleSortOrder(nextOrder);
+  if (activeFilters.value.length > 0) {
+    await fetchFilteredArticles(activeFilters.value);
+  } else if (!isAISearchActive.value) {
+    await store.fetchArticles();
+  }
+  if (listRef.value) listRef.value.scrollTop = 0;
+}
 
 // Mark all currently visible articles as read
 async function markAllVisibleAsRead(): Promise<void> {
@@ -1003,6 +1119,22 @@ async function markAllVisibleAsRead(): Promise<void> {
               class="sm:w-5 sm:h-5"
               :weight="store.showOnlyUnread ? 'fill' : 'regular'"
             />
+          </button>
+          <button
+            class="text-text-secondary hover:text-text-primary hover:bg-bg-tertiary p-1 sm:p-1.5 rounded transition-colors"
+            :title="
+              store.articleSortOrder === 'newest'
+                ? t('article.action.sortOldestFirst')
+                : t('article.action.sortNewestFirst')
+            "
+            @click="toggleArticleSortOrder"
+          >
+            <PhSortDescending
+              v-if="store.articleSortOrder === 'newest'"
+              :size="18"
+              class="sm:w-5 sm:h-5"
+            />
+            <PhSortAscending v-else :size="18" class="sm:w-5 sm:h-5" />
           </button>
           <div class="relative">
             <button
@@ -1178,7 +1310,14 @@ async function markAllVisibleAsRead(): Promise<void> {
         class="flex min-h-full flex-col items-center justify-center p-6 sm:p-8 text-center text-text-secondary"
         data-testid="article-list-empty"
       >
-        <template v-if="isUnreadEmptyState">
+        <template v-if="isFavoritesEmptyState">
+          <PhStar :size="40" weight="duotone" class="mb-3 text-yellow-500" />
+          <div class="text-base font-medium text-text-primary">
+            {{ t('article.list.noFavorites') }}
+          </div>
+          <div class="mt-1 text-sm">{{ t('article.list.noFavoritesHint') }}</div>
+        </template>
+        <template v-else-if="isUnreadEmptyState">
           <PhCheckCircle :size="40" weight="duotone" class="mb-3 text-green-500" />
           <div class="text-base font-medium text-text-primary">
             {{ t('article.list.allCaughtUp') }}
@@ -1208,9 +1347,10 @@ async function markAllVisibleAsRead(): Promise<void> {
         >
           <ArticleCardItem
             :article="article"
-            :is-active="cardModalArticle?.id === article.id"
+            :is-active="cardModalArticle?.id === article.id || recentlyClosedCardId === article.id"
             @click="selectArticle(article)"
-            @contextmenu="(e) => showArticleContextMenu(e, article)"
+            @contextmenu="(e) => handleArticleContextMenu(e, article)"
+            @observe-element="(element) => observeListArticle(element, article.id)"
           />
           <div
             v-if="isAISearchActive && article.excerpt"
@@ -1248,8 +1388,8 @@ async function markAllVisibleAsRead(): Promise<void> {
             :article="article"
             :is-active="store.currentArticleId === article.id"
             @click="selectArticle(article)"
-            @contextmenu="(e) => showArticleContextMenu(e, article)"
-            @observe-element="observeArticle"
+            @contextmenu="(e) => handleArticleContextMenu(e, article)"
+            @observe-element="(element) => observeListArticle(element, article.id)"
             @hover-mark-as-read="handleHoverMarkAsRead"
           />
           <div

@@ -152,6 +152,54 @@ func TestHandleSettings_POSTTranslationModeCompatibility(t *testing.T) {
 	}
 }
 
+func TestHandleSettings_POSTUpdatesSystemStartupIntegration(t *testing.T) {
+	h := setupHandlerWithDB(t)
+
+	var enabled bool
+	var calls int
+	h.SetStartupOnBoot = func(value bool) error {
+		enabled = value
+		calls++
+		return nil
+	}
+
+	body, _ := json.Marshal(map[string]string{"startup_on_boot": "true"})
+	req := httptest.NewRequest(http.MethodPost, "/api/settings", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+
+	HandleSettings(h, w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", w.Code, w.Body.String())
+	}
+	if calls != 1 || !enabled {
+		t.Fatalf("expected startup integration to be enabled once, calls=%d enabled=%v", calls, enabled)
+	}
+	value, err := h.DB.GetSetting("startup_on_boot")
+	if err != nil || value != "true" {
+		t.Fatalf("expected startup preference to be saved, value=%q err=%v", value, err)
+	}
+}
+
+func TestHandleSettings_POSTDoesNotSaveStartupPreferenceWhenIntegrationFails(t *testing.T) {
+	h := setupHandlerWithDB(t)
+	h.SetStartupOnBoot = func(bool) error { return errors.New("registry unavailable") }
+
+	body, _ := json.Marshal(map[string]string{"startup_on_boot": "true"})
+	req := httptest.NewRequest(http.MethodPost, "/api/settings", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+
+	HandleSettings(h, w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 Internal Server Error, got %d: %s", w.Code, w.Body.String())
+	}
+	value, _ := h.DB.GetSetting("startup_on_boot")
+	if value == "true" {
+		t.Fatal("startup preference was saved even though OS integration failed")
+	}
+}
+
 func TestHandleSettings_POSTDisablingFreshRSSCleansSyncedData(t *testing.T) {
 	h := setupHandlerWithDB(t)
 
@@ -370,5 +418,18 @@ func TestHandleSettings_POSTStartupPersistenceFailureRollsBackSystemOperation(t 
 	}
 	if value != "false" {
 		t.Fatalf("startup_on_boot = %q after persistence failure, want false", value)
+	}
+
+	var callbackCalls []bool
+	h.SetStartupOnBoot = func(enabled bool) error {
+		callbackCalls = append(callbackCalls, enabled)
+		return nil
+	}
+	w = postSettings(t, h, map[string]string{"startup_on_boot": "true"})
+	if w.Code != http.StatusInternalServerError || len(callbackCalls) != 2 || !callbackCalls[0] || callbackCalls[1] {
+		t.Fatalf("desktop callback must apply and roll back: status=%d calls=%v", w.Code, callbackCalls)
+	}
+	if enableCalls != 1 || disableCalls != 1 {
+		t.Fatalf("desktop callback also invoked fallback registration: enable=%d disable=%d", enableCalls, disableCalls)
 	}
 }

@@ -64,6 +64,7 @@ type Handler struct {
 	Stats                *statistics.Service // Statistics tracking service
 	DailyReportService   *dailyreport.Service
 	DailyReportScheduler *dailyreport.Scheduler
+	SetStartupOnBoot     func(bool) error // Optional desktop-only startup integration
 
 	// Discovery state tracking for polling-based progress
 	DiscoveryMu          sync.RWMutex

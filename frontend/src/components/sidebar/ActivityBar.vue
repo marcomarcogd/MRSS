@@ -19,11 +19,13 @@ import { useArticleFilter } from '@/composables/article/useArticleFilter';
 import { useDailyReports } from '@/composables/dailyReport/useDailyReports';
 
 const LOGO_URL = '/assets/logo.svg';
+import { useSettings } from '@/composables/core/useSettings';
 
 const store = useAppStore();
 const { t } = useI18n();
 const { clearAllFilters } = useArticleFilter();
 const { unreadCount: dailyReportUnreadCount, showMissedPrompt } = useDailyReports();
+const { settings } = useSettings();
 
 interface Props {
   isFeedListExpanded: boolean;
@@ -188,17 +190,16 @@ function handleNavClick(item: NavItem) {
             :class="[
               store.currentView === item.view &&
               (item.view === 'dailyReports' || store.currentFilter === item.filterType)
-                ? 'text-accent scale-105'
+                ? 'text-accent'
                 : '',
-              'transition-all',
+              'transition-colors',
             ]"
           />
 
           <!-- Unread Badge (only for 'all' button) -->
           <span
-            v-if="item.id === 'all' && store.unreadCounts?.total > 0"
-            class="absolute bottom-0.5 right-0.5 min-w-[14px] h-[14px] px-0.5 text-[9px] font-medium flex items-center justify-center rounded-full text-white"
-            style="background-color: #999999"
+            v-if="settings.show_unread_counts && item.id === 'all' && store.unreadCounts?.total > 0"
+            class="absolute bottom-0.5 right-0.5 min-w-[14px] h-[14px] px-0.5 text-[9px] font-semibold flex items-center justify-center rounded-full bg-accent text-white ring-1 ring-bg-primary"
           >
             {{ store.unreadCounts?.total > 99 ? '99+' : store.unreadCounts?.total }}
           </span>
@@ -308,10 +309,9 @@ function handleNavClick(item: NavItem) {
 /* Ensure smooth transitions for icon scale changes */
 .smart-activity-bar button .ph,
 .smart-activity-bar button svg {
-  transition:
-    transform 0.2s cubic-bezier(0.4, 0, 0.2, 1),
-    color 0.2s ease;
-  will-change: transform;
+  display: block;
+  shape-rendering: geometricPrecision;
+  transition: color 0.2s ease;
 }
 
 /* Improve button hover transition */
@@ -347,8 +347,4 @@ function handleNavClick(item: NavItem) {
     height: 36px !important;
   }
 }
-</style>
-
-<style>
-/* Dark mode for unread badge - keep accent color */
 </style>

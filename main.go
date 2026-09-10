@@ -168,6 +168,12 @@ func main() {
 
 	fetcher := feed.NewFetcher(db)
 	h := handlers.NewHandler(db, fetcher, translator, profileProvider)
+	h.SetStartupOnBoot = func(enabled bool) error {
+		if enabled {
+			return appUtils.EnableStartup()
+		}
+		return appUtils.DisableStartup()
+	}
 
 	var quitRequested atomic.Bool
 	var lastMaximized atomic.Bool

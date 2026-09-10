@@ -45,6 +45,7 @@ const imageActions = useImageActions();
 // UI state
 const showTextOverlay = ref(true);
 const showThumbnailStrip = ref(true);
+const refreshRequested = ref(false);
 
 // Image viewer state
 const showImageViewer = ref(false);
@@ -78,6 +79,19 @@ const feedId = computed(() => store.currentFeedId);
 
 // Compute which category to fetch (if viewing a specific category)
 const category = computed(() => store.currentCategory);
+
+const galleryTitle = computed(() => {
+  if (feedId.value) {
+    return (
+      store.feeds.find((feed) => feed.id === feedId.value)?.title ||
+      t('sidebar.activity.imageGallery')
+    );
+  }
+  if (category.value !== null) {
+    return category.value || t('sidebar.feedList.uncategorized');
+  }
+  return t('sidebar.activity.imageGallery');
+});
 
 // Find current article index in articles array
 const currentArticleIndex = computed(() => {
@@ -392,6 +406,37 @@ function handleImageIndexUpdate(index: number): void {
   currentImageIndex.value = index;
 }
 
+async function refreshFeeds(): Promise<void> {
+  if (store.refreshProgress.isRunning) return;
+
+  refreshRequested.value = true;
+  await store.refreshFeeds();
+
+  // A refresh with no queued work can finish before the progress watcher runs.
+  if (!store.refreshProgress.isRunning && refreshRequested.value) {
+    await galleryData.refresh();
+    refreshRequested.value = false;
+  }
+}
+
+async function markAllGalleryRead(): Promise<void> {
+  await store.markAllAsRead(
+    feedId.value || undefined,
+    feedId.value ? undefined : (category.value ?? undefined)
+  );
+  await galleryData.refresh();
+}
+
+watch(
+  () => store.refreshProgress.isRunning,
+  async (isRunning, wasRunning) => {
+    if (refreshRequested.value && wasRunning && !isRunning) {
+      await galleryData.refresh();
+      refreshRequested.value = false;
+    }
+  }
+);
+
 // Watch for container ref to be set up and add scroll listener
 watch(
   () => masonryLayout.containerRef.value,
@@ -463,6 +508,26 @@ watch(
   }
 );
 
+watch(
+  () => galleryData.mediaType.value,
+  async () => {
+    await galleryData.refresh();
+    await nextTick();
+    masonryLayout.calculateColumns();
+  }
+);
+
+watch(
+  () => store.articleSortOrder,
+  async () => {
+    closeImageViewer();
+    await galleryData.refresh();
+    if (masonryLayout.containerRef.value) masonryLayout.containerRef.value.scrollTop = 0;
+    await nextTick();
+    masonryLayout.calculateColumns();
+  }
+);
+
 onMounted(async () => {
   // Initial fetch and ensure container is filled
   await galleryData.fetchImages();
@@ -498,11 +563,21 @@ onUnmounted(() => {
   <div class="flex flex-col flex-1 h-full bg-bg-primary">
     <!-- Header -->
     <ImageGalleryHeader
+      :title="galleryTitle"
+      :is-refreshing="store.refreshProgress.isRunning"
       :show-text-overlay="showTextOverlay"
       :show-only-unread="galleryData.showOnlyUnread.value"
+      :media-type="galleryData.mediaType.value"
+      :sort-order="store.articleSortOrder"
       @toggle-sidebar="emit('toggleSidebar')"
+      @refresh="refreshFeeds"
       @toggle-text-overlay="showTextOverlay = !showTextOverlay"
       @toggle-show-only-unread="galleryData.toggleShowOnlyUnread()"
+      @update-media-type="galleryData.setMediaType"
+      @mark-all-read="markAllGalleryRead"
+      @toggle-sort-order="
+        store.setArticleSortOrder(store.articleSortOrder === 'newest' ? 'oldest' : 'newest')
+      "
     />
 
     <!-- Grid View -->
@@ -513,10 +588,14 @@ onUnmounted(() => {
       :show-only-unread="galleryData.showOnlyUnread.value"
       :show-text-overlay="showTextOverlay"
       :image-count-cache="galleryData.imageCountCache.value"
+      :show-mark-all-read="
+        !galleryData.hasMore.value && galleryData.articles.value.some((article) => !article.is_read)
+      "
       @image-size="masonryLayout.setImageSize"
       @open-image="openImage"
       @context-menu="handleContextMenu"
       @toggle-favorite="imageActions.toggleFavorite"
+      @mark-all-read="markAllGalleryRead"
       @container-mounted="
         (el) => {
           masonryLayout.containerRef.value = el;

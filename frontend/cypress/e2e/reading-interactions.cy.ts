@@ -36,6 +36,7 @@ function setup(
     update_check_enabled: 'false',
     image_gallery_enabled: 'true',
     shortcuts_enabled: 'true',
+    ai_chat_save_history: 'true',
     ...overrides,
   };
   cy.intercept('/api/**', { statusCode: 200, body: {} });
@@ -75,6 +76,7 @@ function setup(
     },
   });
   cy.wait(['@feeds', '@articles']);
+  return settings;
 }
 
 function openArticle() {
@@ -132,7 +134,7 @@ describe('Reading interactions', () => {
     cy.contains('.chat-panel', 'Late cancelled answer').should('not.exist');
   });
 
-  it('shows the bound article and requires an explicit new chat before sending from another reader article', () => {
+  it('keeps the bound article until explicitly starting a new chat for another reader article', () => {
     let sends = 0;
     let creates = 0;
     const firstArticle = {
@@ -262,6 +264,277 @@ describe('Reading interactions', () => {
     cy.wait('@contextChat');
     cy.contains('.chat-panel', 'Answer for second article').should('be.visible');
   });
+
+  it('explicitly rebinds an existing chat to the current article while retaining its history', () => {
+    setup({ ai_chat_enabled: 'true', translation_mode: 'off' });
+    const second = {
+      ...article,
+      id: 2,
+      title: 'Second article',
+      feed_title: 'Second source',
+      url: 'https://example.com/second',
+    };
+    const session = { id: 11, article_id: 1, title: 'Existing conversation', message_count: 2 };
+    cy.intercept({ method: 'GET', pathname: '/api/articles' }, [article, second]).as('rebindArticles');
+    cy.intercept('GET', '/api/articles/content*', (req) => {
+      req.reply({
+        content: Number(req.query.id) === 2 ? '<p>Second article body.</p>' : '<p>First article body.</p>',
+        cached: true,
+      });
+    }).as('rebindContent');
+    cy.intercept('GET', '/api/ai/profiles', []);
+    cy.intercept('GET', '/api/ai/chat/sessions*', (req) => {
+      req.reply(session.article_id === Number(req.query.article_id) ? [session] : []);
+    });
+    cy.intercept('GET', '/api/ai/chat/messages*', [
+      { id: 1, role: 'user', content: 'Earlier question', created_at: '' },
+      { id: 2, role: 'assistant', content: 'Earlier answer', created_at: '' },
+    ]).as('rebindMessages');
+    cy.intercept('POST', '/api/ai/chat/session/create', () => {
+      throw new Error('Continuing an existing conversation must not create a session');
+    });
+    let sends = 0;
+    cy.intercept('POST', '/api/ai-chat', (req) => {
+      sends++;
+      expect(req.body.session_id).to.equal(11);
+      expect(req.body.article_id).to.equal(2);
+      expect(req.body.article_title).to.equal(second.title);
+      expect(req.body.article_url).to.equal(second.url);
+      expect(req.body.article_content).to.contain('Second article body');
+      expect(req.body.article_content).not.to.contain('First article body');
+      expect(req.body.messages[0].content).to.equal('Earlier question');
+      expect(req.body.messages[1].content).to.equal('Earlier answer');
+      expect(req.body.rebind_session).to.equal(sends === 1);
+      expect(req.body.is_first_message).to.equal(sends === 1);
+      session.article_id = 2;
+      req.reply({ response: `Answer ${sends}`, session_id: 11 });
+    }).as('rebindChat');
+    cy.reload();
+    cy.wait('@rebindArticles');
+    cy.get('[data-article-id="1"]').click();
+    cy.wait('@rebindContent');
+    cy.get('button[title="AI Chat"]').click();
+    cy.wait('@rebindMessages');
+    cy.get('[data-article-id="2"]').click();
+    cy.wait('@rebindContent');
+    cy.get('input[placeholder="Type a message..."]').should('be.disabled');
+    cy.get('[data-testid="chat-context-article"]').should('have.attr', 'data-context-article-id', '1');
+    cy.get('[data-testid="chat-continue-current-article"]').click();
+    cy.get('[data-testid="chat-context-article"]')
+      .should('have.attr', 'data-context-article-id', '2')
+      .and('contain', second.title)
+      .and('contain', second.feed_title);
+    cy.contains('.chat-panel', 'Earlier answer').should('be.visible');
+    cy.get('input[placeholder="Type a message..."]').type('Compare this article{enter}');
+    cy.wait('@rebindChat');
+    cy.contains('.chat-panel', 'Answer 1').should('be.visible');
+    cy.get('input[placeholder="Type a message..."]').type('Follow up{enter}');
+    cy.wait('@rebindChat');
+    cy.contains('.chat-panel', 'Answer 2').should('be.visible');
+  });
+
+  it('keeps temporary chats out of history and aborts Stop and Close without accepting late replies', () => {
+    setup({ ai_chat_enabled: 'true', ai_chat_save_history: 'false', translation_mode: 'off' });
+    cy.intercept('GET', '/api/ai/profiles', []);
+    cy.intercept('/api/ai/chat/**', () => {
+      throw new Error('Temporary chat must not access persisted sessions or messages');
+    });
+    cy.intercept('POST', '/api/ai-chat/cancel', () => {
+      throw new Error('Temporary chat uses HTTP abort, not a persisted request ID');
+    });
+    const requests: Array<Record<string, unknown>> = [];
+    const aborted: string[] = [];
+    cy.intercept('POST', '/api/ai-chat', (req) => {
+      expect(req.body).not.to.have.property('session_id');
+      expect(req.body).not.to.have.property('request_id');
+      requests.push(req.body);
+      const prompt = req.body.messages.at(-1).content;
+      req.reply({ delay: prompt === 'Second question' ? 0 : 1000, body: { response: `Reply to ${prompt}` } });
+    }).as('temporaryChat');
+    openArticle();
+    cy.window().then((win) => {
+      const originalFetch = win.fetch.bind(win);
+      cy.stub(win, 'fetch').callsFake((input: RequestInfo | URL, init?: RequestInit) => {
+        if (input === '/api/ai-chat') {
+          const prompt = JSON.parse(String(init?.body)).messages.at(-1).content;
+          init?.signal?.addEventListener('abort', () => aborted.push(prompt), { once: true });
+        }
+        return originalFetch(input, init);
+      });
+    });
+    cy.get('button[title="AI Chat"]').click();
+    cy.get('[data-testid="chat-session-switcher"]').should('not.exist');
+    cy.get('input[placeholder="Type a message..."]').type('First question{enter}');
+    cy.wrap(requests).should('have.length', 1);
+    cy.get('[data-testid="chat-stop-generation"]').click();
+    cy.wrap(aborted).should('deep.equal', ['First question']);
+    cy.contains('.chat-panel', 'First question').should('be.visible');
+    cy.get('input[placeholder="Type a message..."]').type('Second question{enter}');
+    cy.contains('.chat-panel', 'Reply to Second question').should('be.visible');
+    cy.wait('@temporaryChat');
+    cy.contains('.chat-panel', 'Reply to First question').should('not.exist');
+    cy.get('input[placeholder="Type a message..."]').type('Third question{enter}');
+    cy.wrap(requests).should('have.length', 3);
+    cy.get('[data-testid="chat-close"]').click();
+    cy.wrap(aborted).should('deep.equal', ['First question', 'Third question']);
+    cy.get('button[title="AI Chat"]').click();
+    cy.get('input[placeholder="Type a message..."]').should('have.value', '');
+    cy.contains('.chat-panel', 'Third question').should('not.exist');
+    cy.wait('@temporaryChat');
+    cy.wait('@temporaryChat');
+    cy.contains('.chat-panel', 'Reply to Third question').should('not.exist');
+  });
+
+  it('keeps a persistent request mode fixed when history settings change during session creation', () => {
+    const settings = setup({ ai_chat_enabled: 'true', translation_mode: 'off' });
+    cy.intercept('GET', '/api/ai/profiles', []);
+    cy.intercept('GET', '/api/ai/chat/sessions*', []);
+    let creates = 0;
+    const requests: Array<Record<string, unknown>> = [];
+    cy.intercept('POST', '/api/ai/chat/session/create', (req) => {
+      creates++;
+      req.reply({ delay: 1200, body: { id: 91, article_id: 1, title: req.body.title, message_count: 0 } });
+    }).as('snapshotCreate');
+    cy.intercept('POST', '/api/ai-chat', (req) => {
+      expect(req.body.session_id).to.equal(91);
+      expect(req.body.request_id).to.be.a('string').and.not.be.empty;
+      expect(req.body.article_content).to.contain('First paragraph');
+      requests.push(req.body);
+      req.reply({ delay: 1200, body: { response: 'Late persistent answer', session_id: 91 } });
+    }).as('snapshotChat');
+    cy.intercept('POST', '/api/ai-chat/cancel', (req) => {
+      expect(req.body.session_id).to.equal(91);
+      expect(req.body.request_id).to.equal(requests[0].request_id);
+      req.reply({ success: true });
+    }).as('snapshotCancel');
+    openArticle();
+    cy.get('button[title="AI Chat"]').click();
+    cy.get('[data-testid="chat-session-switcher"]').should('be.visible');
+    cy.get('input[placeholder="Type a message..."]').type('Keep this request persistent{enter}');
+    cy.wrap(null).should(() => expect(creates).to.equal(1));
+    cy.window().then((win) => {
+      settings.ai_chat_save_history = 'false';
+      win.dispatchEvent(new CustomEvent('settings-updated'));
+    });
+    cy.get('[data-testid="chat-session-switcher"]').should('not.exist');
+    cy.wait('@snapshotCreate');
+    cy.wrap(requests).should('have.length', 1);
+    cy.get('[data-testid="chat-stop-generation"]').click();
+    cy.wait('@snapshotCancel');
+    cy.wait('@snapshotChat');
+    cy.contains('.chat-panel', 'Late persistent answer').should('not.exist');
+  });
+
+  it('resends article context when switching between persistent and temporary chat modes', () => {
+    const settings = setup({ ai_chat_enabled: 'true', translation_mode: 'off' });
+    const sessions = [{ id: 51, article_id: 1, title: 'Saved conversation', message_count: 2 }];
+    cy.intercept('GET', '/api/ai/profiles', []);
+    cy.intercept('GET', '/api/ai/chat/sessions*', (req) => req.reply(sessions));
+    cy.intercept('GET', '/api/ai/chat/messages*', [
+      { id: 1, role: 'user', content: 'Saved question', created_at: '' },
+      { id: 2, role: 'assistant', content: 'Saved answer', created_at: '' },
+    ]).as('savedModeMessages');
+    let creates = 0;
+    let sends = 0;
+    cy.intercept('POST', '/api/ai/chat/session/create', (req) => {
+      creates++;
+      expect(sends).to.equal(1);
+      expect(req.body.article_id).to.equal(article.id);
+      expect(req.body.title).to.equal('Save the next answer');
+      const session = { id: 52, article_id: 1, title: req.body.title, message_count: 0 };
+      sessions.unshift(session);
+      req.reply(session);
+    }).as('modeCreate');
+    cy.intercept('POST', '/api/ai-chat', (req) => {
+      sends++;
+      expect(req.body.is_first_message).to.equal(true);
+      expect(req.body.article_id).to.equal(article.id);
+      expect(req.body.article_title).to.equal(article.title);
+      expect(req.body.article_url).to.equal(article.url);
+      expect(req.body.article_content).to.contain('First paragraph');
+      expect(req.body.messages[0].content).to.equal('Saved question');
+      expect(req.body.messages[1].content).to.equal('Saved answer');
+      if (sends === 1) {
+        expect(creates).to.equal(0);
+        expect(req.body).not.to.have.property('session_id');
+        expect(req.body).not.to.have.property('request_id');
+        req.reply({ response: 'Temporary answer' });
+      } else {
+        expect(req.body.session_id).to.equal(52);
+        expect(req.body.request_id).to.be.a('string').and.not.be.empty;
+        expect(req.body.messages[3].content).to.equal('Temporary answer');
+        req.reply({ response: 'New saved answer', session_id: 52 });
+      }
+    }).as('modeChat');
+    openArticle();
+    cy.get('button[title="AI Chat"]').click();
+    cy.wait('@savedModeMessages');
+    cy.window().then((win) => {
+      settings.ai_chat_save_history = 'false';
+      win.dispatchEvent(new CustomEvent('settings-updated'));
+    });
+    cy.get('[data-testid="chat-session-switcher"]').should('not.exist');
+    cy.get('input[placeholder="Type a message..."]').type('Keep this answer temporary{enter}');
+    cy.wait('@modeChat');
+    cy.contains('.chat-panel', 'Temporary answer').should('be.visible');
+    cy.window().then((win) => {
+      settings.ai_chat_save_history = 'true';
+      win.dispatchEvent(new CustomEvent('settings-updated'));
+    });
+    cy.get('[data-testid="chat-session-switcher"]').should('be.visible');
+    cy.get('input[placeholder="Type a message..."]').type('Save the next answer{enter}');
+    cy.wait('@modeCreate');
+    cy.wait('@modeChat');
+    cy.contains('.chat-panel', 'New saved answer').should('be.visible');
+    cy.then(() => {
+      expect(creates).to.equal(1);
+      expect(sends).to.equal(2);
+    });
+  });
+
+  for (const action of ['stop', 'close']) {
+    it(`does not generate after ${action} while session creation is pending`, () => {
+      setup({ ai_chat_enabled: 'true', translation_mode: 'off' });
+      cy.intercept('GET', '/api/ai/profiles', []);
+      cy.intercept('GET', '/api/ai/chat/sessions*', []);
+      let creates = 0;
+      let sends = 0;
+      cy.intercept('POST', '/api/ai/chat/session/create', (req) => {
+        creates++;
+        req.reply({ delay: 800, body: { id: 73, article_id: 1, title: req.body.title, message_count: 0 } });
+      }).as('pendingCreate');
+      cy.intercept('POST', '/api/ai-chat', (req) => {
+        sends++;
+        expect(req.body.session_id).to.equal(73);
+        expect(req.body.messages).to.have.length(1);
+        expect(req.body.messages[0].content).to.equal('Question before creation finishes');
+        req.reply({ response: 'Answer after retry', session_id: 73 });
+      }).as('retryCreateChat');
+      openArticle();
+      cy.get('button[title="AI Chat"]').click();
+      cy.get('input[placeholder="Type a message..."]').type('Question before creation finishes{enter}');
+      cy.wrap(null).should(() => expect(creates).to.equal(1));
+      cy.get(`[data-testid="${action === 'stop' ? 'chat-stop-generation' : 'chat-close'}"]`).click();
+      cy.wait('@pendingCreate');
+      cy.then(() => expect(sends).to.equal(0));
+      if (action === 'stop') {
+        cy.get('input[placeholder="Type a message..."]')
+          .should('have.value', 'Question before creation finishes')
+          .type('{enter}');
+        cy.wait('@retryCreateChat');
+        cy.contains('.chat-panel', 'Answer after retry').should('be.visible');
+        cy.then(() => {
+          expect(creates).to.equal(1);
+          expect(sends).to.equal(1);
+        });
+      } else {
+        cy.get('.chat-panel').should('not.exist');
+        cy.get('button[title="AI Chat"]').click();
+        cy.get('input[placeholder="Type a message..."]').should('have.value', '');
+        cy.contains('.chat-panel', 'Question before creation finishes').should('not.exist');
+      }
+    });
+  }
 
   it('keeps new chats local until sending and creates only one session for the first question', () => {
     let creates = 0;
@@ -455,7 +728,8 @@ describe('Reading interactions', () => {
       id: 1,
       article_id: 1,
       title: 'Question',
-    });
+      message_count: 0,
+    }).as('createModelChat');
     cy.intercept('POST', '/api/ai-chat', (req) => {
       expect(req.body.profile_id).to.equal(2);
       req.reply({ response: 'Selectable answer', session_id: 1 });
@@ -475,6 +749,7 @@ describe('Reading interactions', () => {
       .click();
     cy.get('.chat-profile-selector .select-trigger').should('contain', 'Model Two');
     cy.get('input[placeholder="Type a message..."]').type('Question{enter}');
+    cy.wait('@createModelChat').its('request.body.article_id').should('equal', article.id);
     cy.wait('@modelChat');
     cy.contains('.chat-panel .select-text', 'Selectable answer')
       .should('be.visible')
@@ -569,7 +844,7 @@ describe('Reading interactions', () => {
           encodeURIComponent('First paragraph with enough English words to translate.')
       );
     cy.window().then((win) => {
-      cy.stub(win.navigator.clipboard, 'writeText').resolves().as('copyText');
+      cy.stub(win.navigator.clipboard, 'writeText').as('copyText').resolves();
     });
     cy.get('button[aria-label="Copy Link"]').click();
     cy.get('@copyText').should('have.been.calledWith', article.url);
