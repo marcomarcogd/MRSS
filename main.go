@@ -28,7 +28,9 @@ import (
 	handlers "MRSS/internal/handlers/core"
 	"MRSS/internal/network"
 	"MRSS/internal/routes"
+	"MRSS/internal/singleinstance"
 	"MRSS/internal/translation"
+	"MRSS/internal/tray"
 	"MRSS/internal/updatehelper"
 	appUtils "MRSS/internal/utils"
 	"MRSS/internal/utils/fileutil"
@@ -99,6 +101,41 @@ func main() {
 		return
 	}
 
+	startMinimizedRequested := false
+	for _, arg := range os.Args[1:] {
+		if arg == "--start-minimized" {
+			startMinimizedRequested = true
+			break
+		}
+	}
+
+	dataDirOption, err := fileutil.DataDirArgument(os.Args[1:])
+	if err != nil {
+		log.Fatal(err)
+	}
+	storageLock, err := fileutil.InitializeDesktopStorage(dataDirOption)
+	if err != nil {
+		log.Print(err)
+		return
+	}
+	if storageLock != nil {
+		defer storageLock.Close()
+	}
+	// Reject duplicate Linux launches before truncating logs, opening SQLite,
+	// running migrations, or starting schedulers. This does not depend on D-Bus.
+	dataDir, err := fileutil.GetDataDir()
+	if err != nil {
+		log.Fatal(err)
+	}
+	instanceLock, err := singleinstance.Acquire(dataDir)
+	if err != nil {
+		log.Print(err)
+		return
+	}
+	if instanceLock != nil {
+		defer instanceLock.Close()
+	}
+
 	// Get proper paths for data files
 	logPath, err := fileutil.GetLogPath()
 	if err != nil {
@@ -128,6 +165,14 @@ func main() {
 	}
 
 	log.Printf("Log file: %s", logPath)
+
+	linuxWindowOptions, err := configureLinuxRendering(runtime.GOOS, os.Args[1:])
+	if err != nil {
+		log.Fatal(err)
+	}
+	if linuxWindowOptions.WebviewGpuPolicy == application.WebviewGpuPolicyNever {
+		log.Println("Linux software rendering enabled (--software-rendering)")
+	}
 
 	// Get database path
 	dbPath, err := fileutil.GetDBPath()
@@ -179,6 +224,9 @@ func main() {
 	var lastMaximized atomic.Bool
 	var hiddenToTray atomic.Bool
 	var hideAfterFullscreen atomic.Bool
+	startupMinimized, _ := db.GetSetting("startup_minimized")
+	startHidden := startMinimizedRequested && startupMinimized == "true"
+	hiddenToTray.Store(startHidden)
 
 	// API Routes
 	log.Println("Setting up API routes...")
@@ -271,6 +319,10 @@ func main() {
 	h.SetApp(app)
 	dailyReportNotifier := newDesktopDailyReportNotifier(notificationService, app, db)
 	h.SetDailyReportNotifier(dailyReportNotifier)
+	h.QuitForUpdate = func() {
+		quitRequested.Store(true)
+		app.Quit()
+	}
 	log.Println("Browser integration enabled")
 
 	// Expose the API to local integrations such as the mrss-assistant skill.
@@ -355,8 +407,9 @@ func main() {
 		URL:              "/",
 		Mac:              application.MacWindow{},
 		Windows:          application.WindowsWindow{},
-		Linux:            application.LinuxWindow{},
+		Linux:            linuxWindowOptions,
 		BackgroundColour: backgroundColour,
+		Hidden:           startHidden,
 	}
 
 	// Set position if restored from DB
@@ -387,7 +440,7 @@ func main() {
 	if !restoredFromDB {
 		mainWindow.Center()
 	}
-	if restoredMaximized {
+	if restoredMaximized && !startHidden {
 		mainWindow.Maximise()
 	}
 
@@ -506,9 +559,21 @@ func main() {
 		storeWindowState()
 	})
 
-	// Setup tray on startup if close_to_tray is enabled
-	if shouldCloseToTray() {
+	// macOS also uses the status item for its unread indicator.
+	if startHidden || shouldCloseToTray() || runtime.GOOS == "darwin" {
 		setupSystemTray()
+	}
+	if runtime.GOOS == "darwin" {
+		app.OnShutdown(bgCancel)
+		app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(event *application.ApplicationEvent) {
+			go tray.WatchUnread(bgCtx, db, func(label string) {
+				application.InvokeAsync(func() {
+					if bgCtx.Err() == nil {
+						systemTray.SetLabel(label)
+					}
+				})
+			})
+		})
 	}
 
 	// On macOS, handle dock icon click to show the window

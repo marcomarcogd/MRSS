@@ -2,6 +2,41 @@ import type { TranslationMessages } from '../types';
 
 const en: TranslationMessages = {
   article: {
+    report: {
+      title: 'AI reading report',
+      description:
+        'Turn the first articles in your current list into a source-linked briefing. Preview the selection, choose a focus, then generate.',
+      count: 'Articles from the current list (1–{max})',
+      profile: 'AI profile',
+      summaryProfile: 'Use summary profile / global configuration',
+      focus: 'What should the report focus on? (optional)',
+      focusPlaceholder:
+        'For example: AI product launches, practical implications, and conflicting claims',
+      coverage: '{available} of {total} selected articles have content',
+      localOnly:
+        'Uses local article content or RSS excerpts. Missing articles are skipped. No websites are fetched; selected text is sent to your configured AI service only when you generate.',
+      cached: 'Local content',
+      rss_excerpt: 'RSS excerpt',
+      missing: 'No content · skipped',
+      truncated: 'Partial text',
+      noExcerpt: 'No local text available.',
+      noContent:
+        'Open articles to load their content, then reopen this report. You can also choose a different list.',
+      settings: 'AI settings',
+      retryPreview: 'Reload source preview',
+      generating: 'Reading sources and organizing the report… You can stop at any time.',
+      result: 'Your reading briefing',
+      provenance: '{count} selected articles · {model}',
+      copy: 'Copy report',
+      sources: 'Sources',
+      readingOrder: 'Worth reading next',
+      caveats: 'Coverage and uncertainty',
+      transient:
+        'AI synthesis can be mistaken. Check source articles for important details. Copy the report to keep it; closing this window discards it.',
+      stop: 'Stop generation',
+      generate: 'Generate report',
+      regenerate: 'Generate again',
+    },
     action: {
       goToFeed: 'Go to Feed',
       searchWith: 'Search with {engine}',
@@ -16,6 +51,10 @@ const en: TranslationMessages = {
       fullArticleFetched: 'Full article content loaded',
       hideArticle: 'Hide Article',
       markAboveAsRead: 'Mark Above as Read',
+      markAboveInFeedAsRead: 'Mark Above in This Feed as Read',
+      markBelowInFeedAsRead: 'Mark Below in This Feed as Read',
+      markRelativeInFeedConfirmMessage:
+        'Mark articles in this direction as read within the current feed?',
       markAllAsReadFeed: 'Mark All as Read',
       markAllRead: 'Mark All as Read',
       markAllReadShortcut: 'Mark All as Read',
@@ -33,7 +72,15 @@ const en: TranslationMessages = {
       markBelowAsRead: 'Mark Below as Read',
       markedAllAsRead: 'All articles marked as read',
       markedNArticlesAsRead: 'Marked {count} articles as read',
+      markedSelectedAsRead: 'Marked {count} selected articles as read',
+      markedSelectedAsUnread: 'Marked {count} selected articles as unread',
+      batchReadUpdateFailed: 'Failed to update the selected articles',
       noArticlesToMark: 'No articles to mark',
+      selectArticles: 'Select articles',
+      selectArticle: 'Select article',
+      deselectArticle: 'Deselect article',
+      selectAllVisible: 'Select all visible articles',
+      selectedArticles: '{count} selected',
       openArticle: 'Open Article',
       openInBrowser: 'Open in Browser',
       openInBrowserShortcut: 'Open in Browser',
@@ -98,6 +145,8 @@ const en: TranslationMessages = {
       promptExplain: 'Explain the difficult ideas in simple terms.',
       promptAnalyze: "Analyze the article's reasoning and implications.",
       promptVerify: 'Which claims in this article should be verified?',
+      promptEvidence:
+        'Find the key claims and support each with a brief quote from this article. Clearly identify claims that lack evidence in the supplied text.',
       showThinking: 'Show Thinking',
       switchSession: 'Switch chat session',
       thinking: 'Thinking',
@@ -124,12 +173,36 @@ const en: TranslationMessages = {
       mediaFilter: 'Filter multimedia content',
     },
     list: {
+      loadingArticles: 'Loading articles…',
+      more: 'More',
+      options: 'List options',
+      appliesImmediately: 'Applies immediately',
+      sorting: { label: 'Sort by date', newest: 'Newest first', oldest: 'Oldest first' },
+      grouping: {
+        label: 'Group by',
+        none: 'No grouping',
+        date: 'Date',
+        feed: 'Feed',
+        unknownDate: 'Unknown date',
+        unknownFeed: 'Untitled feed',
+      },
       markAllVisibleAsRead: 'Mark All Visible as Read',
       allArticlesLoaded: 'All articles loaded',
       allCaughtUp: "You're all caught up",
       noUnreadArticles: 'There are no unread articles left.',
       noFavorites: 'No favorites yet',
       noFavoritesHint: 'Favorite articles you want to revisit, and they will appear here.',
+    },
+    table: {
+      title: 'Title',
+      feed: 'Feed',
+      author: 'Author',
+      date: 'Published',
+      status: 'Status',
+      read: 'Read',
+      unread: 'Unread',
+      showColumn: 'Show {name} column',
+      resize: 'Resize article list and reader',
     },
     navigation: {
       goToAllArticles: 'Go to All Articles',
@@ -155,6 +228,13 @@ const en: TranslationMessages = {
       translatingSummary: 'Translating summary...',
     },
     toolbar: {
+      customize: 'Customize Toolbar',
+      customizeHint:
+        'Choose visible buttons and their order. Translation and export buttons appear when their features are enabled.',
+      reset: 'Restore Defaults',
+      moveUp: 'Move {name} up',
+      moveDown: 'Move {name} down',
+      saveFailed: 'Could not save the toolbar layout. Please try again.',
       addToFavorite: 'Add to Favorites',
       addToReadLater: 'Add to Read Later',
     },
@@ -196,6 +276,8 @@ const en: TranslationMessages = {
     showingResults: 'Showing AI search results',
   },
   aiErrors: {
+    report_no_content:
+      'These articles have no local content. Open them to load the text, then try again.',
     configuration_invalid:
       'The AI configuration is incomplete or invalid. Check the endpoint and model.',
     usage_limit_reached:
@@ -410,6 +492,19 @@ const en: TranslationMessages = {
       startDiscovery: 'Start discovery',
     },
     feed: {
+      previewTitle: 'Preview feed',
+      previewHint:
+        'Browse the latest articles before subscribing. Previewing does not save a subscription or change reading state.',
+      previewLoading: 'Loading feed preview…',
+      previewFailed: 'Could not load this feed. Check the URL and proxy settings, then retry.',
+      previewRetry: 'Retry preview',
+      previewCount: 'Showing {count} of {total} available articles, newest first.',
+      previewEmpty:
+        'This feed currently contains no articles. You can still subscribe to receive future updates.',
+      previewUntitled: 'Untitled article',
+      previewNoContent: 'This feed provides no article body. Open the original page to read it.',
+      previewTruncated:
+        'This long article was shortened for preview. Open the original page to continue reading.',
       cookieOrigin: 'Cookie website',
       cookie: 'Cookie',
       cookieSaved: 'Saved; leave blank to keep it',
@@ -525,6 +620,73 @@ const en: TranslationMessages = {
       typeXPath: 'XPath',
       xpath: 'XPath Support',
       xpathDocumentation: 'XPath Documentation',
+      picker: {
+        coverage: 'Found in {count} of {total} articles',
+        fieldCalibrationHint: 'Click {field} in a different article to check a shared rule.',
+        calibrateField: 'Calibrate with a second example',
+        cancelCalibration: 'Cancel calibration',
+        incompatibleExamples:
+          'No unambiguous shared rule found. Choose the same field in a different article, or cancel and keep the current rule.',
+        firstExample: 'First title:',
+        secondExample: 'Second title:',
+        calibrate: 'Calibrate with another article title',
+        calibrationHint: 'Now click the title of a different article in the same list.',
+        clearCalibration: 'Use only the first title',
+        stepTitle: '1. Pick a title · 2. Confirm the article list · 3. Check results',
+        stepFields: 'Article list selected — review results or add optional fields',
+        previewAbout: 'About this preview',
+        pageInstruction: 'Hover to inspect · Click to select · Enter to confirm',
+        highlightLegend: 'Blue: selected element · Green: matching articles',
+        startTitle: 'Click an article title on the page',
+        startHint:
+          'We will suggest the repeating article list and fill the title and link for you.',
+        suggested: 'Found a possible list of {count} articles',
+        confirmGroupHint:
+          'Check the green outlines: each should surround one article. Confirm if the list is correct.',
+        otherGroup: 'Try another suggested container',
+        noSuggestion:
+          'No reliable list found. Try another title, or select the container manually.',
+        manual: 'Select the article container manually',
+        fields: 'Article fields',
+        changeGroup: 'Reselect article list',
+        picked: 'Selected · click to change',
+        required: 'Required',
+        optional: 'Optional',
+        clearField: 'Clear {field}',
+        confirmGroup: 'Use this article list',
+        results: 'Extraction preview',
+        ready: 'Ready to apply. You can also select optional fields above.',
+        advanced: 'Advanced: generated XPath',
+        applyHint: 'Applies to the feed form. Save the form to create or update the feed.',
+        needFields: 'A title and link are required before applying.',
+        title: 'Visual XPath picker',
+        hint: 'Click a page element, then use its ancestor buttons to choose the article container. Select fields and check the extracted samples.',
+        staticHint:
+          'Original styles and images load in an isolated preview. Page scripts, forms and navigation are disabled. JavaScript-only content needs a custom script. Set the date format after applying.',
+        item: 'Article container',
+        titleField: 'Title',
+        uri: 'Link',
+        timestamp: 'Date',
+        content: 'Summary',
+        thumbnail: 'Thumbnail',
+        selectElement: 'Hover to highlight; click to select an element.',
+        choose: 'Use for this field',
+        withinItem:
+          'Choose a field in any matching article. Selecting a linked title also fills its URL. Dates, summaries and images are optional.',
+        matches: '{count} matching containers',
+        apply: 'Apply XPath',
+        retry: 'Retry preview',
+        loadFailed: 'Could not load this page. Check its URL, proxy and connectivity.',
+        selecting: 'Selecting: {field}',
+        containerHint:
+          'Choose the repeated block containing one article. The ancestor buttons let you expand your selection. Check that the samples contain only articles.',
+        ancestors: 'Element ancestors',
+        invalidElement:
+          'Choose an element inside a matching article; URLs need a link and thumbnails need an image.',
+        clear: 'Clear',
+        validSamples: '{count} of {total} articles have a title and URL.',
+        pagePreview: 'Isolated webpage preview',
+      },
       xpathHtml: 'HTML + XPath',
       xpathItem: 'Item XPath',
       xpathItemAuthor: 'Author XPath',
@@ -779,6 +941,9 @@ const en: TranslationMessages = {
       microsoftEndpointDesc: 'Custom API endpoint (leave empty to use official endpoint)',
       microsoftEndpointPlaceholder: 'https://api.cognitive.microsofttranslator.com',
       microsoftTranslate: 'Microsoft Translator',
+      microsoftEdgeTranslate: 'Microsoft Edge (no API key)',
+      microsoftEdgeTranslateDesc:
+        'Translate through Microsoft Edge without an API key. Uses your proxy settings; availability and rate limits depend on Microsoft’s consumer service.',
       tencentSecretId: 'Tencent Cloud Secret ID',
       tencentSecretIdDesc: 'Enter your Tencent Cloud Secret ID',
       tencentSecretIdPlaceholder: 'Enter your Secret ID',
@@ -897,6 +1062,7 @@ const en: TranslationMessages = {
       layoutModeNormal: 'Normal',
       layoutModeCompact: 'Compact',
       layoutModeCard: 'Card',
+      layoutModeTable: 'Table above reader (desktop)',
       contentFontFamily: 'Content Font Family',
       contentFontFamilyDesc: 'Font family for article content',
       contentFontSize: 'Content Font Size',
@@ -932,6 +1098,24 @@ const en: TranslationMessages = {
       selectScriptPlaceholder: 'Select a script...',
     },
     database: {
+      dataDirectory: 'Data directory',
+      directoryDescription:
+        'Choose an empty folder. On the next launch, MrRSS copies subscriptions, articles, settings, scripts and caches before opening the database. The original folder is kept as a backup.',
+      directoryCurrent: 'Current location:',
+      directoryDestination: 'New empty folder',
+      directoryBrowse: 'Browse…',
+      directoryChange: 'Change directory',
+      directoryConfirm:
+        'Copy your data to {path} on the next launch? Fully quit MrRSS (including the system tray), then reopen it. Keep the original folder until you have checked your data.',
+      directoryScheduled:
+        'Saved. Fully quit MrRSS, then reopen it to migrate. Closing to the tray is not sufficient.',
+      directoryPending: 'Next launch:',
+      directoryCancel: 'Cancel directory change',
+      directoryOverridden:
+        'The launch option or MRRSS_DATA_DIR controls this location. Remove that override and relaunch to manage it here.',
+      directoryFailed: 'Could not change the data directory.',
+      directoryMigrationFailed: 'Migration failed; your original directory is still in use.',
+
       articleContentCacheCleanup: 'Article Content Cache',
       articleContentCacheCleanupDesc: 'Clear all cached article content',
       autoCleanup: 'Auto Cleanup',
@@ -1005,6 +1189,8 @@ const en: TranslationMessages = {
       uiFontSizeDesc: 'Base font size for the application interface',
       startupOnBoot: 'Start on System Boot',
       startupOnBootDesc: 'Automatically start MRSS when the computer starts',
+      startupMinimized: 'Start in System Tray',
+      startupMinimizedDesc: 'Keep the window hidden when MRSS starts with the system',
       theme: 'Theme',
       themeDesc: 'Choose the preferred color scheme',
     },
@@ -1051,6 +1237,8 @@ const en: TranslationMessages = {
       reDetectNetwork: 'Re-detect',
     },
     freshrss: {
+      integration: '{name} Integration',
+      integrationDesc: 'Configure and sync {name} independently using its Google Reader API.',
       apiPassword: 'Google Reader Password',
       apiPasswordDesc:
         'Google Reader API password configured on the server (different from your normal login password)',
@@ -1084,6 +1272,30 @@ const en: TranslationMessages = {
       usernamePlaceholder: 'Enter your Google Reader username',
     },
     plugins: {
+      siyuan: {
+        integration: 'SiYuan integration',
+        description: 'Clip articles as Markdown documents to a SiYuan notebook.',
+        setup: 'Set up SiYuan',
+        instructions:
+          'Keep SiYuan running and its destination notebook open. Copy the API token from SiYuan Settings → Authentication. Images remain links to their original hosts.',
+        endpoint: 'SiYuan address',
+        endpointDesc:
+          'The default connects to SiYuan on the machine running MrRSS. In server mode, use an address reachable from the server.',
+        token: 'API token',
+        notebook: 'Notebook ID',
+        notebookDesc: 'Copy the destination notebook ID from SiYuan, not its display name.',
+        folder: 'Document folder',
+        folderDesc:
+          'Start with /, for example /MrRSS. Article IDs distinguish titles. Re-exporting does not overwrite an existing document.',
+        exportTo: 'Export to SiYuan',
+        exporting: 'Exporting to SiYuan…',
+        exported: 'Article saved to SiYuan.',
+        configurationError:
+          'Check the SiYuan integration address, notebook ID, and folder in Settings → Plugins.',
+        contentError: 'Load the article content before exporting to SiYuan.',
+        exportFailed:
+          'SiYuan export failed. Check that SiYuan is running, the notebook is open, and the API token is correct.',
+      },
       notion: {
         apiKey: 'API Key',
         apiKeyDesc: 'Internal Integration Token from Notion',
@@ -1138,6 +1350,17 @@ const en: TranslationMessages = {
       },
     },
     reading: {
+      dateFormat: 'Date format',
+      dateFormatDesc:
+        'Choose how article publication dates appear in lists, details, and the media gallery.',
+      timeFormat: 'Time format',
+      localeFormat: 'Follow language',
+      timeFormat12: '12-hour clock',
+      timeFormat24: '24-hour clock',
+      dateTimePreview: 'Preview: {value}',
+      relativeTime: 'Relative article times',
+      relativeTimeDesc:
+        'Show recent dates as “2 hours ago”. Turn off to always show the full date and time. Hover over a date to see its exact time.',
       scrollMarkAsRead: 'Mark articles as read while scrolling',
       scrollMarkAsReadDesc:
         'Mark an unread article after it has been visible and then leaves the list viewport.',

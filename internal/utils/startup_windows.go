@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 
+	"MRSS/internal/utils/fileutil"
 	"golang.org/x/sys/windows/registry"
 )
 
@@ -23,7 +25,13 @@ func enableStartupWindows(executable string) error {
 	}
 	defer key.Close()
 
-	command := `"` + executable + `"`
+	command := `"` + executable + `" --start-minimized`
+	if dir := fileutil.CustomDataDir(); dir != "" && !fileutil.DesktopStorageManaged() {
+		// Windows paths cannot contain quotes; double trailing slashes before the
+		// closing quote, notably when the chosen directory is a drive root.
+		trimmed := strings.TrimRight(dir, `\`)
+		command += ` --data-dir "` + trimmed + strings.Repeat(`\`, 2*(len(dir)-len(trimmed))) + `"`
+	}
 	if err := key.SetStringValue("MRSS", command); err != nil {
 		return fmt.Errorf("failed to set startup registry value: %w", err)
 	}

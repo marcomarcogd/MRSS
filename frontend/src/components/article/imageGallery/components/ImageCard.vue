@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n';
+import { useArticleDateFormat } from '@/composables/article/useArticleDateFormat';
 import { PhImage, PhStar, PhPlay } from '@phosphor-icons/vue';
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import type { Article } from '@/types/models';
 import { getProxiedMediaUrl } from '@/utils/mediaProxy';
 import { isYouTubeArticle, extractYouTubeVideoId, getYouTubeThumbnailUrl } from '@/utils/youtube';
@@ -15,6 +16,7 @@ interface Props {
 }
 
 const props = defineProps<Props>();
+const { t } = useI18n();
 
 const emit = defineEmits<{
   imageSize: [width: number, height: number];
@@ -86,32 +88,7 @@ function handleFavoriteClick(event: Event): void {
   document.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 }
 
-/**
- * Format date for display
- * @param dateString - ISO date string
- * @returns Formatted date string
- */
-function formatDate(dateString: string): string {
-  const { t } = useI18n();
-  const date = new Date(dateString);
-  const now = new Date();
-  const diff = now.getTime() - date.getTime();
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-
-  if (days === 0) {
-    const hours = Math.floor(diff / (1000 * 60 * 60));
-    if (hours === 0) {
-      const minutes = Math.floor(diff / (1000 * 60));
-      return minutes <= 0
-        ? t('common.time.justNow')
-        : t('common.time.minutesAgo', { count: minutes });
-    }
-    return t('common.time.hoursAgo', { count: hours });
-  } else if (days < 7) {
-    return t('common.time.daysAgo', { count: days });
-  }
-  return date.toLocaleDateString();
-}
+const { formatArticleDate: formatDate, formatArticleDateTime } = useArticleDateFormat();
 </script>
 
 <template>
@@ -145,10 +122,20 @@ function formatDate(dateString: string): string {
         "
       />
 
+      <div
+        v-if="!article.is_read"
+        class="pointer-events-none absolute left-2 top-2 z-20 flex items-center gap-1.5 rounded-full bg-accent px-2 py-1 text-xs font-semibold text-white shadow-lg"
+        data-testid="gallery-unread-badge"
+      >
+        <span class="h-2 w-2 rounded-full bg-white" aria-hidden="true"></span>
+        <span>{{ t('article.table.unread') }}</span>
+      </div>
+
       <!-- Platform badge (top-left) -->
       <div
         v-if="platformBadge"
-        class="absolute top-2 left-2 px-2 py-1 rounded-md bg-white/90 dark:bg-gray-800/90 text-gray-900 dark:text-white text-xs font-semibold shadow-lg z-10 flex items-center gap-1.5 backdrop-blur-sm pointer-events-auto"
+        class="absolute left-2 px-2 py-1 rounded-md bg-white/90 dark:bg-gray-800/90 text-gray-900 dark:text-white text-xs font-semibold shadow-lg z-10 flex items-center gap-1.5 backdrop-blur-sm pointer-events-auto"
+        :class="article.is_read ? 'top-2' : 'top-11'"
       >
         <img :src="platformBadge.iconPath" class="w-4 h-4" alt="" />
         <span>{{ platformBadge.label }}</span>
@@ -196,7 +183,9 @@ function formatDate(dateString: string): string {
         </p>
         <div class="flex items-center justify-between text-xs text-white/80">
           <span class="truncate flex-1">{{ article.feed_title }}</span>
-          <span class="ml-2 shrink-0">{{ formatDate(article.published_at) }}</span>
+          <span class="ml-2 shrink-0" :title="formatArticleDateTime(article.published_at)">{{
+            formatDate(article.published_at)
+          }}</span>
         </div>
       </div>
     </div>
@@ -208,7 +197,9 @@ function formatDate(dateString: string): string {
       </p>
       <div class="flex items-center justify-between text-xs text-text-secondary">
         <span class="truncate flex-1">{{ article.feed_title }}</span>
-        <span class="ml-2 shrink-0">{{ formatDate(article.published_at) }}</span>
+        <span class="ml-2 shrink-0" :title="formatArticleDateTime(article.published_at)">{{
+          formatDate(article.published_at)
+        }}</span>
       </div>
     </div>
   </div>

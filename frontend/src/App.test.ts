@@ -171,7 +171,7 @@ describe('App', () => {
     const notificationSources = [
       'src/components/article/ArticleDetailModal.vue',
       'src/components/modals/feed/FeedFormModal.vue',
-      'src/components/modals/settings/plugins/FreshRSSSettings.vue',
+      'src/components/modals/settings/plugins/ReaderIntegrationSettings.vue',
       'src/components/modals/settings/plugins/RSSHubSettings.vue',
       'src/components/modals/settings/reading/CustomizationSettings.vue',
       'src/components/sidebar/FeedList.vue',

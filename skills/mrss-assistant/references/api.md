@@ -96,6 +96,24 @@ Test AI profile
 Parameters:
   - `id` (path, required): Profile ID
 
+### `POST /ai/reading-report`
+
+Generate AI reading report
+
+Parameters:
+  - `request` (body, required): Selected articles, optional profile and focus
+
+Request body: see the Swagger schema for full field details.
+
+### `POST /ai/reading-report/preview`
+
+Preview reading report sources
+
+Parameters:
+  - `request` (body, required): Selected article IDs
+
+Request body: see the Swagger schema for full field details.
+
 ### `POST /ai/search`
 
 AI-powered article search
@@ -133,6 +151,7 @@ Parameters:
   - `category` (query, optional): Filter by category name
   - `only_unread` (query, optional): Filter for only unread articles
   - `sort_order` (query, optional): Publication order: newest or oldest
+  - `group_by` (query, optional): Group articles by feed before pagination
   - `page` (query, optional): Page number (default: 1)
   - `limit` (query, optional): Items per page (default: 50, max: 500)
 
@@ -251,6 +270,15 @@ Parameters:
   - `direction` (query, required): Direction: 'above' for newer articles, 'below' for older articles
   - `feed_id` (query, optional): Optional: only mark articles from this feed
   - `category` (query, optional): Optional: only mark articles from this category
+
+### `POST /articles/read-batch`
+
+Mark selected articles as read or unread
+
+Parameters:
+  - `request` (body, required): Selected article IDs and target read state
+
+Request body: see the Swagger schema for full field details.
 
 ### `POST /articles/refresh`
 

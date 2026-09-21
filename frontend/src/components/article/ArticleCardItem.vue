@@ -2,9 +2,9 @@
 import { withShortcut } from '@/composables/ui/shortcutBindings';
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { PhEyeSlash, PhStar, PhClockCountdown } from '@phosphor-icons/vue';
+import { PhCheckSquare, PhEyeSlash, PhSquare, PhStar, PhClockCountdown } from '@phosphor-icons/vue';
 import type { Article } from '@/types/models';
-import { formatDate as formatDateUtil, formatExactDateTime } from '@/utils/date';
+import { useArticleDateFormat } from '@/composables/article/useArticleDateFormat';
 import { getProxiedMediaUrl, isMediaCacheEnabled } from '@/utils/mediaProxy';
 import { useAppStore } from '@/stores/app';
 import { useSettings } from '@/composables/core/useSettings';
@@ -13,6 +13,8 @@ import { imageCache } from '@/utils/imageCache';
 interface Props {
   article: Article;
   isActive: boolean;
+  selectionMode?: boolean;
+  selected?: boolean;
 }
 
 const props = defineProps<Props>();
@@ -23,7 +25,7 @@ const emit = defineEmits<{
   observeElement: [element: Element | null];
 }>();
 
-const { t, locale } = useI18n();
+const { t } = useI18n();
 const store = useAppStore();
 const { settings } = useSettings();
 
@@ -34,10 +36,7 @@ const isRSSHubArticle = computed(() => {
   return feed?.url.startsWith('rsshub://') || false;
 });
 
-// Translation function wrapper for formatDate
-const formatDateWithI18n = (dateStr: string): string => {
-  return formatDateUtil(dateStr, locale.value, t);
-};
+const { formatArticleDate: formatDateWithI18n, formatArticleDateTime } = useArticleDateFormat();
 
 const mediaCacheEnabled = ref(false);
 
@@ -126,7 +125,11 @@ function handleImageError(event: Event) {
   <div
     :ref="(el) => emit('observeElement', el as Element | null)"
     :data-article-id="article.id"
-    :title="withShortcut(t('article.action.openArticle'), 'openArticle')"
+    :title="
+      selectionMode
+        ? t(selected ? 'article.action.deselectArticle' : 'article.action.selectArticle')
+        : withShortcut(t('article.action.openArticle'), 'openArticle')
+    "
     :class="[
       'article-card-item',
       article.is_read ? 'read' : '',
@@ -135,10 +138,19 @@ function handleImageError(event: Event) {
       article.is_read_later ? 'read-later' : '',
       isActive ? 'active' : '',
       shouldShowImage ? 'has-thumbnail' : 'no-thumbnail',
+      selected ? 'selected' : '',
     ]"
     @click="emit('click')"
     @contextmenu="emit('contextmenu', $event)"
   >
+    <span
+      v-if="selectionMode"
+      class="absolute left-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-md bg-bg-primary/90 text-accent shadow"
+      aria-hidden="true"
+    >
+      <PhCheckSquare v-if="selected" :size="20" weight="fill" />
+      <PhSquare v-else :size="20" />
+    </span>
     <!-- Thumbnail area - only shown when image exists -->
     <div v-if="shouldShowImage" ref="imageContainerRef" class="card-thumbnail">
       <img
@@ -219,7 +231,7 @@ function handleImageError(event: Event) {
       <!-- Meta info -->
       <div class="card-meta">
         <span class="feed-name">{{ article.feed_title }}</span>
-        <span class="publish-date" :title="formatExactDateTime(article.published_at, locale)">
+        <span class="publish-date" :title="formatArticleDateTime(article.published_at)">
           {{ formatDateWithI18n(article.published_at) }}
         </span>
       </div>
@@ -234,6 +246,7 @@ function handleImageError(event: Event) {
   transition: all 0.2s ease;
   display: flex;
   flex-direction: column;
+  position: relative;
 }
 
 /* All cards have the same fixed height for consistency */
@@ -250,6 +263,11 @@ function handleImageError(event: Event) {
   @apply shadow-md;
   border-color: var(--accent-color);
   box-shadow: 0 0 0 2px rgba(var(--accent-rgb, 59, 130, 246), 0.2);
+}
+
+.article-card-item.selected {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb, 59, 130, 246), 0.25);
 }
 
 .article-card-item.read {

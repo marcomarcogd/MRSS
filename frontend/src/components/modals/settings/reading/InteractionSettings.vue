@@ -1,8 +1,21 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { PhBookmarkSimple, PhCalendarCheck, PhCheckCircle, PhCursorClick, PhEyeSlash } from '@phosphor-icons/vue';
-import { NestedSettingsContainer, NumberControl, SettingGroup, SettingWithSelect, SettingWithToggle, SubSettingItem } from '@/components/settings';
+import {
+  PhBookmarkSimple,
+  PhCalendarCheck,
+  PhCheckCircle,
+  PhCursorClick,
+  PhEyeSlash,
+} from '@phosphor-icons/vue';
+import {
+  NestedSettingsContainer,
+  NumberControl,
+  SettingGroup,
+  SettingWithSelect,
+  SettingWithToggle,
+  SubSettingItem,
+} from '@/components/settings';
 import '@/components/settings/styles.css';
 import type { SettingsData } from '@/types/settings';
 
@@ -26,7 +39,10 @@ function updateSetting(key: keyof SettingsData, value: any) {
 }
 
 const autoReadPresetDays = computed({
-  get: () => ([1, 3, 7, 30, 90].includes(props.settings.auto_mark_read_days) ? props.settings.auto_mark_read_days : 'custom'),
+  get: () =>
+    [1, 3, 7, 30, 90].includes(props.settings.auto_mark_read_days)
+      ? props.settings.auto_mark_read_days
+      : 'custom',
   set: (value: string | number) => {
     if (value !== 'custom') updateSetting('auto_mark_read_days', Number(value));
   },

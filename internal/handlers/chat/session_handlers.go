@@ -8,7 +8,6 @@ import (
 
 	"MRSS/internal/handlers/core"
 	"MRSS/internal/handlers/response"
-	"MRSS/internal/utils/textutil"
 )
 
 // CreateSessionRequest represents the request to create a new chat session
@@ -313,7 +312,7 @@ func HandleListMessages(h *core.Handler, w http.ResponseWriter, r *http.Request)
 		}
 		// Generate HTML for assistant messages
 		if msg.Role == "assistant" {
-			result[i].HTML = textutil.ConvertMarkdownToHTML(msg.Content)
+			result[i].HTML = renderChatHTML(msg.Content)
 		}
 	}
 

@@ -86,6 +86,84 @@ function openArticle() {
 }
 
 describe('Reading interactions', () => {
+  it('previews source coverage and creates a reading report with working citations', () => {
+    setup({ translation_mode: 'off' });
+    cy.intercept('GET', '/api/ai/profiles', []);
+    const sources = [
+      {
+        id: 1,
+        article_id: 1,
+        title: article.title,
+        url: article.url,
+        feed: 'Reading Feed',
+        kind: 'rss_excerpt',
+        truncated: true,
+        characters: 100,
+        excerpt: 'Article evidence',
+      },
+    ];
+    cy.intercept('POST', '/api/ai/reading-report/preview', (req) => {
+      expect(req.body.article_ids).to.deep.equal([1]);
+      req.reply({ sources });
+    }).as('reportPreview');
+    cy.intercept('POST', '/api/ai/reading-report', (req) => {
+      expect(req.body.focus).to.equal('Practical implications');
+      req.reply({
+        sources,
+        model: 'fixture',
+        report: {
+          overview: 'A useful overview',
+          topics: [
+            {
+              title: 'Main topic',
+              summary: '<img src=x onerror=alert(1)> is displayed as text',
+              source_ids: [1],
+            },
+          ],
+          reading_order: [{ source_id: 1, reason: 'Contains primary evidence' }],
+          caveats: ['Only an excerpt was available'],
+        },
+      });
+    }).as('readingReport');
+    cy.get('button[title="More"]').click();
+    cy.contains('button', 'AI reading report').click();
+    cy.wait('@reportPreview');
+    cy.get('[data-testid="reading-report"]')
+      .should('contain', 'RSS excerpt')
+      .and('contain', 'Partial text');
+    cy.get('[data-testid="report-focus"]').type('Practical implications');
+    cy.contains('button', 'Generate report').click();
+    cy.wait('@readingReport');
+    cy.get('[data-testid="report-result"]')
+      .should('contain', 'A useful overview')
+      .and('contain', 'Contains primary evidence');
+    cy.get('[data-testid="report-result"] img').should('not.exist');
+    cy.contains('[data-testid="report-result"] button', '[1]').first().click();
+    cy.wait('@openBrowser').its('request.body.url').should('equal', article.url);
+  });
+
+  it('sends the evidence quick prompt and retains article content on follow-ups', () => {
+    setup({ ai_chat_enabled: 'true', ai_chat_save_history: 'false', translation_mode: 'off' });
+    cy.intercept('GET', '/api/ai/profiles', []);
+    cy.intercept('POST', '/api/ai-chat', (req) => {
+      expect(req.body.article_content).to.contain('First paragraph');
+      req.reply({
+        response: 'Evidence answer',
+        html: '<p>Evidence answer</p>',
+        history_saved: false,
+      });
+    }).as('evidenceChat');
+    openArticle();
+    cy.get('button[title="AI Chat"]').click();
+    cy.contains('.chat-panel button', 'Find the key claims').scrollIntoView().click();
+    cy.wait('@evidenceChat')
+      .its('request.body.messages.0.content')
+      .should('contain', 'brief quote');
+    cy.contains('.chat-panel', 'Evidence answer').should('be.visible');
+    cy.get('input[placeholder="Type a message..."]').type('Explain that evidence{enter}');
+    cy.wait('@evidenceChat').its('request.body.is_first_message').should('equal', false);
+  });
+
   it('keeps Stop reachable in a small chat with a long title and cancels the active request', () => {
     const requests: Array<Record<string, unknown>> = [];
     setup({ ai_chat_enabled: 'true', translation_mode: 'off' });
@@ -244,12 +322,12 @@ describe('Reading interactions', () => {
     }
     cy.get('.chat-panel').invoke('css', 'height', '600px');
     cy.get('[data-article-id="1"]').click();
-    cy.wait('@contextContent');
+    cy.get('.prose-content').should('contain', 'First article body');
     cy.get('input[placeholder="Type a message..."]')
       .should('be.enabled')
       .and('have.value', 'Draft for first article');
     cy.get('[data-article-id="2"]').click();
-    cy.wait('@contextContent');
+    cy.get('.prose-content').should('contain', 'Second article body');
     cy.get('[data-testid="chat-new-context"]').click();
     cy.then(() => expect(creates).to.equal(0));
     cy.get('[data-testid="chat-context-article"]')
@@ -275,10 +353,13 @@ describe('Reading interactions', () => {
       url: 'https://example.com/second',
     };
     const session = { id: 11, article_id: 1, title: 'Existing conversation', message_count: 2 };
-    cy.intercept({ method: 'GET', pathname: '/api/articles' }, [article, second]).as('rebindArticles');
+    cy.intercept({ method: 'GET', pathname: '/api/articles' }, [article, second]).as(
+      'rebindArticles'
+    );
     cy.intercept('GET', '/api/articles/content*', (req) => {
       req.reply({
-        content: Number(req.query.id) === 2 ? '<p>Second article body.</p>' : '<p>First article body.</p>',
+        content:
+          Number(req.query.id) === 2 ? '<p>Second article body.</p>' : '<p>First article body.</p>',
         cached: true,
       });
     }).as('rebindContent');
@@ -318,7 +399,11 @@ describe('Reading interactions', () => {
     cy.get('[data-article-id="2"]').click();
     cy.wait('@rebindContent');
     cy.get('input[placeholder="Type a message..."]').should('be.disabled');
-    cy.get('[data-testid="chat-context-article"]').should('have.attr', 'data-context-article-id', '1');
+    cy.get('[data-testid="chat-context-article"]').should(
+      'have.attr',
+      'data-context-article-id',
+      '1'
+    );
     cy.get('[data-testid="chat-continue-current-article"]').click();
     cy.get('[data-testid="chat-context-article"]')
       .should('have.attr', 'data-context-article-id', '2')
@@ -349,7 +434,10 @@ describe('Reading interactions', () => {
       expect(req.body).not.to.have.property('request_id');
       requests.push(req.body);
       const prompt = req.body.messages.at(-1).content;
-      req.reply({ delay: prompt === 'Second question' ? 0 : 1000, body: { response: `Reply to ${prompt}` } });
+      req.reply({
+        delay: prompt === 'Second question' ? 0 : 1000,
+        body: { response: `Reply to ${prompt}` },
+      });
     }).as('temporaryChat');
     openArticle();
     cy.window().then((win) => {
@@ -393,7 +481,10 @@ describe('Reading interactions', () => {
     const requests: Array<Record<string, unknown>> = [];
     cy.intercept('POST', '/api/ai/chat/session/create', (req) => {
       creates++;
-      req.reply({ delay: 1200, body: { id: 91, article_id: 1, title: req.body.title, message_count: 0 } });
+      req.reply({
+        delay: 1200,
+        body: { id: 91, article_id: 1, title: req.body.title, message_count: 0 },
+      });
     }).as('snapshotCreate');
     cy.intercept('POST', '/api/ai-chat', (req) => {
       expect(req.body.session_id).to.equal(91);
@@ -501,7 +592,10 @@ describe('Reading interactions', () => {
       let sends = 0;
       cy.intercept('POST', '/api/ai/chat/session/create', (req) => {
         creates++;
-        req.reply({ delay: 800, body: { id: 73, article_id: 1, title: req.body.title, message_count: 0 } });
+        req.reply({
+          delay: 800,
+          body: { id: 73, article_id: 1, title: req.body.title, message_count: 0 },
+        });
       }).as('pendingCreate');
       cy.intercept('POST', '/api/ai-chat', (req) => {
         sends++;
@@ -512,9 +606,13 @@ describe('Reading interactions', () => {
       }).as('retryCreateChat');
       openArticle();
       cy.get('button[title="AI Chat"]').click();
-      cy.get('input[placeholder="Type a message..."]').type('Question before creation finishes{enter}');
+      cy.get('input[placeholder="Type a message..."]').type(
+        'Question before creation finishes{enter}'
+      );
       cy.wrap(null).should(() => expect(creates).to.equal(1));
-      cy.get(`[data-testid="${action === 'stop' ? 'chat-stop-generation' : 'chat-close'}"]`).click();
+      cy.get(
+        `[data-testid="${action === 'stop' ? 'chat-stop-generation' : 'chat-close'}"]`
+      ).click();
       cy.wait('@pendingCreate');
       cy.then(() => expect(sends).to.equal(0));
       if (action === 'stop') {
@@ -914,7 +1012,12 @@ describe('Reading interactions', () => {
     });
     for (const activation of ['click', 'Enter', 'Space']) {
       it(`shows manual summary focus and generates once by ${activation} in ${theme} mode`, () => {
-        setup({ theme, summary_enabled: 'true', summary_provider: 'ai', summary_trigger_mode: 'manual' });
+        setup({
+          theme,
+          summary_enabled: 'true',
+          summary_provider: 'ai',
+          summary_trigger_mode: 'manual',
+        });
         let requests = 0;
         cy.intercept('POST', '/api/articles/summarize', (req) => {
           requests++;

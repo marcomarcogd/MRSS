@@ -84,7 +84,7 @@ func (db *DB) Init() error {
 			// Don't return error — the app can still work without incremental vacuum
 		}
 	})
-	return err
+	return explainInitializationError(err)
 }
 
 // migrateTranslationMode converts the legacy translation_enabled toggle into
@@ -162,11 +162,16 @@ func migrateAutoVacuumIncremental(db *DB) error {
 
 	log.Println("Migrating database to auto_vacuum=INCREMENTAL mode (one-time VACUUM required)...")
 
-	// VACUUM requires exclusive access to the database. With a connection pool
-	// of 25, other idle connections can hold locks that prevent VACUUM from
-	// completing, causing deadlocks. Temporarily restrict to a single connection.
+	// VACUUM requires exclusive access to the database. With a pooled
+	// connection set, other idle connections can hold locks that prevent VACUUM
+	// from completing, causing deadlocks. Temporarily restrict to a single
+	// connection and restore the pool limits afterwards.
 	db.SetMaxOpenConns(1)
-	defer db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(1)
+	defer func() {
+		db.SetMaxOpenConns(maxOpenConns)
+		db.SetMaxIdleConns(maxIdleConns)
+	}()
 
 	// Set to INCREMENTAL mode
 	if _, err := db.DB.Exec("PRAGMA auto_vacuum = INCREMENTAL"); err != nil {
@@ -256,5 +261,5 @@ func applyAdditionalMigrations(db *DB) error {
 		return err
 	}
 
-	return nil
+	return migrateReaderProviders(db.DB)
 }

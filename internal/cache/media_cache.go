@@ -2,6 +2,7 @@
 package cache
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -72,7 +73,7 @@ func (mc *MediaCache) Exists(url string) bool {
 }
 
 // Get retrieves cached media or downloads it if not cached
-func (mc *MediaCache) Get(url, referer string) ([]byte, string, error) {
+func (mc *MediaCache) Get(ctx context.Context, client *http.Client, url, referer string) ([]byte, string, error) {
 	// Check if already cached
 	cachedPath, found := mc.findCachedFile(url)
 	if found {
@@ -85,7 +86,7 @@ func (mc *MediaCache) Get(url, referer string) ([]byte, string, error) {
 	}
 
 	// Download and cache
-	data, contentType, err := mc.download(url, referer)
+	data, contentType, err := mc.download(ctx, client, url, referer)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to download media: %w", err)
 	}
@@ -107,15 +108,91 @@ func (mc *MediaCache) Get(url, referer string) ([]byte, string, error) {
 	return data, contentType, nil
 }
 
-// download fetches media from the given URL with proper headers
-func (mc *MediaCache) download(url, referer string) ([]byte, string, error) {
-	client := &http.Client{
-		Timeout: 30 * time.Second,
+// Open returns the cached file for a URL so callers can stream it instead of
+// holding the whole image in memory. The caller is responsible for closing it.
+func (mc *MediaCache) Open(url string) (*os.File, string, time.Time, error) {
+	cachedPath, found := mc.findCachedFile(url)
+	if !found {
+		return nil, "", time.Time{}, os.ErrNotExist
 	}
 
-	req, err := http.NewRequest("GET", url, nil)
+	file, err := os.Open(cachedPath)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to create request: %w", err)
+		return nil, "", time.Time{}, err
+	}
+
+	info, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return nil, "", time.Time{}, err
+	}
+
+	return file, getContentTypeFromPath(cachedPath), info.ModTime(), nil
+}
+
+// DownloadToFile fetches media and stores it in the cache without keeping the
+// body in memory: the response is streamed into a temporary file that is
+// renamed into place only once it is complete, so an interrupted download never
+// leaves a truncated entry behind. It returns the cached path and content type.
+func (mc *MediaCache) DownloadToFile(ctx context.Context, client *http.Client, url, referer string) (string, string, error) {
+	req, err := newMediaRequest(ctx, url, referer)
+	if err != nil {
+		return "", "", err
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to fetch media: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	tmpFile, err := os.CreateTemp(mc.cacheDir, "download-*")
+	if err != nil {
+		return "", "", fmt.Errorf("failed to create temporary cache file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+
+	written, copyErr := io.Copy(tmpFile, resp.Body)
+	closeErr := tmpFile.Close()
+	if copyErr != nil || closeErr != nil || written == 0 {
+		_ = os.Remove(tmpPath)
+		if copyErr != nil {
+			return "", "", fmt.Errorf("failed to stream media: %w", copyErr)
+		}
+		if closeErr != nil {
+			return "", "", fmt.Errorf("failed to finish cache file: %w", closeErr)
+		}
+		return "", "", fmt.Errorf("empty media response")
+	}
+
+	contentType := resp.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = getContentTypeFromPath(url)
+	}
+
+	finalPath := mc.GetCachedPath(url)
+	if betterExt := getExtensionFromContentType(contentType); betterExt != "" {
+		finalPath = filepath.Join(mc.cacheDir, hashURL(url)+betterExt)
+	}
+
+	if err := os.Rename(tmpPath, finalPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return "", "", fmt.Errorf("failed to store media in cache: %w", err)
+	}
+
+	return finalPath, contentType, nil
+}
+
+// newMediaRequest builds a media request with the headers used to work around
+// anti-hotlinking rules. Callers own the returned request.
+func newMediaRequest(ctx context.Context, url, referer string) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	// Set headers to bypass anti-hotlinking - try multiple user agents
@@ -140,6 +217,17 @@ func (mc *MediaCache) download(url, referer string) ([]byte, string, error) {
 	req.Header.Set("DNT", "1")
 	req.Header.Set("Connection", "keep-alive")
 	req.Header.Set("Upgrade-Insecure-Requests", "1")
+
+	return req, nil
+}
+
+// download fetches media from the given URL, keeping the body in memory. Prefer
+// DownloadToFile for anything that may be large.
+func (mc *MediaCache) download(ctx context.Context, client *http.Client, url, referer string) ([]byte, string, error) {
+	req, err := newMediaRequest(ctx, url, referer)
+	if err != nil {
+		return nil, "", err
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {

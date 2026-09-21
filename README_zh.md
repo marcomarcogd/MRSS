@@ -20,7 +20,7 @@ MRSS 是一款注重隐私的跨平台桌面 RSS 阅读器，提供翻译、本�
 - 支持 RSS、Atom、OPML、XPath、脚本和 Newsletter 订阅
 - 支持文章翻译、本地 TF-IDF/TextRank 摘要和云端 AI 摘要
 - 提供智能发现、筛选器、规则、标签、多媒体库和全文提取
-- 集成 FreshRSS、RSSHub、Obsidian、Notion 和 Zotero
+- 集成 FreshRSS、Miniflux、RSSHub、Obsidian、思源笔记、Notion 和 Zotero
 - 支持亮暗主题、独立界面/正文字体设置和快捷键
 - 提供桌面便携包、无界面服务器和 Docker 镜像
 
@@ -54,7 +54,7 @@ MRSS 是一款注重隐私的跨平台桌面 RSS 阅读器，提供翻译、本�
 
 - Go 1.27+
 - Node.js 24
-- Wails CLI `v3.0.0-beta.8`
+- Wails CLI `v3.0.0-beta.20`
 - [构建要求](docs/BUILD_REQUIREMENTS.md)中列出的平台依赖
 
 ```bash
@@ -62,7 +62,7 @@ git clone https://github.com/marcomarcogd/MRSS.git
 cd MRSS
 go mod download
 cd frontend && npm ci && cd ..
-go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.15
+go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.20
 task build
 ```
 

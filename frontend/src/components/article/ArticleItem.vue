@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { withShortcut } from '@/composables/ui/shortcutBindings';
-import { ref, computed, onMounted, onBeforeUnmount, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { PhEyeSlash, PhStar, PhClockCountdown } from '@phosphor-icons/vue';
+import { PhCheckSquare, PhEyeSlash, PhSquare, PhStar, PhClockCountdown } from '@phosphor-icons/vue';
 import type { Article } from '@/types/models';
-import { formatDate as formatDateUtil, formatExactDateTime } from '@/utils/date';
+import { useArticleDateFormat } from '@/composables/article/useArticleDateFormat';
+import { useArticleHoverRead } from '@/composables/article/useArticleHoverRead';
 import { getProxiedMediaUrl, isMediaCacheEnabled } from '@/utils/mediaProxy';
 import { useShowPreviewImages } from '@/composables/ui/useShowPreviewImages';
 import { useAppStore } from '@/stores/app';
@@ -14,6 +15,9 @@ import { imageCache } from '@/utils/imageCache';
 interface Props {
   article: Article;
   isActive: boolean;
+  disabled?: boolean;
+  selectionMode?: boolean;
+  selected?: boolean;
 }
 
 const props = defineProps<Props>();
@@ -25,7 +29,7 @@ const emit = defineEmits<{
   hoverMarkAsRead: [articleId: number];
 }>();
 
-const { t, locale } = useI18n();
+const { t } = useI18n();
 const { showPreviewImages } = useShowPreviewImages();
 const { settings } = useSettings();
 const store = useAppStore();
@@ -35,9 +39,11 @@ const compactMode = computed(() => {
   return settings.value.layout_mode === 'compact';
 });
 
-const hoverMarkAsRead = computed(() => {
-  return settings.value.hover_mark_as_read;
-});
+const { enter: handleMouseEnter, leave: handleMouseLeave } = useArticleHoverRead(
+  () => props.article,
+  (id) => emit('hoverMarkAsRead', id),
+  () => props.disabled === true || props.selectionMode === true
+);
 
 // Check if article is from RSSHub feed - O(1) lookup using feedMap
 const isRSSHubArticle = computed(() => {
@@ -49,13 +55,9 @@ const isRSSHubArticle = computed(() => {
   return feed?.url.startsWith('rsshub://') || false;
 });
 
-// Translation function wrapper for formatDate
-const formatDateWithI18n = (dateStr: string): string => {
-  return formatDateUtil(dateStr, locale.value, t);
-};
+const { formatArticleDate: formatDateWithI18n, formatArticleDateTime } = useArticleDateFormat();
 
 const mediaCacheEnabled = ref(false);
-let hoverTimeout: ReturnType<typeof setTimeout> | null = null;
 
 const imageUrl = computed(() => {
   if (!props.article.image_url) return '';
@@ -161,58 +163,17 @@ function handleImageError(event: Event) {
   // Update cache to mark as permanently failed
   imageCache.handleLoadError(url);
 }
-
-// Hover mark as read functionality
-function handleMouseEnter() {
-  // Don't mark as read if:
-  // - Setting is disabled
-  // - Article is already read
-  // - Article is in "Read Later" list (user explicitly wants to read it later)
-  if (!hoverMarkAsRead.value || props.article.is_read || props.article.is_read_later) {
-    return;
-  }
-
-  // Use a small delay to avoid marking as read when quickly scrolling through the list
-  hoverTimeout = setTimeout(() => {
-    markAsRead();
-  }, 300);
-}
-
-function handleMouseLeave() {
-  if (hoverTimeout) {
-    clearTimeout(hoverTimeout);
-    hoverTimeout = null;
-  }
-}
-
-async function markAsRead() {
-  if (props.article.is_read) return;
-
-  try {
-    await fetch(`/api/articles/read?id=${props.article.id}&read=true`, {
-      method: 'POST',
-    });
-    // Emit event to parent to update article state
-    emit('hoverMarkAsRead', props.article.id);
-    await store.fetchUnreadCounts();
-    await store.fetchFilterCounts();
-  } catch (e) {
-    console.error('Error marking as read on hover:', e);
-  }
-}
-
-onUnmounted(() => {
-  if (hoverTimeout) {
-    clearTimeout(hoverTimeout);
-  }
-});
 </script>
 
 <template>
   <div
     :ref="(el) => emit('observeElement', el as Element | null)"
     :data-article-id="article.id"
-    :title="withShortcut(t('article.action.openArticle'), 'openArticle')"
+    :title="
+      selectionMode
+        ? t(selected ? 'article.action.deselectArticle' : 'article.action.selectArticle')
+        : withShortcut(t('article.action.openArticle'), 'openArticle')
+    "
     :class="[
       'article-card',
       article.is_read ? 'read' : '',
@@ -221,12 +182,21 @@ onUnmounted(() => {
       article.is_read_later ? 'read-later' : '',
       isActive ? 'active' : '',
       compactMode ? 'compact' : '',
+      selected ? 'selected' : '',
     ]"
     @click="emit('click')"
     @contextmenu="emit('contextmenu', $event)"
     @mouseenter="handleMouseEnter"
     @mouseleave="handleMouseLeave"
   >
+    <span
+      v-if="selectionMode"
+      class="flex h-5 w-5 shrink-0 items-center justify-center self-center text-accent"
+      aria-hidden="true"
+    >
+      <PhCheckSquare v-if="selected" :size="19" weight="fill" />
+      <PhSquare v-else :size="19" />
+    </span>
     <!-- Image placeholder with lazy loading - hidden completely on error -->
     <div
       v-if="shouldShowImage && !imageFailed"
@@ -391,11 +361,9 @@ onUnmounted(() => {
               alt="RSSHub"
             />
           </template>
-          <span
-            class="whitespace-nowrap"
-            :title="formatExactDateTime(article.published_at, locale)"
-            >{{ formatDateWithI18n(article.published_at) }}</span
-          >
+          <span class="whitespace-nowrap" :title="formatArticleDateTime(article.published_at)">{{
+            formatDateWithI18n(article.published_at)
+          }}</span>
         </div>
       </div>
     </div>
@@ -419,6 +387,10 @@ onUnmounted(() => {
 
 .article-card.active {
   @apply bg-bg-tertiary border-l-accent;
+}
+
+.article-card.selected {
+  @apply bg-accent/10 border-l-accent;
 }
 
 .article-card.read h4 {

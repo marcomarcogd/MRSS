@@ -16,6 +16,7 @@ func registerArticleRoutes(mux *http.ServeMux, h *core.Handler) {
 	mux.HandleFunc("/api/articles/images", func(w http.ResponseWriter, r *http.Request) { article.HandleImageGalleryArticles(h, w, r) })
 	mux.HandleFunc("/api/articles/filter", func(w http.ResponseWriter, r *http.Request) { article.HandleFilteredArticles(h, w, r) })
 	mux.HandleFunc("/api/articles/read", func(w http.ResponseWriter, r *http.Request) { article.HandleMarkReadWithImmediateSync(h, w, r) })
+	mux.HandleFunc("/api/articles/read-batch", func(w http.ResponseWriter, r *http.Request) { article.HandleMarkArticlesRead(h, w, r) })
 	mux.HandleFunc("/api/articles/favorite", func(w http.ResponseWriter, r *http.Request) { article.HandleToggleFavoriteWithImmediateSync(h, w, r) })
 	mux.HandleFunc("/api/articles/mark-relative", func(w http.ResponseWriter, r *http.Request) { article.HandleMarkRelativeToArticle(h, w, r) })
 	mux.HandleFunc("/api/articles/toggle-hide", func(w http.ResponseWriter, r *http.Request) { article.HandleToggleHideArticle(h, w, r) })
@@ -53,6 +54,7 @@ func registerArticleRoutes(mux *http.ServeMux, h *core.Handler) {
 	mux.HandleFunc("/api/articles/clear-summaries", func(w http.ResponseWriter, r *http.Request) { summary.HandleClearSummaries(h, w, r) })
 
 	// Export
+	mux.HandleFunc("/api/articles/export/siyuan", func(w http.ResponseWriter, r *http.Request) { article.HandleExportToSiYuan(h, w, r) })
 	mux.HandleFunc("/api/articles/export/obsidian", func(w http.ResponseWriter, r *http.Request) { article.HandleExportToObsidian(h, w, r) })
 	mux.HandleFunc("/api/articles/export/notion", func(w http.ResponseWriter, r *http.Request) { article.HandleExportToNotion(h, w, r) })
 	mux.HandleFunc("/api/articles/export/zotero", func(w http.ResponseWriter, r *http.Request) { article.HandleExportToZotero(h, w, r) })

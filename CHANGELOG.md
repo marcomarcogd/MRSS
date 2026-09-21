@@ -1,9 +1,102 @@
-﻿# Changelog
+# Changelog
 
 All notable changes to MRSS will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [1.3.37] - 2026-09-21
+
+### Added
+
+- Select articles in normal, card, and table layouts, select all currently visible articles, and batch-mark the selection as read or unread through a bounded API that preserves reader-service synchronization. (#1210) (@baifengs)
+- Optionally keep the desktop window hidden in the system tray when the application starts with the operating system, while preserving normal visibility for manual launches. (#1215) (@EnterMan123)
+- Show an unread-state badge on multimedia gallery cards and remove it as soon as the article is marked read. (#1214) (@EnterMan123)
+
+### Changed
+
+- Align the data-directory and chat-response-preference layouts with neighboring settings, present chat-history retention as a nested setting, and use distinct icons for consecutive article-display options.
+- Pin local Wails tasks to the runtime version, install frontend dependencies from the lockfile, and wait for the Vite server before launching the desktop process in development mode.
+
+### Fixed
+
+- Scope card-view image discovery to article content so AI chat icons do not enter the image viewer. (#1212) (@EnterMan123)
+- Close article context menus when clicking modal overlays or other content that stops bubbling events. (#1213) (@EnterMan123)
+- Limit settings search to visible setting labels so hidden modal text, status messages, and placeholders do not produce unreachable results. (#1216) (@EnterMan123)
+
+## [1.3.36] - 2026-09-20
+
+### Added
+
+- Choose a data directory in Settings → General → Data Management. Migrate to an empty folder on the next launch, preserve the original data as a backup, and keep using the original directory if copying fails. Retain command-line/environment overrides for desktop and server deployments. (#673, #1204)
+- Select XPath fields in an isolated preview with original page styles and images, hover highlights, ancestor selection and extracted samples. Start from an article title to suggest a list and infer its links; calibrate the list or any field with a second example, review highlighted matches and field coverage, and retain manual selection. Disable source scripts, forms and navigation. (#1205)
+
+### Changed
+
+- Reduce reader memory use with bounded article/feed caches, an approximately 8 MiB SQLite page cache per connection and two idle connections, at most two concurrent browser parses, streamed media downloads/serving with range and conditional requests, and lazy article images. Cache eight recently opened article bodies while preserving cancellation and invalidation behavior. (#771) (@expoli)
+- Window long ungrouped normal/compact article lists. Keep cards, tables and grouped views fully rendered to preserve grid positions and headers; retain keyboard navigation and release observers for unmounted rows. (#90) (@expoli)
+
+### Fixed
+
+- Atomically replace the installed Linux AppImage instead of launching an update from the temporary download directory. Restart after the old instance exits, retain launch options, bypass close-to-tray during the handoff, and remove the downloaded file and empty directory. Preserve the installed image if staging fails. (#1201)
+- Provide a standard-library Python feed for the government latest-policy page, whose JavaScript-generated article list is absent from static HTML. Document the JSON alternative and correct XPath date configuration. (#1203)
+- Correct the content-cache TTL from nanoseconds to 30 minutes, enforce capacity even when writes share a timestamp, and prevent expired or in-flight entries from undoing cache invalidation. (@expoli)
+
+## [1.3.35] - 2026-09-16
+
+### Added
+
+- Generate an AI reading report from 1–20 articles in the current list, with an optional focus and model profile, topic summaries, validated source references, recommended reading order, and copyable output. Preview local content coverage first; identify missing or truncated sources, cancel generation, and keep a previous report when a retry fails. Reports do not change reading state or save automatically. (#829; manual-report portion of #658)
+- Add an article-chat quick prompt to find supporting excerpts and identify conclusions not supported by the supplied text, in English and Chinese.
+
+### Changed
+
+- Improve built-in AI summaries with a one-sentence takeaway and grounded key points that preserve numbers, dates, attribution, and uncertainty. Remove script/style noise and decode HTML entities before summarization; preserve custom prompts and reject thinking-only output so temporary failures remain retryable.
+
+### Fixed
+
+- Apply `referrerpolicy="no-referrer"` to all reader images, including feeds without an explicit policy, so image hosts do not receive the desktop WebView origin. Existing configured media proxy support is preserved. (#1200)
+- Use the persistent AppImage path for Linux autostart, quote special characters and spaces in executable paths, and honor `XDG_CONFIG_HOME` when enabling or disabling startup. (#1198)
+- Prevent duplicate Linux desktop processes from opening the same data directory using a D-Bus-independent file lock acquired before logging, database initialization, and background scheduling. Reopen a hidden instance from its system tray icon. (#1199)
+- Preserve article context on AI chat follow-ups and resumed conversations, apply selected profile headers, and retain legacy credentials when no profile exists. Keep recent history within its existing message limit.
+- Report actionable AI chat errors without provider details, reject empty thinking-only answers, close idle connections, and avoid a direct-network fallback when proxy construction fails.
+- Sanitize fresh and saved AI chat answers and generated, cached, and RSS summaries with the reader's structural HTML allowlist.
+
+## [1.3.34] -2026-09-12
+
+### Added
+
+- Configure FreshRSS and Miniflux independently, including simultaneous sync, separate credentials and status, provider-scoped feeds/articles/queues, and migration of existing Miniflux settings. Use theme-aware Miniflux icons.
+- Add Microsoft Edge translation without an API key alongside Azure Translator, using the configured proxy, in-memory token reuse, bounded requests, and long-text splitting. Propagate cancelled or failed non-AI Markdown translation requests instead of reporting partial success. (#1190)
+- Add a Linux desktop `--software-rendering` launch option for GBM/graphics-related blank windows, with instructions for portable and AppImage launches. Preserve normal rendering when the option is absent. (Related to #852; the reported hardware-specific failure remains unverified.)
+- Add an optional desktop table layout above the reader, with selectable feed, author, date, and status columns and a resizable split. Preserve filtering, grouping, translation, and article actions. (#945)
+- Group article lists and cards by local calendar date or feed, with stable pagination and matching reading order. Limit relative mark-as-read actions to the current feed when grouped by feed. (#565)
+- Preview the latest feed articles before subscribing, including RSSHub URLs, without saving subscriptions or reading state. Use the selected proxy for both preview and initial subscription requests. (#564)
+- Clip articles to a configured SiYuan notebook as Markdown with source metadata, encrypted API-token storage, and a customizable toolbar action. (#688)
+- Configure article date formats, 12/24-hour time, and relative timestamps across lists, details, and the media gallery. (#563)
+- Customize article toolbar button visibility and order, with a restore-defaults action. (#1150)
+
+### Fixed
+
+- Use the SiYuan plugin icon in settings and the article toolbar. Consolidate article sorting, grouping, and filters in a More panel with explicit selections, immediate updates, keyboard access, and viewport-aware placement; place sidebar sorting between pin and close, remove sidebar scrollbar arrows, and use shared modal footer buttons for toolbar customization.
+- Fix release regression-test setup for read-later and AI summaries, remove an unused dropdown assignment, and run frontend CI tests explicitly in single-run mode.
+- Extract video poster covers and lazy-loaded or single-quoted HTML images from feed entries; skip empty image metadata and fall back to description covers when full content has none. Resolve embedded covers against the article link. (Related to #546; Xiaohongshu-specific compatibility and the requested video view still need a concrete feed example and scope.)
+- Preserve multi-condition automation rules and article filters across articles instead of mutating their condition arrays while evaluating AND groups. Keep NOT/AND/OR precedence consistent for multi-keyword rules. (#335)
+- Recover feed icons after URL changes, feed refreshes, or restored connectivity; use website favicons and a local placeholder when images fail, rather than leaving sidebar icons permanently hidden. (#335)
+- Keep the previous article list visible and inert while switching feeds, replacing it atomically when the current request completes. Prevent snapshot rows from triggering hover-read actions or entering keyboard navigation, and delay the loading indicator for fast requests. (#435)
+- Preserve reading state when toggling read-later with keyboard shortcuts, refresh its counts, and roll back failed requests. Ignore repeated toggles while the shortcut request is pending. (#580)
+- Remove misleading SQLite "out of memory" text from file-open failures and explain storage access, read-only, full-disk, and invalid-database startup errors without attempting destructive repair. (Related to #800; the reported environment-specific open failure remains under investigation.)
+- Preserve legacy AI translation credentials when no profile exists, and apply created, edited, deleted, or newly selected default AI profiles without restarting. (#767)
+- Keep read-later articles until explicitly removed, independently of reading state, and preserve read state when adding them to the list. (#580)
+- Keep settings dropdowns outside the scrolling form, fit them to available space, and prevent search-field focus from shifting the form. (#447)
+- Let slow and large feed downloads use the configured retry budget instead of being cut off by a fixed 30-second HTTP timeout. (#603)
+- Use the selected AI profile's headers for summaries, preserve legacy AI configuration when no profile exists, and keep temporary local fallbacks retryable. Cancel abandoned summary requests without overwriting newer results. (#772)
+- Honor application proxy settings across Google, DeepL, Baidu, Microsoft, and Tencent translation; apply changed credentials and proxy settings without restarting. (#767, #918)
+- Use the configured Google translation endpoint and decode the alternative endpoint's response format; preserve both the Microsoft endpoint and region. (#767)
+- Show the macOS menu-bar unread count, update it while the reader is hidden, and respect the unread-count visibility setting. (#544)
+- Fetch Miniflux articles through its supported Google Reader item endpoints and preserve folders, read state, and starred state during synchronization. (#1191) (@HernandoR)
+- Preserve image `referrerpolicy="no-referrer"` in article content so feeds can load images from hosts that reject the desktop WebView referrer. (#1189)
+- Apply the configured application proxy and encrypted proxy credentials to media cache downloads and direct media forwarding, and cancel downloads with their requests. (#1189)
 
 ## [1.3.33] - 2026-09-10
 

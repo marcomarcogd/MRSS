@@ -48,10 +48,9 @@ func HandleInstallUpdate(h *core.Handler, w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Validate file path is within temp directory to prevent path traversal
-	tempDir := os.TempDir()
-	cleanPath := filepath.Clean(req.FilePath)
-	if !strings.HasPrefix(cleanPath, filepath.Clean(tempDir)) {
+	// Accept only a regular file in a dedicated update download directory.
+	cleanPath, err := validateUpdateDownload(req.FilePath)
+	if err != nil {
 		log.Printf("Invalid file path attempted: %s", req.FilePath)
 		response.Error(w, fmt.Errorf("invalid file path"), http.StatusBadRequest)
 		return
@@ -77,6 +76,33 @@ func HandleInstallUpdate(h *core.Handler, w http.ResponseWriter, r *http.Request
 	platform := runtime.GOOS
 	isPortable := fileutil.IsPortableMode()
 	log.Printf("Installing update from: %s on platform: %s, portable: %v", cleanPath, platform, isPortable)
+
+	// AppImages run from a read-only mount even when portable.txt is bundled.
+	// Always update the persistent outer image before considering portable mode.
+	if platform == "linux" && os.Getenv("APPIMAGE") != "" {
+		target, err := replaceAppImage(r.Context(), cleanPath, os.Getenv("APPIMAGE"))
+		if err != nil {
+			log.Printf("AppImage update failed: %v", err)
+			response.Error(w, fmt.Errorf("cannot replace installed AppImage; check directory permissions or update it manually"), http.StatusInternalServerError)
+			return
+		}
+		if err := startAppImageAfterExit(target, fileutil.DataDirRestartArgs(os.Args[1:])); err != nil {
+			log.Printf("AppImage restart failed: %v", err)
+			response.Error(w, fmt.Errorf("update installed; quit and reopen the installed AppImage manually"), http.StatusInternalServerError)
+			return
+		}
+		cleanupUpdateDownload(cleanPath)
+		response.JSON(w, map[string]interface{}{"success": true, "message": "Update installed. Application will restart shortly."})
+		go func() {
+			time.Sleep(2 * time.Second)
+			if h.QuitForUpdate != nil {
+				h.QuitForUpdate()
+			} else {
+				os.Exit(0)
+			}
+		}()
+		return
+	}
 
 	// Helper function to schedule cleanup of installer file
 	scheduleCleanup := func(filePath string, delay time.Duration) {
@@ -128,18 +154,8 @@ func HandleInstallUpdate(h *core.Handler, w http.ResponseWriter, r *http.Request
 				return
 			}
 		case "linux":
-			// Make AppImage executable and run it - validate file extension
-			if !strings.HasSuffix(strings.ToLower(cleanPath), ".appimage") {
-				response.Error(w, fmt.Errorf("invalid file type for Linux"), http.StatusBadRequest)
-				return
-			}
-			if err := os.Chmod(cleanPath, 0755); err != nil {
-				log.Printf("Error making file executable: %v", err)
-				response.Error(w, fmt.Errorf("failed to prepare installer: %w", err), http.StatusInternalServerError)
-				return
-			}
-			cmd = exec.Command(cleanPath)
-			scheduleCleanup(cleanPath, 10*time.Second)
+			response.Error(w, fmt.Errorf("installed AppImage path is unavailable; please install the update manually"), http.StatusBadRequest)
+			return
 		case "darwin":
 			// Open the DMG file - validate file extension
 			if !strings.HasSuffix(strings.ToLower(cleanPath), ".dmg") {

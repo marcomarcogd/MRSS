@@ -3,7 +3,13 @@ import { useAppStore } from '@/stores/app';
 import { useI18n } from 'vue-i18n';
 import { openInBrowser } from '@/utils/browser';
 import type { Article } from '@/types/models';
+import {
+  hasArticleContent,
+  queryArticleContentImages,
+  queryArticleContentLinks,
+} from '@/utils/articleContentDom';
 import { proxyImagesInHtml, isMediaCacheEnabled } from '@/utils/mediaProxy';
+import { loadArticleContent, invalidateArticleContent } from '@/utils/articleContentCache';
 
 type ViewMode = 'original' | 'rendered' | 'external';
 type RenderAction = 'showContent' | 'showOriginal' | null;
@@ -234,19 +240,20 @@ export function useArticleDetail() {
 
   async function toggleReadLater() {
     if (!article.value) return;
-    const newState = !article.value.is_read_later;
-    article.value.is_read_later = newState;
-    // When adding to read later, also mark as unread
-    if (newState) {
-      article.value.is_read = false;
-    }
+    const target = article.value;
+    const newState = !target.is_read_later;
+    target.is_read_later = newState;
     try {
-      await fetch(`/api/articles/toggle-read-later?id=${article.value.id}`, { method: 'POST' });
-      store.fetchUnreadCounts();
+      const response = await fetch(`/api/articles/toggle-read-later?id=${target.id}`, {
+        method: 'POST',
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      void store.fetchFilterCounts();
     } catch (e) {
       console.error('Error toggling read later:', e);
       // Revert on error
-      article.value.is_read_later = !newState;
+      target.is_read_later = !newState;
+      window.showToast(t('common.errors.savingSettings'), 'error');
     }
   }
 
@@ -294,37 +301,27 @@ export function useArticleDetail() {
     isLoadingContent.value = true;
 
     try {
-      const res = await fetch(`/api/articles/content?id=${loadingArticleId}`, {
-        signal: contentController.signal,
-      });
+      const data = await loadArticleContent(loadingArticleId, contentController.signal);
       if (!isCurrent()) return;
 
-      if (res.ok) {
-        const data = await res.json();
-        if (!isCurrent()) return;
+      let content = data.content;
 
-        let content = data.content || '';
+      // Proxy images if media cache is enabled
+      const cacheEnabled = await isMediaCacheEnabled();
+      if (!isCurrent()) return;
 
-        // Proxy images if media cache is enabled
-        const cacheEnabled = await isMediaCacheEnabled();
-        if (!isCurrent()) return;
+      if (cacheEnabled && content) {
+        // Use feed URL as referer for anti-hotlinking (more reliable than article URL)
+        const feedUrl = data.feedUrl || article.value.url;
+        content = proxyImagesInHtml(content, feedUrl);
+      }
 
-        if (cacheEnabled && content) {
-          // Use feed URL as referer for anti-hotlinking (more reliable than article URL)
-          const feedUrl = data.feed_url || article.value.url;
-          content = proxyImagesInHtml(content, feedUrl);
-        }
+      articleContent.value = content;
 
-        articleContent.value = content;
-
-        // Only show loading animation for non-cached content
-        if (!data.cached) {
-          // Content was fetched from feed, show loading and trigger watch
-          await nextTick(); // Ensure content is rendered first
-        }
-      } else {
-        console.error('Failed to fetch article content');
-        articleContent.value = '';
+      // Only show loading animation for non-cached content
+      if (!data.cached) {
+        // Content was fetched from feed, show loading and trigger watch
+        await nextTick(); // Ensure content is rendered first
       }
     } catch (e) {
       if (!isCurrent()) return;
@@ -361,6 +358,7 @@ export function useArticleDetail() {
       if (!res.ok) {
         throw new Error(`Reload content failed: ${res.status}`);
       }
+      invalidateArticleContent(reloadingArticleId);
       if (store.currentArticleId === reloadingArticleId) {
         window.dispatchEvent(
           new CustomEvent('article-content-reloaded', { detail: reloadingArticleId })
@@ -381,7 +379,7 @@ export function useArticleDetail() {
   // Works on both main content and translated content
   function unwrapImagesFromLinks() {
     // Process all links in prose content (both main content and translations)
-    const links = document.querySelectorAll<HTMLAnchorElement>('.prose-content a, .prose a');
+    const links = queryArticleContentLinks();
     const linksToProcess: HTMLAnchorElement[] = [];
 
     // Collect links that contain images (check both direct children and nested)
@@ -421,15 +419,11 @@ export function useArticleDetail() {
     unwrapImagesFromLinks();
 
     // Get all images in prose content (use more specific selector)
-    const proseContainers = document.querySelectorAll('[data-article-content] .prose-content');
-
-    if (proseContainers.length === 0) {
+    if (!hasArticleContent()) {
       return;
     }
 
-    const images = document.querySelectorAll<HTMLImageElement>(
-      '[data-article-content] .prose-content img'
-    );
+    const images = queryArticleContentImages();
 
     // Process images if there are any
     if (images.length > 0) {
@@ -471,11 +465,7 @@ export function useArticleDetail() {
               }
 
               // Collect all images from the article content
-              const allImages = Array.from(
-                document.querySelectorAll<HTMLImageElement>(
-                  '[data-article-content] .prose-content img'
-                )
-              )
+              const allImages = queryArticleContentImages()
                 .filter((img) => {
                   // Filter out small icons
                   return !(img.height <= 24 && img.height > 0);
@@ -561,7 +551,7 @@ export function useArticleDetail() {
   // Works for dynamically added content (e.g., translations)
   function attachLinkEventListeners() {
     // Get all text-only links (no images) in prose content
-    const links = document.querySelectorAll<HTMLAnchorElement>('.prose-content a, .prose a');
+    const links = queryArticleContentLinks();
 
     links.forEach((link) => {
       try {

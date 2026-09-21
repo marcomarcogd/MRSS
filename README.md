@@ -20,7 +20,7 @@ MRSS is a privacy-focused, cross-platform desktop RSS reader with translation, l
 - RSS, Atom, OPML, XPath, script, and newsletter subscriptions
 - Article translation and local TF-IDF/TextRank or cloud AI summaries
 - Smart discovery, filters, rules, tags, image gallery, and full-text fetching
-- FreshRSS, RSSHub, Obsidian, Notion, and Zotero integrations
+- FreshRSS, Miniflux, RSSHub, Obsidian, SiYuan, Notion, and Zotero integrations
 - Light/dark themes, configurable interface and article typography, and keyboard shortcuts
 - Portable desktop packages, a browser reader, and a server image
 
@@ -54,7 +54,7 @@ Requirements:
 
 - Go 1.27+
 - Node.js 24
-- Wails CLI `v3.0.0-beta.8`
+- Wails CLI `v3.0.0-beta.20`
 - Platform dependencies listed in [Build Requirements](docs/BUILD_REQUIREMENTS.md)
 
 ```bash
@@ -62,7 +62,7 @@ git clone https://github.com/marcomarcogd/MRSS.git
 cd MRSS
 go mod download
 cd frontend && npm ci && cd ..
-go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.15
+go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.20
 task build
 ```
 

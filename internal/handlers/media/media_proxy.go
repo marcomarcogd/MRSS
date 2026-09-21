@@ -2,6 +2,7 @@ package media
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -224,6 +226,13 @@ func HandleMediaProxy(h *core.Handler, w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	client, err := httputil.CreateHTTPClientWithProxySettings(h.DB, 30*time.Second)
+	if err != nil {
+		response.Error(w, fmt.Errorf("failed to configure media HTTP client"), http.StatusInternalServerError)
+		return
+	}
+	defer client.CloseIdleConnections()
+
 	// Try cache first if enabled
 	if mediaCacheEnabled == "true" {
 		// Get media cache directory
@@ -238,16 +247,24 @@ func HandleMediaProxy(h *core.Handler, w http.ResponseWriter, r *http.Request) {
 				log.Printf("Failed to initialize media cache: %v", err)
 				// Continue to fallback if enabled
 			} else {
-				// Get media (from cache or download)
-				data, contentType, err := mediaCache.Get(mediaURL, referer)
-				if err == nil {
-					// Success! Serve from cache
-					w.Header().Set("Content-Type", contentType)
-					w.Header().Set("Content-Length", strconv.Itoa(len(data)))
-					w.Header().Set("Cache-Control", "public, max-age=31536000") // Cache for 1 year
-					w.Header().Set("X-Media-Source", "cache")
-					w.Write(data)
+				// Serve from disk when the media is already cached: streaming keeps
+				// large images out of the process heap.
+				if file, contentType, modTime, openErr := mediaCache.Open(mediaURL); openErr == nil {
+					serveCachedMedia(w, r, file, contentType, modTime, filepath.Base(mediaURL))
 					return
+				}
+
+				// Cache miss: download straight into the cache file, then stream it.
+				path, contentType, err := mediaCache.DownloadToFile(r.Context(), client, mediaURL, referer)
+				if err == nil {
+					if file, openErr := os.Open(path); openErr == nil {
+						info, statErr := file.Stat()
+						if statErr == nil {
+							serveCachedMedia(w, r, file, contentType, info.ModTime(), filepath.Base(path))
+							return
+						}
+						_ = file.Close()
+					}
 				}
 				log.Printf("Cache failed for %s: %v, trying fallback", mediaURL, err)
 			}
@@ -256,7 +273,7 @@ func HandleMediaProxy(h *core.Handler, w http.ResponseWriter, r *http.Request) {
 
 	// Fallback: Direct proxy if enabled
 	if mediaProxyFallback == "true" {
-		err := proxyMediaDirectly(mediaURL, referer, w)
+		err := proxyMediaDirectly(r.Context(), client, mediaURL, referer, w)
 		if err == nil {
 			return // Success
 		}
@@ -265,6 +282,17 @@ func HandleMediaProxy(h *core.Handler, w http.ResponseWriter, r *http.Request) {
 
 	// All methods failed
 	response.Error(w, fmt.Errorf("failed to fetch media"), http.StatusInternalServerError)
+}
+
+// serveCachedMedia streams a cached media file to the client. http.ServeContent
+// sets Content-Length and handles range and conditional requests, so the image
+// is never buffered in memory. It closes the file.
+func serveCachedMedia(w http.ResponseWriter, r *http.Request, file *os.File, contentType string, modTime time.Time, name string) {
+	defer file.Close()
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "public, max-age=31536000") // Cache for 1 year
+	w.Header().Set("X-Media-Source", "cache")
+	http.ServeContent(w, r, name, modTime, file)
 }
 
 // HandleMediaCacheCleanup performs manual cleanup of media cache
@@ -1750,12 +1778,8 @@ func HandleWebpageResource(h *core.Handler, w http.ResponseWriter, r *http.Reque
 }
 
 // proxyMediaDirectly proxies media directly without caching
-func proxyMediaDirectly(mediaURL, referer string, w http.ResponseWriter) error {
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
-
-	req, err := http.NewRequest("GET", mediaURL, nil)
+func proxyMediaDirectly(ctx context.Context, client *http.Client, mediaURL, referer string, w http.ResponseWriter) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, mediaURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
