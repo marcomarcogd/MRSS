@@ -12,6 +12,10 @@ tasks:
 
   install:frontend:deps:
     summary: Install frontend dependencies
+    # build:frontend and generate:icons can request this task in parallel.
+    # Run it once so Windows does not launch concurrent npm ci processes that
+    # race while replacing node_modules.
+    run: once
     dir: frontend
     sources:
       - package.json
