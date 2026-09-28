@@ -8,7 +8,7 @@ This document describes how to build and package MRSS using the Wails v3 build s
 
 - **Go 1.27+**: [https://golang.org/dl/](https://golang.org/dl/)
 - **Node.js 22.22.2 LTS or 24.15+**: [https://nodejs.org/](https://nodejs.org/)
-- **Wails CLI v3**: `go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.20`
+- **Wails CLI v3**: `go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.23`
 - **Task**: [https://taskfile.dev/installation/](https://taskfile.dev/installation/)
 
 ### Platform-Specific Dependencies

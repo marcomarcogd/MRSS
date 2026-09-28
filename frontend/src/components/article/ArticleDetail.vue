@@ -7,7 +7,7 @@ import ArticleContent from './ArticleContent.vue';
 import ImageViewer from '../common/ImageViewer.vue';
 import FindInPage from '../common/FindInPage.vue';
 
-import { ref, onMounted, onBeforeUnmount } from 'vue';
+import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue';
 
 const {
   article,
@@ -39,16 +39,23 @@ const {
 } = useArticleDetail();
 
 const showTranslations = ref(true);
-const articleContentRef = ref<{ startManualTranslation: () => Promise<void> } | null>(null);
 const translationState = ref<'idle' | 'loading' | 'ready'>('idle');
 const showFindInPage = ref(false);
+const contentView = ref<InstanceType<typeof ArticleContent> | null>(null);
+
+async function enterReadingMode() {
+  const id = article.value?.id;
+  showContent.value = true;
+  await nextTick();
+  if (id === article.value?.id) await contentView.value?.enterReadingMode();
+}
 
 function toggleTranslations() {
   showTranslations.value = !showTranslations.value;
 }
 
 function startManualTranslation() {
-  return articleContentRef.value?.startManualTranslation();
+  return contentView.value?.startManualTranslation();
 }
 
 function handleTranslationState(state: 'idle' | 'loading' | 'ready') {
@@ -113,6 +120,9 @@ onBeforeUnmount(() => {
         :show-content="showContent"
         :show-translations="showTranslations"
         :translation-state="translationState"
+        :is-loading-content="isLoadingContent"
+        :is-reading-mode-loading="contentView?.isFetchingFullArticle ?? false"
+        @reading-mode="enterReadingMode"
         @close="close"
         @toggle-content-view="toggleContentView"
         @toggle-read="toggleRead"
@@ -142,7 +152,7 @@ onBeforeUnmount(() => {
       <!-- RSS content view -->
       <ArticleContent
         v-else
-        ref="articleContentRef"
+        ref="contentView"
         :article="article"
         :article-content="articleContent"
         :is-loading-content="isLoadingContent"
@@ -152,6 +162,8 @@ onBeforeUnmount(() => {
         @retry-load-content="handleRetryLoadContent"
         @translation-state="handleTranslationState"
         @show-translations="showTranslations = true"
+        @previous="goToPreviousArticle"
+        @next="goToNextArticle"
       />
 
       <!-- Navigation buttons -->

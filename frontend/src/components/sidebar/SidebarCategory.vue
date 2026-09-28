@@ -217,6 +217,9 @@ onUnmounted(() => {
     @drop.self.prevent="handleDrop"
   >
     <div
+      :draggable="isEditMode && !isUncategorized"
+      @dragstart="categoryDrag?.start(fullPath, $event)"
+      @dragend="categoryDrag?.end()"
       :class="[
         'category-header',
         isActive ? 'active' : '',
@@ -237,11 +240,8 @@ onUnmounted(() => {
       <span
         v-if="isEditMode && !isUncategorized"
         class="cursor-grab text-text-secondary mr-1"
-        draggable="true"
         :title="t('sidebar.order.dragCategory')"
         @click.stop
-        @dragstart="categoryDrag?.start(fullPath, $event)"
-        @dragend="categoryDrag?.end()"
       >
         <PhDotsSixVertical :size="16" />
       </span>

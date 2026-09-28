@@ -26,6 +26,7 @@ import { withLazyImages } from '@/utils/lazyImages';
 import { wrapOrphanedTextNodes } from '@/utils/translationParagraphs';
 import { useArticleSelectionMenu } from '@/composables/article/useArticleSelectionMenu';
 import { useFullArticle } from '@/composables/article/useFullArticle';
+import { useArticleSwipe } from '@/composables/article/useArticleSwipe';
 import './ArticleContent.css';
 
 interface SummaryResult {
@@ -64,6 +65,8 @@ const emit = defineEmits<{
   retryLoadContent: [];
   translationState: [state: ManualTranslationState];
   showTranslations: [];
+  previous: [];
+  next: [];
 }>();
 
 type ManualTranslationState = 'idle' | 'loading' | 'ready';
@@ -79,6 +82,12 @@ function handleRetryLoad() {
 const { settings: appSettings, fetchSettings } = useSettings();
 const store = useAppStore();
 const isChatPanelOpen = ref(false);
+const swipe = useArticleSwipe({
+  articleId: () => props.article.id,
+  enabled: () => props.showContent && !props.isLoadingContent && !isChatPanelOpen.value,
+  previous: () => emit('previous'),
+  next: () => emit('next'),
+});
 const articleScrollContainer = ref<HTMLElement | null>(null);
 const ARTICLE_SCROLL_POSITIONS_KEY = 'mrssArticleScrollPositions';
 const LEGACY_ARTICLE_SCROLL_POSITIONS_KEY = 'mrrssArticleScrollPositions';
@@ -502,8 +511,6 @@ async function startManualTranslation(): Promise<void> {
   setManualTranslationState('ready');
 }
 
-defineExpose({ startManualTranslation });
-
 const { fullArticleContent, isFetchingFullArticle, fetchFullArticle } = useFullArticle({
   article: () => props.article,
   enabled: () => appSettings.value.full_text_fetch_enabled,
@@ -520,6 +527,16 @@ const { fullArticleContent, isFetchingFullArticle, fetchFullArticle } = useFullA
     if (shouldTranslateNow.value) await translateContentParagraphs(content);
   },
 });
+
+async function enterReadingMode() {
+  if (!appSettings.value.full_text_fetch_enabled) {
+    window.showToast(t('article.action.readingModeRssOnly'), 'info');
+    return;
+  }
+  if (!fullArticleContent.value) await fetchFullArticle();
+}
+
+defineExpose({ startManualTranslation, enterReadingMode, isFetchingFullArticle });
 
 // Generate summary for the current article
 async function generateSummary(article: Article, force: boolean = false) {
@@ -1346,6 +1363,11 @@ onBeforeUnmount(() => {
       @click="handleContainerClick"
       @contextmenu="onTextContextMenu"
       @scroll="handleArticleScroll"
+      @touchstart.passive="swipe.touchstart"
+      @touchmove="swipe.touchmove"
+      @touchend="swipe.touchend"
+      @touchcancel="swipe.touchcancel"
+      @wheel="swipe.wheel"
     >
       <div
         class="max-w-3xl mx-auto bg-bg-primary [container-type:inline-size]"

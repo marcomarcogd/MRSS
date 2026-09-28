@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { withShortcut } from '@/composables/ui/shortcutBindings';
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAppStore } from '@/stores/app';
 import { PhCaretLeft, PhCaretRight } from '@phosphor-icons/vue';
@@ -39,9 +39,16 @@ const { settings, fetchSettings } = useSettings();
 // View state
 const showContent = ref(true);
 const showTranslations = ref(true);
-const articleContentRef = ref<{ startManualTranslation: () => Promise<void> } | null>(null);
 const translationState = ref<'idle' | 'loading' | 'ready'>('idle');
 const showFindInPage = ref(false);
+const contentView = ref<InstanceType<typeof ArticleContent> | null>(null);
+
+async function enterReadingMode() {
+  const id = props.article.id;
+  showContent.value = true;
+  await nextTick();
+  if (id === props.article.id) await contentView.value?.enterReadingMode();
+}
 
 // Image viewer state
 const imageViewerSrc = ref<string | null>(null);
@@ -238,7 +245,7 @@ function toggleTranslations() {
 }
 
 function startManualTranslation() {
-  return articleContentRef.value?.startManualTranslation();
+  return contentView.value?.startManualTranslation();
 }
 
 function handleTranslationState(state: 'idle' | 'loading' | 'ready') {
@@ -318,6 +325,9 @@ function handleOverlayClick(e: MouseEvent) {
           :show-translations="showTranslations"
           :translation-state="translationState"
           :is-modal="true"
+          :is-loading-content="isLoadingContent"
+          :is-reading-mode-loading="contentView?.isFetchingFullArticle ?? false"
+          @reading-mode="enterReadingMode"
           @close="emit('close')"
           @toggle-content-view="toggleContentView"
           @toggle-read="emit('toggleRead')"
@@ -349,7 +359,7 @@ function handleOverlayClick(e: MouseEvent) {
           <!-- RSS content view -->
           <ArticleContent
             v-else
-            ref="articleContentRef"
+            ref="contentView"
             :article="article"
             :article-content="articleContent"
             :is-loading-content="isLoadingContent"
@@ -360,6 +370,8 @@ function handleOverlayClick(e: MouseEvent) {
             @retry-load-content="handleRetryLoadContent"
             @translation-state="handleTranslationState"
             @show-translations="showTranslations = true"
+            @previous="hasPreviousArticle && emit('previous')"
+            @next="hasNextArticle && emit('next')"
           />
         </div>
 

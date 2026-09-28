@@ -54,7 +54,7 @@ MRSS 是一款注重隐私的跨平台桌面 RSS 阅读器，提供翻译、本�
 
 - Go 1.27+
 - Node.js 24
-- Wails CLI `v3.0.0-beta.20`
+- Wails CLI `v3.0.0-beta.23`
 - [构建要求](docs/BUILD_REQUIREMENTS.md)中列出的平台依赖
 
 ```bash
@@ -62,7 +62,7 @@ git clone https://github.com/marcomarcogd/MRSS.git
 cd MRSS
 go mod download
 cd frontend && npm ci && cd ..
-go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.20
+go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.23
 task build
 ```
 
